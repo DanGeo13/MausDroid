@@ -198,7 +198,7 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
         <Avatar bot={bot} size={2.3} live={busy} />
         <h1 style={{ display: "block" }}>
           {bot.name}
-          <span class="sub">{busy ? "working…" : bot.persona ? bot.persona.slice(0, 48) : "bot"}</span>
+          <span class="sub">{busy ? "working…" : bot.model ? `${bot.providerId ?? "default AI"} · ${bot.model}` : bot.persona ? bot.persona.slice(0, 48) : "bot"}</span>
         </h1>
         {busy ? (
           <button class="icon-btn" aria-label="Stop" title="Stop" onClick={() => api(`bots/${bot.id}/stop`, { body: {} })}>

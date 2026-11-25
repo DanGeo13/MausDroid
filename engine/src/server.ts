@@ -31,6 +31,7 @@ import * as calendar from "./calendar.ts";
 import * as brief from "./brief.ts";
 import * as audit from "./audit.ts";
 import * as location from "./location.ts";
+import * as models from "./models.ts";
 
 export type Via = "local" | "tailnet" | "relay";
 export interface Req {
@@ -179,7 +180,9 @@ route("GET", "/api/state", () => json(state()));
 route("POST", "/api/bots", (req) => json(bots.createBot(req.body ?? {})));
 route("PATCH", "/api/bots/:id", (req, [id]) => {
   const { id: _i, createdAt: _c, ...patch } = req.body ?? {};
-  return json(bots.updateBot(id, patch));
+  const b = bots.updateBot(id, patch);
+  if (b.providerId && b.model) models.rememberModel(b.providerId, b.model);
+  return json(b);
 });
 route("DELETE", "/api/bots/:id", (_r, [id]) => {
   stopBot(id);
@@ -259,6 +262,29 @@ route("POST", "/api/settings/providers/:id/models", async (_r, [id]) => {
   const models = p.kind === "anthropic" ? await anthropicModels(key ?? "") : p.kind === "openai" ? await openaiModels(p.baseUrl!, key) : p.models;
   updateSettings((s) => void (s.providers.find((x) => x.id === id)!.models = models));
   return json({ models });
+});
+// Models per AI (for choosing a model per bot), checks, and your own endpoints
+route("GET", "/api/models/:provider", (_r, [pid]) => {
+  const p = provider(pid);
+  if (!p) throw new HttpError(404, "No such AI");
+  return json({ provider: p.id, defaultModel: p.defaultModel, groups: models.modelGroups(p) });
+});
+route("POST", "/api/models/check", async (req) => json(await models.checkModel(String(req.body?.provider ?? ""), String(req.body?.model ?? "").trim() || provider(String(req.body?.provider ?? ""))?.defaultModel || "default")));
+route("POST", "/api/endpoints", (req) => {
+  const b = req.body ?? {};
+  try {
+    return json({ id: models.addEndpoint(String(b.label ?? ""), String(b.baseUrl ?? ""), Boolean(b.needsKey)) });
+  } catch (e) {
+    throw new HttpError(400, errorText(e));
+  }
+});
+route("DELETE", "/api/endpoints/:id", (_r, [id]) => {
+  try {
+    models.removeEndpoint(id);
+  } catch (e) {
+    throw new HttpError(400, errorText(e));
+  }
+  return json(publicSettings());
 });
 route("PUT", "/api/settings/github", async (req) => {
   await setSecret("github", String(req.body?.token ?? "").trim() || null);

@@ -21,12 +21,16 @@ export interface ProviderConfig {
   needsKey: boolean;
   note?: string;
   free?: boolean;
+  /** Models you typed that worked (shown under "Your models"). */
+  customModels?: string[];
+  /** An endpoint you added yourself (can be removed). */
+  custom?: boolean;
 }
 
 /** Ready-made presets. Free options are marked so new people can start without paying. */
 export const PROVIDER_PRESETS: ProviderConfig[] = [
   // Your subscriptions: sign in with your account (no API keys). Each runs the company's official program.
-  { id: "claude", label: "Claude", kind: "subscription", subId: "claude", defaultModel: "default", models: ["default", "opus", "sonnet", "haiku"], runOn: "phone", enabled: false, needsKey: false, note: "Sign in with your Claude account (Pro or Max). Uses Anthropic's official Claude Code." },
+  { id: "claude", label: "Claude", kind: "subscription", subId: "claude", defaultModel: "default", models: ["default", "opus", "sonnet", "haiku", "fable"], runOn: "phone", enabled: false, needsKey: false, note: "Sign in with your Claude account (Pro or Max). Uses Anthropic's official Claude Code." },
   { id: "chatgpt", label: "ChatGPT", kind: "subscription", subId: "chatgpt", defaultModel: "default", models: ["default"], runOn: "phone", enabled: false, needsKey: false, note: "Sign in with your ChatGPT account (Plus, Pro, Business or Edu). Uses OpenAI's official Codex." },
   // Other models: API keys, free services, and local models.
   { id: "openrouter", label: "OpenRouter (many models, some free)", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openrouter/auto", models: ["openrouter/auto"], enabled: false, needsKey: true, free: true, note: "Models ending in :free cost nothing." },
@@ -78,9 +82,14 @@ settingsFile.update((s) => {
   for (const p of PROVIDER_PRESETS) {
     const have = s.providers.find((x) => x.id === p.id);
     if (!have) s.providers.push(p);
-    else if (p.kind === "subscription") Object.assign(have, { label: p.label, note: p.note, kind: p.kind, subId: p.subId, needsKey: false, baseUrl: undefined });
+    else if (p.kind === "subscription") Object.assign(have, { label: p.label, note: p.note, kind: p.kind, subId: p.subId, needsKey: false, baseUrl: undefined, models: p.models });
   }
-  s.providers.sort((a, b) => PROVIDER_PRESETS.findIndex((p) => p.id === a.id) - PROVIDER_PRESETS.findIndex((p) => p.id === b.id));
+  // Presets first in their usual order, then endpoints you added.
+  const order = (id: string) => {
+    const i = PROVIDER_PRESETS.findIndex((p) => p.id === id);
+    return i < 0 ? 1000 : i;
+  };
+  s.providers.sort((a, b) => order(a.id) - order(b.id));
   if (s.defaultProvider && RENAMED[s.defaultProvider]) s.defaultProvider = RENAMED[s.defaultProvider];
   if (s.defaultProvider === "gemini") s.defaultProvider = null;
   if (s.defaultProvider && !s.providers.find((p) => p.id === s.defaultProvider)) s.defaultProvider = null;

@@ -5,6 +5,7 @@ import type { Bot, Provider } from "./types.ts";
 import { IconBack } from "./icons.tsx";
 import { Routines } from "./routines.tsx";
 import { Calendars } from "./calendars.tsx";
+import { AddEndpoint, ModelPicker } from "./models.tsx";
 import { loadAppearance, saveAppearance, TEXT_SIZES, type Appearance } from "./appearance.ts";
 
 export const toast = (msg: string) => {
@@ -131,6 +132,13 @@ function ProviderRow({ p, isDefault, reload }: { p: Provider; isDefault: boolean
                 </button>
                 <button class="btn secondary" onClick={run(async () => (await api(`settings/providers/${p.id}`, { method: "PUT", body: { enabled: false } }), reload()))}>
                   Turn off
+                </button>
+              </>
+            ) : null}
+            {(p as any).custom ? (
+              <>
+                <button class="btn secondary" onClick={run(async () => (confirm(`Remove “${p.label}”?`) && (await api(`endpoints/${p.id}`, { method: "DELETE" })), reload()))}>
+                  Remove
                 </button>
               </>
             ) : null}
@@ -331,10 +339,11 @@ function AiTab() {
         return p ? <SubscriptionCard key={sub.id} sub={sub} p={p} isDefault={s.defaultProvider === p.id} reload={reload} /> : null;
       })}
       <h2 style={{ fontSize: "1rem", margin: "1.2rem 0 .3rem" }}>Other models</h2>
-      <p class="help">Optional extras with an API key, free services, or local models on your phone, PC or another device.</p>
+      <p class="help">Optional extras with an API key, free services, or local models on your phone, PC or another device. Add as many endpoints as you like; each bot can use a different one.</p>
       {others.map((p: Provider) => (
         <ProviderRow p={p} key={p.id} isDefault={s.defaultProvider === p.id} reload={reload} />
       ))}
+      <AddEndpoint onAdded={reload} />
     </>
   );
 }
@@ -1044,17 +1053,8 @@ export function BotEditor({ bot, onClose }: { bot: Bot | null; onClose: (deleted
                 ))}
             </select>
           </div>
-          {prov ? (
-            <div class="field">
-              <label>Model</label>
-              <input value={b.model ?? ""} onInput={(e) => set({ model: val(e) || null })} placeholder={prov.defaultModel} list="bot-models" />
-              <datalist id="bot-models">
-                {prov.models.map((m: string) => (
-                  <option value={m} />
-                ))}
-              </datalist>
-            </div>
-          ) : null}
+          {prov ? <ModelPicker providerId={prov.id} value={b.model ?? null} onChange={(m) => set({ model: m })} /> : null}
+          <p class="help">Each bot can use a different AI and model, e.g. a quick Haiku bot for alerts and an Opus bot for research. Turn AIs on in Settings → AI.</p>
         </div>
         <div class="section">
           <h2>What it may do</h2>
