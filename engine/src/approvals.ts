@@ -15,6 +15,8 @@ interface Pending {
   title: string;
   detail: string;
   tool?: string;
+  /** Plain description of the permission type ("changing things in googlecalendar"). */
+  toolLabel?: string;
   options?: string[];
   resolve: (r: { allow: boolean; answer?: string; always?: boolean }) => void;
   createdAt: string;
@@ -25,10 +27,11 @@ export function pendingCards() {
   return [...pending.values()].map(({ resolve, ...rest }) => rest);
 }
 
-export function requestApproval(botId: string, tool: string, title: string, detail: string, signal?: AbortSignal) {
+/** tool = the permission type key; a bot that was told "always allow" for it isn't asked again. */
+export function requestApproval(botId: string, tool: string, title: string, detail: string, signal?: AbortSignal, label?: string) {
   const bot = getBot(botId);
   if (bot?.alwaysAllow.includes(tool)) return Promise.resolve({ allow: true });
-  return open({ kind: "approval", botId, tool, title, detail }, signal);
+  return open({ kind: "approval", botId, tool, toolLabel: label, title, detail }, signal);
 }
 
 export function askQuestion(botId: string, question: string, options: string[] | undefined, signal?: AbortSignal) {

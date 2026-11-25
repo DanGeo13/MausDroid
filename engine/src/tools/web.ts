@@ -4,9 +4,46 @@ import tls from "node:tls";
 import { config } from "../config.ts";
 import { clip, htmlToText } from "../util.ts";
 
-export async function webFetch(url: string): Promise<string> {
+/**
+ * Signs that a page builds its content with JavaScript (so the plain
+ * download is nearly empty): little readable text, a "please enable
+ * JavaScript" message, or an empty app container.
+ */
+export function needsJavaScript(html: string, text: string): boolean {
+  if (/enable javascript|requires javascript|javascript is (disabled|required)|turn on javascript/i.test(text)) return true;
+  const scripts = (html.match(/<script\b/gi) ?? []).length;
+  if (text.replace(/\s+/g, " ").trim().length < 600 && scripts >= 1) return true;
+  if (/<div[^>]+id=["'](root|app|__next|__nuxt|svelte)["'][^>]*>\s*<\/div>/i.test(html) && text.length < 2000) return true;
+  return false;
+}
+
+/** Opens a page in the phone's background browser (runs JavaScript), waits for it to fill in, reads it. */
+async function renderInBrowser(url: string, waitMs: number): Promise<string> {
+  const { bridge } = await import("../bridge.ts");
+  const opened = await bridge("/browser/open", { url }, 90_000);
+  try {
+    // Many pages load their lists a moment after the page itself; give them time, then read again.
+    await new Promise((r) => setTimeout(r, Math.min(15_000, Math.max(0, waitMs))));
+    const read = await bridge("/browser/read", { tab: opened.tab, mode: "text" }, 30_000);
+    const text = String(read.text ?? opened.text ?? "");
+    return clip(`Rendered with JavaScript: ${opened.url}\nTitle: ${opened.title}\n\n${text}`);
+  } finally {
+    await bridge("/browser/close", { tab: opened.tab }).catch(() => {});
+  }
+}
+
+/**
+ * Downloads a page. render: "auto" (default) uses the phone's browser when
+ * the page needs JavaScript; "always" always does; "never" never does.
+ */
+export async function webFetch(url: string, render: "auto" | "always" | "never" = "auto", waitMs = 2500): Promise<string> {
   const u = new URL(url);
   if (!/^https?:$/.test(u.protocol)) throw new Error("Only http and https links can be fetched.");
+  const { bridgeAvailable } = await import("../bridge.ts");
+  if (render === "always") {
+    if (!bridgeAvailable()) throw new Error("Showing JavaScript pages needs the Android app's background browser.");
+    return renderInBrowser(u.toString(), waitMs);
+  }
   const res = await fetch(u, {
     headers: { "user-agent": "Mozilla/5.0 (Linux; Android 15) MausDroid/0.1", accept: "text/html,application/json,text/plain;q=0.9,*/*;q=0.5" },
     redirect: "follow",
@@ -14,7 +51,18 @@ export async function webFetch(url: string): Promise<string> {
   });
   const type = res.headers.get("content-type") ?? "";
   const body = await res.text();
-  const text = type.includes("html") ? htmlToText(body) : body;
+  const isHtml = type.includes("html");
+  const text = isHtml ? htmlToText(body) : body;
+  if (isHtml && render === "auto" && needsJavaScript(body, text)) {
+    if (bridgeAvailable()) {
+      try {
+        return await renderInBrowser(res.url || u.toString(), waitMs);
+      } catch (e) {
+        return clip(`HTTP ${res.status} ${res.url}\n(This page needs JavaScript and the background browser couldn't open it: ${(e as Error).message})\n\n${text}`);
+      }
+    }
+    return clip(`HTTP ${res.status} ${res.url}\n(This page builds its content with JavaScript, so this plain copy may be incomplete. On the phone MausDroid opens such pages in its background browser.)\n\n${text}`);
+  }
   return clip(`HTTP ${res.status} ${res.url}\n\n${text}`);
 }
 

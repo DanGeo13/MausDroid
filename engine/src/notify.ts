@@ -14,7 +14,25 @@ export interface Alert {
   priority: "low" | "normal" | "high";
   at: string;
   read: boolean;
+  /** What kind of alert: "bot-alert", "approval", "routine-result", "app-event", "phone-notification", "external"… */
+  type: string;
+  /** Where it came from (bot name, app, sender). */
+  source?: string;
+  /** The routine whose run raised it (so it can't trigger itself). */
+  routineId?: string;
+  /** The original event's id, for duplicate protection. */
+  eventId?: string;
+  /** Opens this screen when tapped (e.g. "briefing:<id>"). */
+  link?: string;
 }
+
+type AlertListener = (a: Alert) => void;
+const alertListeners = new Set<AlertListener>();
+/** "Upon Alert" routines listen here. */
+export const onAlert = (fn: AlertListener) => {
+  alertListeners.add(fn);
+  return () => alertListeners.delete(fn);
+};
 
 const alerts = collection<Alert[]>("alerts", []);
 
@@ -26,13 +44,51 @@ function inQuietHours(): boolean {
 }
 
 /** Shows an Android notification (and keeps it in the in-app Alerts list). */
-export async function notifyUser(a: { title: string; body: string; botId?: string; cardId?: string; actions?: string[]; priority?: Alert["priority"] }) {
-  const alert: Alert = { id: id("alert"), title: a.title, body: a.body, botId: a.botId, cardId: a.cardId, priority: a.priority ?? "normal", at: now(), read: false };
+export interface AlertInput {
+  title: string;
+  body: string;
+  botId?: string;
+  cardId?: string;
+  actions?: string[];
+  priority?: Alert["priority"];
+  type?: string;
+  source?: string;
+  routineId?: string;
+  eventId?: string;
+  link?: string;
+  /** Record and trigger routines, but don't show a phone notification. */
+  silentRecord?: boolean;
+}
+
+export async function notifyUser(a: AlertInput) {
+  const alert: Alert = {
+    id: id("alert"),
+    title: a.title,
+    body: a.body,
+    botId: a.botId,
+    cardId: a.cardId,
+    priority: a.priority ?? "normal",
+    at: now(),
+    read: false,
+    type: a.type ?? (a.cardId ? "approval" : "bot-alert"),
+    source: a.source,
+    routineId: a.routineId,
+    eventId: a.eventId,
+    link: a.link,
+  };
   alerts.update((l) => {
     l.push(alert);
     if (l.length > 500) l.splice(0, l.length - 500);
   });
   emit("alert", { alert });
+  for (const l of alertListeners) {
+    try {
+      l(alert);
+    } catch {
+      /* a routine problem never blocks an alert */
+    }
+  }
+  if (a.silentRecord) return alert;
   // Quiet hours hold back everything except approvals and high-priority alerts.
   if (inQuietHours() && alert.priority !== "high") return alert;
   if (bridgeAvailable()) {

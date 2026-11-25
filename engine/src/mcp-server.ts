@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { getBot } from "./bots.ts";
 import { getSecret, setSecret } from "./secrets.ts";
-import { toolsFor } from "./tools/index.ts";
+import { gate, toolsFor } from "./tools/index.ts";
 import { requestApproval } from "./approvals.ts";
 import { addMessage } from "./bots.ts";
 import { emit } from "./events.ts";
@@ -71,9 +71,8 @@ export async function handleMcp(botId: string, req: IncomingMessage, res: Server
       }
       const tool = (await toolsFor(bot)).find((t) => t.spec.name === name);
       if (!tool) return fail(`No tool ${name}`);
-      const reason = tool.risk?.(args) ?? null;
-      if (bot.approvalMode === "ask-all" || (bot.approvalMode === "ask-risky" && reason)) {
-        const r = await requestApproval(bot.id, name, reason ?? `Use ${name}`, clip(JSON.stringify(args, null, 1), 1200));
+      {
+        const r = await gate(bot, tool, args ?? {});
         if (!r.allow) return reply({ content: [{ type: "text", text: "The person declined this action." }], isError: true });
       }
       try {

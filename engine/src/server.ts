@@ -7,7 +7,7 @@ import * as bots from "./bots.ts";
 import { busyBots, sendToBot, stopBot } from "./agent.ts";
 import { currentSeq, subscribe, waitForEvents, emit } from "./events.ts";
 import { pendingCards, settle } from "./approvals.ts";
-import { listAlerts, markAlertsRead } from "./notify.ts";
+import { listAlerts, markAlertsRead, notifyUser } from "./notify.ts";
 import { provider, publicSettings, updateSettings, settings } from "./settings.ts";
 import { setSecret } from "./secrets.ts";
 import { anthropicModels } from "./providers/anthropic.ts";
@@ -23,6 +23,7 @@ import { handleMcp } from "./mcp-server.ts";
 import { collection } from "./store.ts";
 import { errorText } from "./util.ts";
 import { runRoutineNow } from "./scheduler.ts";
+import { describeSchedule, nextOccurrence, validateSchedule } from "./schedule.ts";
 import * as subs from "./subscriptions.ts";
 import * as voice from "./voice.ts";
 import * as files from "./files.ts";
@@ -340,11 +341,45 @@ route("GET", "/api/skills/repo", async (req) => {
 route("POST", "/api/skills/install", async (req) => json({ installed: await skills.installFromGitHub(String(req.body?.ref), req.body?.only) }));
 
 // Routines
-route("GET", "/api/routines", (req) => json(routines.listRoutines(req.query.get("bot") ?? undefined)));
-route("POST", "/api/routines", (req) => json(routines.createRoutine(req.body)));
-route("PATCH", "/api/routines/:id", (req, [id]) => (routines.updateRoutine(id, req.body ?? {}), json({ ok: true })));
+// The person manages every routine from the screen (bots only their own, via tools).
+const badRequest = (fn: () => unknown) => {
+  try {
+    return fn();
+  } catch (e) {
+    throw new HttpError(400, errorText(e));
+  }
+};
+route("GET", "/api/routines", (req) => json(routines.listRoutines(req.query.get("bot") ?? undefined).map(routines.routineDetails)));
+route("POST", "/api/routines", (req) => json(routines.routineDetails(badRequest(() => routines.createRoutine(req.body)) as routines.Routine)));
+route("PATCH", "/api/routines/:id", (req, [id]) => json(routines.routineDetails(badRequest(() => routines.updateRoutine(id, req.body ?? {})) as routines.Routine)));
 route("DELETE", "/api/routines/:id", (_r, [id]) => (routines.deleteRoutine(id), json({ ok: true })));
-route("POST", "/api/routines/:id/run", (_r, [id]) => (runRoutineNow(id), json({ ok: true })));
+route("POST", "/api/routines/:id/run", (_r, [id]) => json(runRoutineNow(id)));
+route("POST", "/api/routines/:id/pause", (_r, [id]) => json(routines.routineDetails(routines.pauseRoutine(id))));
+route("POST", "/api/routines/:id/resume", (_r, [id]) => json(routines.routineDetails(routines.resumeRoutine(id))));
+route("GET", "/api/routines/:id/runs", (req, [id]) => json(routines.listRuns(id, Number(req.query.get("limit") ?? 30))));
+// Live preview while editing: readable text, problems, and the next few times.
+route("POST", "/api/routines/preview", (req) => {
+  const sc = req.body?.schedule ?? {};
+  const problems = validateSchedule(sc);
+  const upcoming: string[] = [];
+  if (!problems.length) {
+    let from = new Date();
+    for (let i = 0; i < 3; i++) {
+      const o = nextOccurrence(sc, from);
+      if (!o) break;
+      upcoming.push(o.at.toISOString());
+      from = o.at;
+    }
+  }
+  return json({ text: problems.length ? null : describeSchedule(sc), problems, upcoming });
+});
+// Alerts from outside (other apps, Composio events, automations) can start "Upon Alert" routines.
+route("POST", "/api/alerts/incoming", async (req) => {
+  const b = req.body ?? {};
+  if (!b.title && !b.body) throw new HttpError(400, "Send at least a title or body.");
+  const a = await notifyUser({ title: String(b.title ?? ""), body: String(b.body ?? ""), type: String(b.type ?? "external"), source: b.source ? String(b.source) : undefined, priority: ["low", "normal", "high"].includes(b.priority) ? b.priority : "normal", eventId: b.id ? String(b.id) : undefined, silentRecord: b.notify === false });
+  return json(a);
+});
 
 // Memory
 route("GET", "/api/memory/:scope", (_r, [scope]) => json({ text: readMemory(scope) }));

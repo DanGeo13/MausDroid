@@ -6,8 +6,7 @@ import { anthropicTurn } from "./providers/anthropic.ts";
 import { openaiTurn } from "./providers/openai.ts";
 import { runCli } from "./providers/cli.ts";
 import { isSignedIn } from "./subscriptions.ts";
-import { describeSkills, memoryContext, toolsFor, type Tool } from "./tools/index.ts";
-import { requestApproval } from "./approvals.ts";
+import { describeSkills, gate, memoryContext, toolsFor, type Tool } from "./tools/index.ts";
 import { clip, errorText } from "./util.ts";
 import { config } from "./config.ts";
 import { fmtLong } from "./time.ts";
@@ -18,15 +17,42 @@ import { toBlocks, type Attachment } from "./files.ts";
 
 const MAX_STEPS = 40;
 const running = new Map<string, AbortController>();
-const queues = new Map<string, { text: string; source: string; attachments?: Attachment[] }[]>();
-/** Called with the bot's final reply when a turn ends (voice read-aloud, assistant answers). */
-type TurnEnd = (botId: string, reply: string) => void;
+type Queued = { text: string; source: string; attachments?: Attachment[]; tag?: string };
+const queues = new Map<string, Queued[]>();
+/** How a turn ended: which tagged requests it covered (e.g. routine runs), and whether it failed or was stopped. */
+export interface TurnInfo {
+  tags: string[];
+  failed: boolean;
+  aborted: boolean;
+}
+/** Called with the bot's final reply when a turn ends (voice read-aloud, assistant answers, routine runs). */
+type TurnEnd = (botId: string, reply: string, info: TurnInfo) => void;
 const turnEndListeners = new Set<TurnEnd>();
 export const onTurnEnd = (fn: TurnEnd) => {
   turnEndListeners.add(fn);
   return () => turnEndListeners.delete(fn);
 };
+type TurnStart = (botId: string, tags: string[]) => void;
+const turnStartListeners = new Set<TurnStart>();
+export const onTurnStart = (fn: TurnStart) => {
+  turnStartListeners.add(fn);
+  return () => turnStartListeners.delete(fn);
+};
 const lastReply = new Map<string, string>();
+const lastFailed = new Set<string>();
+/** Tags of the turn a bot is working on now (tools use this to know which routine run they serve). */
+const currentTags = new Map<string, string[]>();
+export const currentRunTags = (botId: string) => currentTags.get(botId) ?? [];
+
+function announceEnd(botId: string, reply: string, info: TurnInfo) {
+  for (const l of turnEndListeners) {
+    try {
+      l(botId, reply, info);
+    } catch {
+      /* listener problems never stop the bot */
+    }
+  }
+}
 
 export const isBusy = (botId: string) => running.has(botId);
 export const busyBots = () => [...running.keys()];
@@ -38,14 +64,17 @@ function tellShellBusy() {
 
 export function stopBot(botId: string) {
   running.get(botId)?.abort();
+  // Requests still waiting are dropped: tell their owners (e.g. routine runs) they were stopped.
+  const waiting = (queues.get(botId) ?? []).map((q) => q.tag).filter((t): t is string => Boolean(t));
   queues.delete(botId);
+  if (waiting.length) announceEnd(botId, "", { tags: waiting, failed: true, aborted: true });
 }
 
 export function resolveProvider(bot: Bot): ProviderConfig {
   const s = settings();
   const id = renamedProvider(bot.providerId) ?? s.defaultProvider ?? s.providers.find((p) => p.enabled)?.id;
   const p = id ? provider(id) : undefined;
-  if (!p || !p.enabled) throw new Error("No AI is set up for this bot yet. Open Settings → AI and sign in to Claude, ChatGPT or Gemini (Gemini is free with a Google account).");
+  if (!p || !p.enabled) throw new Error("No AI is set up for this bot yet. Open Settings → AI and sign in to Claude or ChatGPT.");
   return p;
 }
 
@@ -91,14 +120,14 @@ async function modelTurn(p: ProviderConfig, model: string, system: string, msgs:
 }
 
 /** Sends a message to a bot. Returns at once; progress arrives as events. */
-export function sendToBot(botId: string, text: string, source = "you", attachments?: Attachment[]) {
+export function sendToBot(botId: string, text: string, source = "you", attachments?: Attachment[], tag?: string) {
   const bot = getBot(botId);
   if (!bot) throw new Error("No such bot");
   const msg = addMessage(botId, { role: "user", text, source, status: "done", ...(attachments?.length ? { attachments } : {}) });
   updateBot(botId, { lastMessageAt: msg.at });
   emit("message", { botId, message: msg });
   const q = queues.get(botId) ?? [];
-  q.push({ text: source === "you" ? text : `[${source}] ${text}`, source, attachments });
+  q.push({ text: source === "you" ? text : `[${source}] ${text}`, source, attachments, tag });
   queues.set(botId, q);
   if (!running.has(botId)) void drain(botId);
   return msg;
@@ -109,12 +138,23 @@ async function drain(botId: string) {
   running.set(botId, ctl);
   emit("bot.busy", { botId, busy: true });
   tellShellBusy();
+  let tags: string[] = [];
   try {
     while ((queues.get(botId) ?? []).length && !ctl.signal.aborted) {
       const batch = queues.get(botId)!.splice(0);
       const bot = getBot(botId);
       if (!bot) break;
       lastReply.delete(botId);
+      lastFailed.delete(botId);
+      tags = batch.map((b) => b.tag).filter((t): t is string => Boolean(t));
+      currentTags.set(botId, tags);
+      for (const l of turnStartListeners) {
+        try {
+          l(botId, tags);
+        } catch {
+          /* ignore */
+        }
+      }
       try {
         const p = resolveProvider(bot);
         if (p.kind === "subscription") await runCliTurn(bot, p, batch.map((b) => b.text).join("\n\n"), ctl.signal, batch.flatMap((b) => b.attachments ?? []));
@@ -124,17 +164,15 @@ async function drain(botId: string) {
         const m = addMessage(botId, { role: "assistant", text: `⚠️ ${errorText(e)}`, status: "error" });
         emit("message", { botId, message: m });
         lastReply.set(botId, errorText(e));
+        lastFailed.add(botId);
       }
-      const reply = lastReply.get(botId) ?? "";
-      for (const l of turnEndListeners) {
-        try {
-          l(botId, reply);
-        } catch {
-          /* listener problems never stop the bot */
-        }
-      }
+      if (ctl.signal.aborted) break;
+      announceEnd(botId, lastReply.get(botId) ?? "", { tags, failed: lastFailed.has(botId), aborted: false });
+      tags = [];
     }
   } finally {
+    currentTags.delete(botId);
+    if (ctl.signal.aborted && tags.length) announceEnd(botId, lastReply.get(botId) ?? "", { tags, failed: true, aborted: true });
     running.delete(botId);
     emit("bot.busy", { botId, busy: false });
     tellShellBusy();
@@ -204,10 +242,8 @@ async function runTool(bot: Bot, tools: Tool[], call: Extract<Block, { type: "to
     finish("Unknown tool", true, "done");
     return { type: "tool_result", toolUseId: call.id, content: `There is no tool called ${call.name}.`, isError: true };
   }
-  const reason = tool.risk?.(call.input) ?? null;
-  const mustAsk = bot.approvalMode === "ask-all" ? true : bot.approvalMode === "ask-risky" ? Boolean(reason) : false;
-  if (mustAsk) {
-    const r = await requestApproval(bot.id, call.name, reason ?? `Use ${call.name}`, clip(JSON.stringify(call.input, null, 1), 1200), signal);
+  {
+    const r = await gate(bot, tool, call.input, signal);
     if (!r.allow) {
       finish("You said no.", true, "denied");
       return { type: "tool_result", toolUseId: call.id, content: "The person declined this action. Do not retry it; ask what they would like instead.", isError: true };
