@@ -24,10 +24,10 @@ for a in "$@"; do case "$a" in attachments/*) [ -f "$a" ] && echo '{"type":"item
 echo '{"type":"item.completed","item":{"type":"agent_message","text":"Hello from ChatGPT subscription"}}'
 echo '{"type":"turn.completed"}'
 `, { mode: 0o755 });
-  // Stand-in Claude Code: setup-token shows the Claude page, takes the code, prints a sign-in token.
+  // Stand-in Claude Code: `auth login` shows the Claude page, reads the code, saves the login.
   fs.writeFileSync(path.join(bin, "claude"), `#!/bin/sh
-if [ "$1" = "setup-token" ]; then echo "Browser didn't open? Use the url below to sign in:"; echo "https://claude.ai/oauth/authorize?code=true&client_id=z&response_type=code"; echo "Paste code here if prompted >"; read code; [ "$code" = "CLAUDECODE" ] || exit 4; echo "Your OAuth token (valid for 1 year):"; echo "sk-ant-oat01-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdef"; exit 0; fi
-[ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || { echo '{"type":"result","is_error":true,"result":"not signed in"}'; exit 0; }
+if [ "$1" = "auth" ]; then echo "Opening browser to sign in…"; echo "If the browser didn't open, visit:"; echo "https://claude.ai/oauth/authorize?code=true&client_id=z&response_type=code"; printf "Paste code here if prompted > "; read code; if [ "$code" != "CLAUDECODE" ]; then echo "Couldn't log in: That code wasn't accepted." >&2; exit 1; fi; mkdir -p "$HOME/.claude"; echo '{}' > "$HOME/.claude/.credentials.json"; echo "Login successful."; exit 0; fi
+[ -f "$HOME/.claude/.credentials.json" ] || { echo '{"type":"result","is_error":true,"result":"not signed in"}'; exit 0; }
 echo '{"type":"system","subtype":"init","session_id":"c1"}'
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Hello from Claude subscription"}]}}'
 echo '{"type":"result","is_error":false,"session_id":"c1"}'
@@ -71,13 +71,18 @@ echo '{"type":"result","is_error":false,"session_id":"c1"}'
     assert.equal(st.providers.find((p) => p.id === "chatgpt").enabled, true);
     assert.equal(st.defaultProvider, "chatgpt", "first sign-in becomes the default");
 
-    // Claude: Claude page + pasted code → token kept (never shown in settings).
+    // Claude: a wrong code shows Claude's own reason (never stuck on "checking")…
+    await call("/api/subs/claude/signin", "POST", {});
+    await until(async () => (await call("/api/subs")).find((s) => s.id === "claude" && s.needsCode), "claude asks for code");
+    await call("/api/subs/claude/code", "POST", { code: "WRONG" });
+    const bad = await until(async () => (await call("/api/subs")).find((s) => s.id === "claude" && s.stage === "error"), "claude wrong code error");
+    assert.match(bad.message, /wasn't accepted/);
+    // …and the right code signs in.
     await call("/api/subs/claude/signin", "POST", {});
     const s3 = await until(async () => (await call("/api/subs")).find((s) => s.id === "claude" && s.loginUrl), "claude login url");
     assert.match(s3.loginUrl, /^https:\/\/claude\.ai\/oauth\/authorize/);
     await call("/api/subs/claude/code", "POST", { code: "CLAUDECODE" });
     await until(async () => (await call("/api/subs")).find((s) => s.id === "claude").stage === "signed-in", "claude signed in");
-    assert.ok(!JSON.stringify(await call("/api/settings")).includes("sk-ant-oat01"), "token never sent to the screen");
 
     // Chat with each subscription.
     const bots = (await call("/api/state")).bots;

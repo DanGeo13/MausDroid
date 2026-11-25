@@ -14,7 +14,7 @@ import { errorText } from "./util.ts";
  * Subscription sign-in for Claude and ChatGPT — by login only, never
  * an API key. Each uses the company's own official program, downloaded to
  * the phone, and that program's own sign-in page:
- *   Claude  → Claude Code   (claude setup-token)  · your Claude Pro/Max plan
+ *   Claude  → Claude Code   (claude auth login)    · your Claude Pro/Max plan
  *   ChatGPT → Codex         (codex login)          · your ChatGPT plan
  * If a program can't run on this phone, the bot uses your computer instead
  * (the MausDroid companion), when one is set up.
@@ -70,8 +70,11 @@ const installed = (id: SubId) =>
   id === "chatgpt" ? fs.existsSync(bin("codex")) : fs.existsSync(bin("claude")) && hasMusl();
 const hasMusl = () => fs.existsSync(path.join(lib(), "ld-musl-aarch64.so.1"));
 
+/** Claude Code keeps its sign-in in ~/.claude/.credentials.json; MausDroid also leaves a marker. */
+const claudeCreds = () => [path.join(subHome("claude"), ".claude", ".credentials.json"), path.join(subHome("claude"), ".mausdroid-signed-in")];
+
 export function isSignedIn(id: SubId): boolean {
-  if (id === "claude") return Boolean(getSecret("sub:claude:token"));
+  if (id === "claude") return Boolean(getSecret("sub:claude:token")) || claudeCreds().some((f) => fs.existsSync(f));
   return fs.existsSync(path.join(subHome("chatgpt"), ".codex", "auth.json"));
 }
 
@@ -205,6 +208,8 @@ export function programEnv(id: SubId): NodeJS.ProcessEnv {
     SSL_CERT_FILE: caBundle(),
     LD_LIBRARY_PATH: lib(),
     SHELL: "/system/bin/sh",
+    // No browser for the programs to open: MausDroid opens sign-in pages itself.
+    BROWSER: fs.existsSync("/system/bin/true") ? "/system/bin/true" : "true",
     TERM: "xterm-256color",
     NO_COLOR: "1",
   };
@@ -226,6 +231,7 @@ export function programCommand(id: SubId, args: string[]): [string, string[]] {
 // ---------------- Signing in ----------------
 
 const sessions = new Map<SubId, ChildProcess>();
+const watchdogs = new Map<SubId, NodeJS.Timeout>();
 const viaPty = new Set<SubId>();
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, "").replace(/\r/g, "\n");
 
@@ -238,11 +244,12 @@ export async function signIn(id: SubId, openUrl: (url: string) => Promise<void>)
   }
   sessions.get(id)?.kill();
   workDir();
-  const loginArgs = id === "chatgpt" ? ["login"] : ["setup-token"];
+  // Plain sign-in commands: they print the sign-in link, read the code, save the login, and exit.
+  const loginArgs = id === "chatgpt" ? ["login"] : ["auth", "login", "--claudeai"];
   const [cmd, args] = programCommand(id, loginArgs);
-  // Claude Code's sign-in wants a real terminal: run it through the pty helper.
+  // The terminal helper stays available for programs that need one; these two don't.
   const native = process.env.MAUSDROID_NATIVE_DIR;
-  const usePty = id !== "chatgpt" && native;
+  const usePty = Boolean(process.env.MAUSDROID_LOGIN_PTY) && native;
   const child = usePty ? spawn(path.join(native!, "libtsbridge.so"), ["pty", cmd, ...args], { cwd: workDir(), env: programEnv(id) }) : spawn(cmd, args, { cwd: workDir(), env: programEnv(id) });
   sessions.set(id, child);
   if (usePty) viaPty.add(id);
@@ -251,7 +258,13 @@ export async function signIn(id: SubId, openUrl: (url: string) => Promise<void>)
   let log = "";
   let opened = false;
   const onData = (d: Buffer) => {
-    log = (log + stripAnsi(d.toString("utf8"))).slice(-6000);
+    // Keep readable lines only (drop spinner frames and box drawing).
+    const clean = stripAnsi(d.toString("utf8"))
+      .split("\n")
+      .filter((l) => /[A-Za-z0-9]{2,}/.test(l))
+      .join("\n");
+    if (!clean.trim()) return;
+    log = (log + "\n" + clean).replace(/\n{2,}/g, "\n").slice(-6000);
     const compact = log.replace(/\n(?=\S)/g, (m, off) => (/[A-Za-z0-9%&=._~:/?#-]$/.test(log.slice(0, off)) ? "" : m));
     const url = compact.match(/https:\/\/[^\s"'<>]+(oauth|authorize|auth\.openai\.com)[^\s"'<>]*/)?.[0];
     const needsCode = /paste|authorization code|enter.*code/i.test(log) && id !== "chatgpt";
@@ -270,9 +283,15 @@ export async function signIn(id: SubId, openUrl: (url: string) => Promise<void>)
   child.stderr?.on("data", onData);
   child.on("error", (e) => set(id, { stage: "error", message: `${SUBS[id].program} couldn't start on this phone (${e.message}). Use "My computer" instead.` }));
   child.on("close", (code) => {
-    sessions.delete(id);
+    if (sessions.get(id) === child) sessions.delete(id);
+    clearTimeout(watchdogs.get(id));
+    if (code === 0 && id === "claude" && !isSignedIn(id)) fs.writeFileSync(claudeCreds()[1], new Date().toISOString());
     if (isSignedIn(id)) set(id, { stage: "signed-in", message: `Signed in to ${SUBS[id].label} ✓`, loginUrl: undefined, needsCode: false });
-    else if (status.get(id)?.stage === "signing-in") set(id, { stage: "error", message: `Sign-in didn't finish (exit ${code}). Try again.`, log: log.slice(-1500) });
+    else if (status.get(id)?.stage === "signing-in") {
+      // Show the program's own reason, e.g. "That code wasn't accepted…".
+      const reason = log.split("\n").map((l) => l.trim()).filter(Boolean).reverse().find((l) => /error|couldn't|failed|invalid|expired|denied|not accepted|wasn't/i.test(l));
+      set(id, { stage: "error", message: `${reason ? reason.replace(/^\[err\]/, "") : `Sign-in didn't finish (exit ${code}).`} Tap Sign in to try again.`, log: log.slice(-2500), loginUrl: undefined, needsCode: false });
+    }
   });
 }
 
@@ -282,6 +301,16 @@ export function sendCode(id: SubId, code: string) {
   // A terminal expects Enter as "\r"; a plain pipe expects a newline.
   c.stdin.write(`${code.trim()}${viaPty.has(id) ? "\r" : "\n"}`);
   set(id, { message: "Checking the code…", needsCode: false });
+  // Never wait forever: if the program doesn't answer, say so and show what it printed.
+  clearTimeout(watchdogs.get(id));
+  watchdogs.set(
+    id,
+    setTimeout(() => {
+      if (status.get(id)?.stage !== "signing-in") return;
+      cancelSignIn(id);
+      set(id, { stage: "error", message: `${SUBS[id].program} didn't finish signing in within 90 seconds (it may not be able to reach ${SUBS[id].company} from this phone). Tap Sign in to try again, or use your computer (Options).`, log: status.get(id)?.log });
+    }, 90_000),
+  );
 }
 
 export function cancelSignIn(id: SubId) {
@@ -292,7 +321,10 @@ export function cancelSignIn(id: SubId) {
 
 export async function signOut(id: SubId) {
   cancelSignIn(id);
-  if (id === "claude") await setSecret("sub:claude:token", null);
+  if (id === "claude") {
+    await setSecret("sub:claude:token", null);
+    for (const f of claudeCreds()) fs.rmSync(f, { force: true });
+  }
   if (id === "chatgpt") fs.rmSync(path.join(subHome("chatgpt"), ".codex", "auth.json"), { force: true });
   set(id, { stage: installed(id) ? "installed" : "not-installed", message: "Signed out." });
 }

@@ -199,7 +199,7 @@ function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider
           )}
           {sub.needsCode || sub.id !== "chatgpt" ? (
             <div class="field">
-              <label>After signing in, paste the code {sub.label} shows you</label>
+              <label>After signing in, {sub.label} shows a code: copy it, paste it here, tap Submit</label>
               <div class="inline">
                 <input value={code} onInput={(e) => setCode(val(e))} placeholder="Paste code here" autocomplete="off" />
                 <button class="btn small" disabled={!code.trim()} onClick={run(async () => (await api(`subs/${sub.id}/code`, { body: { code } }), setCode("")))}>
@@ -219,6 +219,17 @@ function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider
             </details>
           ) : null}
         </div>
+      ) : null}
+      {sub.stage === "error" && sub.log ? (
+        <details style={{ marginBottom: ".6rem" }}>
+          <summary class="muted" style={{ fontSize: ".8rem" }}>
+            Details
+          </summary>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: ".72rem", maxHeight: "12rem", overflow: "auto" }}>{sub.log}</pre>
+          <button class="btn secondary small" onClick={run(async () => navigator.clipboard.writeText(`${sub.message}\n\n${sub.log}`), "Copied")}>
+            Copy details
+          </button>
+        </details>
       ) : null}
       <div class="inline">
         {!signedIn && !busy ? (
