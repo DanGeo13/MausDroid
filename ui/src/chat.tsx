@@ -114,9 +114,9 @@ function FileChip({ a }: { a: Attachment }) {
   );
 }
 
-export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voiceOk, remote, initial }: {
+export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voiceOk, remote, initial, openSettings }: {
   bot: Bot; messages: Msg[]; cards: Card[]; busy: boolean; onBack: () => void; onEdit: () => void; refresh: () => void; voiceOk: boolean;
-  remote: boolean; initial?: { text?: string; attachments?: Attachment[] };
+  remote: boolean; initial?: { text?: string; attachments?: Attachment[] }; openSettings?: (tab: string) => void;
 }) {
   const [text, setText] = useState(initial?.text ?? "");
   const [pending, setPending] = useState<Attachment[]>(initial?.attachments ?? []);
@@ -252,6 +252,13 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
                   </div>
                 ) : null}
                 {m.role === "user" ? m.text : <Markdown text={m.text} />}
+                {m.status === "error" && /Settings → AI/.test(m.text) && openSettings ? (
+                  <div style={{ marginTop: ".5rem" }}>
+                    <button class="btn small" onClick={() => openSettings("AI")}>
+                      Open sign-in
+                    </button>
+                  </div>
+                ) : null}
               </div>
               <div class="stamp">{time(m.at)}</div>
             </div>,

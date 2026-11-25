@@ -60,6 +60,12 @@ function Home({ poll }: { poll: boolean }) {
 
   const loadState = async () => {
     const s = await api("state");
+    // The engine updated while this screen was open: load the new screens.
+    const shown = document.querySelector('meta[name="md-version"]')?.getAttribute("content");
+    if (shown && s.version?.engine && decodeURIComponent(shown) !== s.version.engine) {
+      location.reload();
+      return s;
+    }
     setBots(s.bots);
     setCards(s.cards);
     setUnreadAlerts(s.unreadAlerts);
@@ -101,7 +107,12 @@ function Home({ poll }: { poll: boolean }) {
     (window as any).mausdroidShare = (payload: { attachments: Attachment[]; text?: string }) => setShared(payload);
     const hash = new URLSearchParams(location.hash.slice(1));
     if (hash.get("bot")) setView({ kind: "chat", botId: hash.get("bot")! });
-    return () => off();
+    // Check now and then (the engine may have updated itself in the background).
+    const timer = setInterval(() => void loadState().catch(() => {}), 60_000);
+    return () => {
+      off();
+      clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -238,6 +249,7 @@ function Home({ poll }: { poll: boolean }) {
             refresh={() => void loadState()}
             voiceOk={voiceOk}
             remote={poll}
+            openSettings={(tab) => setView({ kind: "settings", tab })}
             initial={initial?.botId === current.id ? initial : undefined}
           />
         ) : view.kind === "edit" ? (

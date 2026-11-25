@@ -53,6 +53,8 @@ class MainActivity : Activity() {
         web.setBackgroundColor(Color.parseColor("#0B0D12"))
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
+        // Always load the current engine's screens, never ones saved from an older version.
+        web.clearCache(true)
         web.webChromeClient = object : WebChromeClient() {
             // The 📎 button: Android's file picker, any type, several at once.
             override fun onShowFileChooser(view: WebView, callback: android.webkit.ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {

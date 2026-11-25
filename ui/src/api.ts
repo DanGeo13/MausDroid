@@ -30,6 +30,12 @@ export function listen(onEvent: (e: EngineEvent) => void, startSeq: number, poll
   if (!poll && typeof EventSource !== "undefined") {
     const es = new EventSource("api/events");
     es.onmessage = (m) => onEvent(JSON.parse(m.data));
+    // After the engine restarts (e.g. an update), re-check the state.
+    let first = true;
+    es.addEventListener("hello", () => {
+      if (!first) onEvent({ seq: 0, type: "settings.changed" });
+      first = false;
+    });
     es.onerror = () => {
       /* EventSource reconnects by itself */
     };

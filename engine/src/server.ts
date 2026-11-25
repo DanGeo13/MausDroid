@@ -88,22 +88,35 @@ function auth(req: Req): "owner" | "paired" | null {
 // ---- Static UI --------------------------------------------------------------
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
 
-function serveStatic(p: string): Res {
+/**
+ * The app's screens. Each engine version's files have their own address
+ * (app.js?v=…) and are re-checked on every load, so after an update the
+ * phone never keeps showing an older version's screens.
+ */
+function serveStatic(p: string, ifNoneMatch?: string): Res {
   const rel = p === "/" ? "index.html" : p.replace(/^\/+/, "");
   const file = path.resolve(config.uiDir, rel);
   if (!file.startsWith(path.resolve(config.uiDir)) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-    return serveStatic("/");
+    return rel === "index.html" ? { status: 404, body: "UI missing" } : serveStatic("/");
   }
-  return {
-    status: 200,
-    headers: {
-      "content-type": TYPES[path.extname(file)] ?? "application/octet-stream",
-      "cache-control": rel === "index.html" ? "no-cache" : "public, max-age=300",
-      "content-security-policy": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
-      "x-content-type-options": "nosniff",
-    },
-    body: fs.readFileSync(file),
+  const st = fs.statSync(file);
+  const etag = `"${config.version}-${st.size}-${Math.floor(st.mtimeMs)}"`;
+  const common = {
+    "content-type": TYPES[path.extname(file)] ?? "application/octet-stream",
+    "content-security-policy": "default-src 'self'; img-src 'self' data: https: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+    "x-content-type-options": "nosniff",
   };
+  if (rel === "index.html") {
+    const v = encodeURIComponent(config.version);
+    const html = fs
+      .readFileSync(file, "utf8")
+      .replace('href="app.css"', `href="app.css?v=${v}"`)
+      .replace('src="app.js"', `src="app.js?v=${v}"`)
+      .replace("<head>", `<head>\n<meta name="md-version" content="${v}" />`);
+    return { status: 200, headers: { ...common, "cache-control": "no-store" }, body: html };
+  }
+  if (ifNoneMatch === etag) return { status: 304, headers: { etag, "cache-control": "no-cache" } };
+  return { status: 200, headers: { ...common, etag, "cache-control": "no-cache" }, body: fs.readFileSync(file) };
 }
 
 // ---- Routing -----------------------------------------------------------------
@@ -376,7 +389,7 @@ route("POST", "/api/browser/login", async (req) => json(await bridge("/login/sho
 
 export async function handle(req: Req): Promise<Res> {
   try {
-    if (!req.path.startsWith("/api/")) return serveStatic(req.path);
+    if (!req.path.startsWith("/api/")) return serveStatic(req.path, req.headers["if-none-match"]);
     for (const r of routes) {
       if (r.method !== req.method) continue;
       const m = req.path.match(r.re);
