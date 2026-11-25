@@ -27,6 +27,7 @@ class BridgeServer(
 
     private val browser: BackgroundBrowser get() = browserProvider()
     private val voice by lazy { Voice(ctx) }
+    private val watch by lazy { VoiceWatch(ctx, voice) }
 
     private fun ok(o: Any = JSONObject().put("ok", true)) = newFixedLengthResponse(Response.Status.OK, "application/json", o.toString())
     private fun err(status: Response.Status, msg: String) = newFixedLengthResponse(status, "application/json", JSONObject().put("error", msg).toString())
@@ -74,17 +75,41 @@ class BridgeServer(
                 "/engine/ready" -> { hooks.engineReady(body.optString("version")); ok() }
                 "/busy" -> { hooks.setBusy(body.optBoolean("busy")); ok() }
                 "/voice/listen" -> {
-                    val (text, error) = voice.listenBlocking()
-                    if (text != null) ok(JSONObject().put("text", text)) else err(Response.Status.BAD_REQUEST, error ?: "No speech")
+                    // The microphone can only be used by one listener: stop the interruption watcher first.
+                    watch.stop()
+                    val (text, error, code) = voice.listenBlocking(body.optLong("timeoutSec", 45), body.optLong("silenceMs", 0))
+                    val missed = code == android.speech.SpeechRecognizer.ERROR_NO_MATCH || code == android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                    when {
+                        text != null -> ok(JSONObject().put("text", text))
+                        missed -> ok(JSONObject().put("text", "").put("missed", true))
+                        body.optBoolean("soft") -> ok(JSONObject().put("text", "").put("error", error ?: "No speech").put("code", code))
+                        else -> err(Response.Status.BAD_REQUEST, error ?: "No speech")
+                    }
                 }
                 "/voice/speak" -> {
+                    configureVoice(body)
                     if (body.optBoolean("wait")) voice.speakBlocking(body.optString("text"), body.optDouble("rate", 1.0).toFloat())
                     else voice.speak(body.optString("text"), body.optDouble("rate", 1.0).toFloat())
                     ok()
                 }
+                "/voice/say" -> {
+                    configureVoice(body)
+                    if (body.optBoolean("flush")) voice.stopSpeaking()
+                    voice.say(body.optString("text"), body.optDouble("rate", 1.0).toFloat())
+                    ok()
+                }
+                "/voice/state" -> ok(JSONObject().put("speaking", voice.isSpeaking()))
+                "/voice/await-speech" -> {
+                    val (heard, speaking, problem) = watch.awaitSpeech(body.optLong("maxMs", 300), body.optBoolean("bargeIn", true))
+                    ok(JSONObject().put("speech", heard).put("speaking", speaking).put("level", watch.level()).apply { if (problem != null) put("error", problem) })
+                }
+                "/voice/watch-stop" -> { watch.stop(); ok() }
+                "/voice/call-mode" -> { voice.setCallMode(body.optBoolean("on")); if (!body.optBoolean("on")) watch.stop(); ok() }
+                "/voice/engines" -> ok(JSONObject().put("engines", voice.engines()))
+                "/voice/voices" -> ok(voice.voices(body.optString("engine").takeIf { it.isNotBlank() }))
                 "/call/ring" -> { CallRinger.ring(ctx, body.getString("callId"), body.optString("name", "Maus"), body.optString("emoji", "🐭"), body.optString("reason")); ok() }
                 "/call/stop-ring" -> { CallRinger.stop(ctx); ok() }
-                "/voice/stop" -> { voice.stopSpeaking(); voice.stopListening(); ok() }
+                "/voice/stop" -> { voice.stopSpeaking(); voice.stopListening(); watch.stop(); ok() }
                 "/location/get" -> ok(DeviceLocation.get(ctx, body.optLong("maxAgeMs", 120_000), body.optLong("timeoutMs", 20_000)))
                 "/location/permission" -> ok(JSONObject().put("permission", DeviceLocation.permissionState(ctx)))
                 "/device/info" -> ok(DeviceSettings.info(ctx))
@@ -94,5 +119,11 @@ class BridgeServer(
         } catch (e: Exception) {
             err(Response.Status.INTERNAL_ERROR, e.message ?: e.toString())
         }
+    }
+
+    /** Voice engine, voice and pitch chosen in Settings (sent with each request). */
+    private fun configureVoice(body: JSONObject) {
+        if (body.has("engine") || body.has("voice") || body.has("pitch"))
+            voice.configure(body.optString("engine"), body.optString("voice").takeIf { it.isNotBlank() }, body.optDouble("pitch", 1.0).toFloat())
     }
 }

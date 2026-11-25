@@ -31,7 +31,7 @@ export interface CliRun {
 }
 
 export interface CliEvent {
-  kind: "text" | "tool" | "tool_result" | "session" | "done" | "error";
+  kind: "text" | "delta" | "tool" | "tool_result" | "session" | "done" | "error";
   text?: string;
   name?: string;
   input?: unknown;
@@ -44,7 +44,7 @@ export function cliArgs(run: CliRun): string[] {
   if (run.engine === "claude") {
     const mcp = JSON.stringify({ mcpServers: { mausdroid: { type: "http", url: run.mcpUrl, headers: { authorization: `Bearer ${run.mcpToken}` } } } });
     const args = ["-p", run.prompt, "--output-format", "stream-json", "--verbose", "--mcp-config", mcp,
-      "--permission-prompt-tool", "mcp__mausdroid__approval_prompt", "--append-system-prompt", run.systemPrompt];
+      "--permission-prompt-tool", "mcp__mausdroid__approval_prompt", "--append-system-prompt", run.systemPrompt, "--include-partial-messages"];
     if (run.model && run.model !== "default") args.push("--model", run.model);
     if (run.resume) args.push("--resume", run.resume);
     return args;
@@ -70,6 +70,8 @@ export function parseCliLine(engine: CliRun["engine"], line: string, acc: { text
   const out: CliEvent[] = [];
   if (engine === "claude") {
     if (ev.type === "system" && ev.session_id) out.push({ kind: "session", sessionId: ev.session_id });
+    // Word-by-word text as Claude writes it (the whole text still follows in an "assistant" event).
+    if (ev.type === "stream_event" && ev.event?.type === "content_block_delta" && ev.event.delta?.type === "text_delta" && ev.event.delta.text) out.push({ kind: "delta", text: ev.event.delta.text });
     if (ev.type === "assistant")
       for (const b of ev.message?.content ?? []) {
         if (b.type === "text") out.push({ kind: "text", text: b.text });

@@ -274,16 +274,44 @@ async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: Abo
     systemPrompt: systemPrompt(bot, "\n\nMausDroid's tools (browser on the phone, connected apps, alerts, memory, routines, skills) are available through the mausdroid MCP server."),
   };
   let current: ReturnType<typeof addMessage> | null = null;
+  let streaming: ReturnType<typeof addMessage> | null = null;
+  let streamed = "";
+  try {
   for await (const ev of runCli(p, run, signal)) {
     if (ev.kind === "session" && ev.sessionId) updateBot(bot.id, { cliSession: ev.sessionId });
-    else if (ev.kind === "text" && ev.text) {
-      current = addMessage(bot.id, { role: "assistant", text: ev.text, status: "done" });
+    else if (ev.kind === "delta" && ev.text) {
+      if (!streaming) {
+        streaming = addMessage(bot.id, { role: "assistant", text: "", status: "streaming" });
+        emit("message", { botId: bot.id, message: streaming });
+      }
+      streamed += ev.text;
+      emit("message.delta", { botId: bot.id, messageId: streaming.id, delta: ev.text });
+    } else if (ev.kind === "text" && ev.text) {
+      if (streaming) {
+        // The finished text replaces what was streamed (same message).
+        patchMessage(bot.id, streaming.id, { text: ev.text, status: "done" });
+        if (ev.text.startsWith(streamed) && ev.text.length > streamed.length) emit("message.delta", { botId: bot.id, messageId: streaming.id, delta: ev.text.slice(streamed.length) });
+        emit("message.updated", { botId: bot.id, messageId: streaming.id, text: ev.text, status: "done" });
+        current = streaming;
+        streaming = null;
+        streamed = "";
+      } else {
+        current = addMessage(bot.id, { role: "assistant", text: ev.text, status: "done" });
+        emit("message", { botId: bot.id, message: current });
+      }
       lastReply.set(bot.id, ev.text);
-      emit("message", { botId: bot.id, message: current });
     } else if (ev.kind === "tool") {
       const m = addMessage(bot.id, { role: "tool", text: "", tool: { name: ev.name ?? "tool", input: ev.input, status: "done" } });
       emit("message", { botId: bot.id, message: m });
     } else if (ev.kind === "error") throw new Error(ev.text);
+  }
+  } finally {
+    // Stopped or failed half-way: keep what was said so far.
+    if (streaming) {
+      patchMessage(bot.id, streaming.id, { text: streamed, status: signal.aborted ? "stopped" : "done" });
+      emit("message.updated", { botId: bot.id, messageId: streaming.id, text: streamed });
+      if (streamed) lastReply.set(bot.id, streamed);
+    }
   }
   const b = getBot(bot.id);
   if (b) updateBot(bot.id, { unread: b.unread + 1, lastMessageAt: new Date().toISOString() });

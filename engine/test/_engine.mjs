@@ -23,7 +23,15 @@ export async function fakeModel(handler) {
       if (out?.delay) await wait(out.delay);
       res.writeHead(200, { "content-type": "text/event-stream" });
       if (out?.tool) res.write(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: `c${seen.length}`, function: { name: out.tool, arguments: JSON.stringify(out.args ?? {}) } }] } }] })}\n\n`);
-      else res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: out?.text ?? "ok" }, finish_reason: "stop" }] })}\n\n`);
+      else if (out?.chunks) {
+        // Streams the reply in pieces, like a real model.
+        for (const [i, c] of out.chunks.entries()) {
+          if (res.destroyed || res.socket?.destroyed) return;
+          res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: c }, ...(i === out.chunks.length - 1 ? { finish_reason: "stop" } : {}) }] })}\n\n`);
+          out.onChunk?.(i);
+          await wait(out.chunkDelay ?? 100);
+        }
+      } else res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: out?.text ?? "ok" }, finish_reason: "stop" }] })}\n\n`);
       res.end("data: [DONE]\n\n");
     });
   });

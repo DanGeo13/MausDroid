@@ -26,10 +26,23 @@ export function speakable(text: string): string {
     .slice(0, 3000);
 }
 
+/** The voice chosen in Settings: speed, engine (e.g. Kokoro), voice and pitch. */
+export function voiceParams() {
+  const v = settings().voice;
+  return { rate: v.rate, engine: v.ttsEngine ?? "", voice: v.voiceName ?? "", pitch: v.pitch ?? 1 };
+}
+
 /** Speaks text; with wait=true returns only when the phone has finished speaking (for calls). */
 export async function speak(text: string, wait = false) {
   if (!bridgeAvailable() || !text.trim()) return;
-  await bridge("/voice/speak", { text: speakable(text), rate: settings().voice.rate, wait }, wait ? 180_000 : 60_000).catch(() => {});
+  await bridge("/voice/speak", { text: speakable(text), ...voiceParams(), wait }, wait ? 180_000 : 60_000).catch(() => {});
+}
+
+/** Adds a piece to what's being said, without waiting (calls speak replies as they arrive). */
+export async function say(text: string, flush = false) {
+  const t = speakable(text);
+  if (!bridgeAvailable() || !t) return;
+  await bridge("/voice/say", { text: t, ...voiceParams(), flush }, 15_000).catch(() => {});
 }
 
 /** Bots that last heard you by voice answer out loud (setting: "voice" / "always" / "never"). */

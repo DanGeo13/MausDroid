@@ -51,7 +51,7 @@ export interface Settings {
   timeZone: string;
   quietHours: { start: string; end: string } | null;
   /** Voice: "phone" = the phone's own speech recognition and voice (API and local voices later). */
-  voice: { engine: "phone"; readReplies: "voice" | "always" | "never"; rate: number };
+  voice: { engine: "phone"; readReplies: "voice" | "always" | "never"; rate: number; ttsEngine?: string; voiceName?: string; pitch?: number };
   /** Digital assistant (long-press home/power): which bot answers. null = the pinned/first bot. */
   assistant: { botId: string | null; speak: boolean };
 }

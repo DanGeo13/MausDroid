@@ -793,6 +793,60 @@ function WebsiteTab() {
 }
 
 // ---------------- Voice & assistant ----------------
+// Kokoro voice names: first letter = accent, second = gender (e.g. "bf_emma" = British female).
+const KOKORO_ACCENT: Record<string, string> = { a: "American", b: "British", e: "Spanish", f: "French", h: "Hindi", i: "Italian", j: "Japanese", p: "Portuguese", z: "Mandarin" };
+export function voiceLabel(v: { name: string; locale?: string; network?: boolean }) {
+  const k = v.name.match(/^([abefhijpz])([fm])_([a-z]+)$/i);
+  if (k) return `${k[3][0].toUpperCase()}${k[3].slice(1)} — ${KOKORO_ACCENT[k[1].toLowerCase()] ?? ""} ${k[2].toLowerCase() === "f" ? "female" : "male"}`;
+  return `${v.name}${v.locale ? ` (${v.locale})` : ""}${v.network ? " · needs internet" : ""}`;
+}
+
+/** Voice engine (Google, Samsung, Kokoro…), voice and pitch. */
+function VoicePicker({ s, save }: { s: any; save: (b: object) => void }) {
+  const [engines, setEngines] = useState<{ name: string; label: string }[] | null>(null);
+  const [voices, setVoices] = useState<any[] | null>(null);
+  const [err, setErr] = useState("");
+  const engine = s.voice?.ttsEngine ?? "";
+  useEffect(() => {
+    api("voice/engines").then((r) => setEngines(r.engines ?? [])).catch((e) => setErr((e as Error).message));
+  }, []);
+  useEffect(() => {
+    setVoices(null);
+    api("voice/voices", { body: { engine } }).then((r) => setVoices(r.voices ?? [])).catch(() => setVoices([]));
+  }, [engine]);
+  if (err) return <p class="help">Voice choices need the Android app.</p>;
+  const usable = (voices ?? []).filter((v) => !v.notInstalled);
+  const lang = (navigator.language || "en").slice(0, 2);
+  const sorted = [...usable].sort((a, b) => Number(!String(a.locale).startsWith(lang)) - Number(!String(b.locale).startsWith(lang)) || voiceLabel(a).localeCompare(voiceLabel(b)));
+  return (
+    <>
+      <div class="field">
+        <label>Voice engine</label>
+        <select value={engine} onChange={(e) => save({ ttsEngine: val(e), voiceName: "" })}>
+          <option value="">Phone default</option>
+          {(engines ?? []).map((x) => (
+            <option value={x.name}>{x.label}</option>
+          ))}
+        </select>
+        <p class="help">Kokoro appears here if its app is installed as a voice engine (Settings → Accessibility → Text-to-speech on the phone).</p>
+      </div>
+      <div class="field">
+        <label>Voice (style, accent, gender)</label>
+        <select value={s.voice?.voiceName ?? ""} onChange={(e) => save({ voiceName: val(e) })} disabled={!voices}>
+          <option value="">{voices ? "Engine default" : "Loading voices…"}</option>
+          {sorted.map((v) => (
+            <option value={v.name}>{voiceLabel(v)}</option>
+          ))}
+        </select>
+      </div>
+      <div class="field">
+        <label>Pitch: {Math.round((s.voice?.pitch ?? 1) * 100)}%</label>
+        <input type="range" min="0.6" max="1.6" step="0.1" value={s.voice?.pitch ?? 1} onChange={(e) => save({ pitch: Number(val(e)) })} />
+      </div>
+    </>
+  );
+}
+
 function VoiceTab({ bots }: { bots: Bot[] }) {
   const [s, reload] = useLoad<any>("settings");
   const [sys, reloadSys] = useLoad<any>("system");
@@ -876,12 +930,10 @@ function VoiceTab({ bots }: { bots: Bot[] }) {
           <label>Speaking speed: {Math.round((s.voice?.rate ?? 1) * 100)}%</label>
           <input type="range" min="0.6" max="1.6" step="0.1" value={s.voice?.rate ?? 1} onChange={(e) => save({ rate: Number(val(e)) })()} />
         </div>
+        <VoicePicker s={s} save={(b) => save(b)()} />
         <button class="btn secondary" onClick={run(async () => api("voice/speak", { body: { text: "Hi! This is how your bots will sound." } }))}>
           Test voice
         </button>
-        <p class="help" style={{ marginTop: ".6rem" }}>
-          To change the voice itself, use your phone's Settings → Accessibility → Text-to-speech.
-        </p>
       </div>
     </>
   );

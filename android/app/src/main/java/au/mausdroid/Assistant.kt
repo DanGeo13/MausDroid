@@ -317,7 +317,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
                 mic.text = "🎤  Talk"
                 ask(text)
             }
-            override fun onError(message: String) {
+            override fun onError(message: String, code: Int) {
                 statusLine.text = message
                 mic.text = "🎤  Talk"
             }

@@ -8,81 +8,52 @@ import { api } from "./api.ts";
  */
 type Phase = "connecting" | "listening" | "thinking" | "speaking" | "ended";
 
+/**
+ * The engine runs the conversation (it keeps going with the screen off);
+ * this screen shows it live. Just start talking to interrupt Maus.
+ */
 export function CallScreen({ callId, onEnd }: { callId?: string; onEnd: () => void }) {
   const [phase, setPhase] = useState<Phase>("connecting");
-  const [lines, setLines] = useState<{ who: "you" | "maus"; text: string }[]>([]);
+  const [lines, setLines] = useState<{ who: "you" | "maus"; text: string; interrupted?: boolean }[]>([]);
   const [bot, setBot] = useState<{ name: string; emoji: string } | null>(null);
   const [note, setNote] = useState("");
-  const active = useRef(true);
   const id = useRef<string | undefined>(callId);
-  const say = async (text: string) => {
-    if (!active.current) return;
-    setPhase("speaking");
-    setLines((l) => [...l, { who: "maus", text }]);
-    await api("voice/speak", { body: { text, wait: true } }).catch(() => {});
-  };
+  const ended = useRef(false);
   useEffect(() => {
+    let timer: any;
     (async () => {
       try {
         const info = await api("calls");
         setBot(info.bot);
-        let opening: string;
-        if (id.current) {
-          const c = await api(`calls/${id.current}`);
-          opening = c.openingLine || `Hi, it's ${info.bot?.name ?? "Maus"}. ${c.reason}`;
-        } else {
-          const c = await api("calls/start", { body: {} });
-          id.current = c.id;
-          opening = `Hi, it's ${info.bot?.name ?? "Maus"}. What can I do for you?`;
-        }
-        await say(opening);
-        let silences = 0;
-        while (active.current) {
-          setPhase("listening");
-          let heard = "";
+        if (!id.current) id.current = (await api("calls/start", { body: {} })).id;
+        await api(`calls/${id.current}/run`, { body: {} });
+        const poll = async () => {
           try {
-            heard = (await api<{ text: string }>("voice/listen", { body: {} })).text ?? "";
+            const l = await api(`calls/${id.current}/live`);
+            setPhase(l.phase);
+            setLines(l.lines);
+            setNote(l.note ?? "");
+            if (l.phase === "ended") return void (ended.current = true);
           } catch {
-            heard = "";
+            /* keep trying */
           }
-          if (!active.current) break;
-          if (!heard.trim()) {
-            silences++;
-            if (silences >= 3) {
-              await say("I'll let you go. Talk soon!");
-              break;
-            }
-            if (silences === 2) await say("Are you still there?");
-            continue;
-          }
-          silences = 0;
-          if (/^(bye|goodbye|hang up|that's all|end call)\b/i.test(heard.trim())) {
-            setLines((l) => [...l, { who: "you", text: heard }]);
-            await say("Bye!");
-            break;
-          }
-          setLines((l) => [...l, { who: "you", text: heard }]);
-          setPhase("thinking");
-          const r = await api<{ reply: string }>(`calls/${id.current}/turn`, { body: { text: heard } });
-          await say(r.reply || "Done.");
-        }
+          timer = setTimeout(poll, 350);
+        };
+        void poll();
       } catch (e) {
         setNote((e as Error).message);
+        setPhase("ended");
       }
-      hangUp();
     })();
-    return () => {
-      active.current = false;
-    };
+    return () => clearTimeout(timer);
   }, []);
   const hangUp = () => {
-    if (phase === "ended" && !active.current) return;
-    active.current = false;
+    if (ended.current) return;
+    ended.current = true;
     setPhase("ended");
-    void api("voice/stop", { body: {} }).catch(() => {});
     if (id.current) void api(`calls/${id.current}/end`, { body: {} }).catch(() => {});
   };
-  const label: Record<Phase, string> = { connecting: "Connecting…", listening: "Listening…", thinking: "Thinking…", speaking: "Speaking…", ended: "Call ended" };
+  const label: Record<Phase, string> = { connecting: "Connecting…", listening: "Listening…", thinking: "Thinking… (talk to interrupt)", speaking: "Speaking… (talk to interrupt)", ended: "Call ended" };
   return (
     <div class="call">
       <div class="call-top">
@@ -90,11 +61,17 @@ export function CallScreen({ callId, onEnd }: { callId?: string; onEnd: () => vo
         <h2>{bot?.name ?? "Maus"}</h2>
         <div class="muted">{label[phase]}</div>
         {note ? <p style={{ color: "var(--danger)" }}>{note}</p> : null}
+        {/microphone/i.test(note) ? (
+          <button class="btn secondary small" onClick={() => void api("system/microphone", { body: {} }).catch(() => {})}>
+            Allow microphone
+          </button>
+        ) : null}
       </div>
       <div class="call-lines">
         {lines.slice(-6).map((l) => (
           <p class={l.who === "you" ? "mine" : ""}>
             <strong>{l.who === "you" ? "You" : bot?.name ?? "Maus"}:</strong> {l.text}
+            {l.interrupted ? <span class="muted"> (interrupted)</span> : null}
           </p>
         ))}
       </div>
@@ -167,6 +144,10 @@ export function CallSettings() {
         + Add lock-out time
       </button>
       <div class="field" style={{ marginTop: ".8rem" }}>
+        <label>Your name (Maus greets you with it: “Morning, Dan!”)</label>
+        <input value={s.userName ?? ""} placeholder={d.knownName || "e.g. Dan"} onChange={(e) => save({ userName: (e.target as HTMLInputElement).value.trim() })} />
+      </div>
+      <div class="field">
         <label>Most calls per hour</label>
         <input type="number" min="1" max="10" value={s.maxPerHour} onChange={(e) => save({ maxPerHour: Number((e.target as HTMLInputElement).value) || 1 })} />
       </div>

@@ -25,6 +25,8 @@ export interface CallSettings {
   maxPerHour: number;
   /** Minutes around "now" that must be free in your calendars. */
   calendarMarginMinutes: number;
+  /** What Maus calls you ("Morning, Dan"). */
+  userName?: string;
 }
 
 export interface CallRecord {

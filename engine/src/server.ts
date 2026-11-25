@@ -17,6 +17,7 @@ import * as composio from "./composio.ts";
 import * as skills from "./skills.ts";
 import * as routines from "./routines.ts";
 import * as improve from "./improve.ts";
+import * as callSession from "./call-session.ts";
 import * as pairing from "./pairing.ts";
 import { readMemory, writeMemory } from "./memory.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
@@ -333,6 +334,9 @@ route("PUT", "/api/settings/voice", (req) => {
   updateSettings((st) => {
     if (b.readReplies) st.voice.readReplies = b.readReplies;
     if (typeof b.rate === "number") st.voice.rate = Math.min(2, Math.max(0.5, b.rate));
+    if (typeof b.pitch === "number") st.voice.pitch = Math.min(2, Math.max(0.5, b.pitch));
+    if (typeof b.ttsEngine === "string") st.voice.ttsEngine = b.ttsEngine;
+    if (typeof b.voiceName === "string") st.voice.voiceName = b.voiceName;
     if ("assistantBotId" in b) st.assistant.botId = b.assistantBotId || null;
     if ("assistantSpeak" in b) st.assistant.speak = Boolean(b.assistantSpeak);
   });
@@ -340,6 +344,8 @@ route("PUT", "/api/settings/voice", (req) => {
   return json(publicSettings());
 });
 route("POST", "/api/voice/listen", async () => json(await bridge("/voice/listen", {}, 60_000)));
+route("GET", "/api/voice/engines", async () => json(await bridge("/voice/engines", {})));
+route("POST", "/api/voice/voices", async (req) => json(await bridge("/voice/voices", { engine: String(req.body?.engine ?? "") }, 20_000)));
 route("POST", "/api/voice/speak", async (req) => (await voice.speak(String(req.body?.text ?? ""), Boolean(req.body?.wait)), json({ ok: true })));
 route("POST", "/api/voice/stop", async () => json(await bridge("/voice/stop", {}).catch(() => ({}))));
 route("POST", "/api/bots/:id/voice", (req, [id]) => json(voice.sendByVoice(id, String(req.body?.text ?? ""))));
@@ -382,7 +388,7 @@ route("GET", "/api/location", async () =>
 // Calls with Maus
 route("GET", "/api/calls", () => {
   const b = calls.callBot();
-  return json({ settings: calls.callSettings(), bot: b ? { id: b.id, name: b.name, emoji: b.emoji } : null, log: calls.callLog() });
+  return json({ settings: calls.callSettings(), knownName: callSession.userName(), bot: b ? { id: b.id, name: b.name, emoji: b.emoji } : null, log: calls.callLog() });
 });
 route("PUT", "/api/calls/settings", (req) => json(calls.saveCallSettings(req.body ?? {})));
 route("GET", "/api/calls/may", async () => json(await calls.mayCall()));
@@ -400,7 +406,9 @@ route("POST", "/api/calls/:id/turn", async (req, [id]) => {
     throw new HttpError(400, errorText(e));
   }
 });
-route("POST", "/api/calls/:id/end", (_r, [id]) => json(calls.endCall(id)));
+route("POST", "/api/calls/:id/end", async (_r, [id]) => (await callSession.hangUp(id), json(calls.getCall(id) ?? {})));
+route("POST", "/api/calls/:id/run", (_r, [id]) => json(badRequest(() => callSession.runCall(id))));
+route("GET", "/api/calls/:id/live", (_r, [id]) => json(callSession.liveCall(id) ?? { callId: id, phase: "ended", lines: [], note: "", active: false }));
 route("POST", "/api/calls/test", async (req) => json(await calls.ringUser(String(req.body?.reason ?? "Test call"), "Hi, this is a test call from MausDroid.")));
 
 // Weekly audit reports and wiki status
