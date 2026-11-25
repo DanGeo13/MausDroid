@@ -11,6 +11,7 @@ import { describeSchedule } from "../schedule.ts";
 import { currentRunTags } from "../agent.ts";
 import { getRun } from "../routines.ts";
 import { requestApproval } from "../approvals.ts";
+import * as calendar from "../calendar.ts";
 import { listSkills, readSkill, readSkillFile } from "../skills.ts";
 import { callComposio, composioTools } from "../composio.ts";
 import fs from "node:fs";
@@ -201,7 +202,7 @@ const builtins: Tool[] = [
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= routineTools())];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
@@ -365,6 +366,54 @@ function routineTools(): Tool[] {
       run: async (c, i) => {
         const u = resumeRoutine(ownRoutine(c.bot, i.id).id);
         return `Resumed "${u.title}". Next run: ${u.nextRunAt ?? "when triggered"}.`;
+      },
+    },
+  ];
+}
+
+// ---------------- Calendar ----------------
+
+function calendarTools(): Tool[] {
+  return [
+    {
+      group: "apps",
+      spec: {
+        name: "calendar_list",
+        description: "List every Google calendar across the person's connected accounts: account alias, calendar name, id, access (owner/writer can add events; reader is read-only), and which one is the chosen destination. Also lists accounts that couldn't be read and why.",
+        inputSchema: obj({}),
+      },
+      run: async () => {
+        const d = await calendar.discoverCalendars();
+        return JSON.stringify({ destination: calendar.getDestination(), calendars: d.calendars, problems: d.problems }, null, 1);
+      },
+    },
+    {
+      group: "apps",
+      spec: {
+        name: "calendar_create_event",
+        description: "Add an event to Google Calendar. Goes to the chosen destination calendar unless you name one (calendar). Checks for an identical event first and confirms the event exists afterwards. The person approves it.",
+        inputSchema: obj(
+          {
+            summary: str("Title"),
+            start: str('Local start "YYYY-MM-DDTHH:MM"'),
+            duration_minutes: { type: "number", description: "Default 60" },
+            calendar: str("Calendar name or id (optional; default = the chosen destination)"),
+            description: str("Notes"),
+            location: str("Place"),
+            time_zone: str("e.g. Australia/Sydney"),
+          },
+          ["summary", "start"],
+        ),
+      },
+      alwaysAsk: true,
+      risk: (i) => `Add "${i.summary}" on ${String(i.start).replace("T", " ")} to ${i.calendar ?? calendar.getDestination()?.name ?? "your calendar"}`,
+      permission: () => ({ key: "calendar:write", label: "adding events to your calendars" }),
+      run: async (_c, i) => {
+        const r = await calendar.createEvent(
+          { summary: i.summary, start: i.start, durationMinutes: i.duration_minutes, description: i.description, location: i.location, timeZone: i.time_zone },
+          i.calendar ? { name: i.calendar } : undefined,
+        );
+        return { text: JSON.stringify(r, null, 1), isError: r.status === "failed" };
       },
     },
   ];

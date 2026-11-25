@@ -27,6 +27,7 @@ import { describeSchedule, nextOccurrence, validateSchedule } from "./schedule.t
 import * as subs from "./subscriptions.ts";
 import * as voice from "./voice.ts";
 import * as files from "./files.ts";
+import * as calendar from "./calendar.ts";
 
 export type Via = "local" | "tailnet" | "relay";
 export interface Req {
@@ -316,6 +317,27 @@ route("GET", "/api/assistant", () => {
   return json({ botId: b?.id ?? null, botName: b?.name ?? null, emoji: b?.emoji ?? null, color: b?.color ?? null, speak: settings().assistant.speak });
 });
 route("POST", "/api/assistant/ask", async (req) => json(await voice.askAssistant(String(req.body?.text ?? ""), attachmentsFrom(req.body?.attachments), req.body?.screen)));
+
+// Calendars (Google Calendar through Composio, all connected accounts)
+route("GET", "/api/calendars", async (req) => json({ destination: calendar.getDestination(), ...(req.query.get("refresh") === "0" && calendar.lastDiscovery() ? calendar.lastDiscovery()! : await calendar.discoverCalendars()) }));
+route("PUT", "/api/calendars/destination", (req) => {
+  const b = req.body ?? {};
+  if (!b.accountId || !b.calendarId) {
+    calendar.setDestination(null);
+    return json({ destination: null });
+  }
+  const c = calendar.lastDiscovery()?.calendars.find((x) => x.accountId === b.accountId && x.calendarId === b.calendarId);
+  if (!c) throw new HttpError(400, "Refresh the calendar list first.");
+  if (!c.writable) throw new HttpError(400, `"${c.name}" is read-only for ${c.accountAlias}.`);
+  calendar.setDestination({ accountId: c.accountId, calendarId: c.calendarId, name: c.name, accountAlias: c.accountAlias });
+  return json({ destination: calendar.getDestination() });
+});
+route("POST", "/api/calendars/test-write", async (req) => json(await calendar.testWrite(req.body?.accountId ? req.body : undefined)));
+// The person approves an event on screen (e.g. a Morning Brief proposal).
+route("POST", "/api/calendars/events", async (req) => {
+  const b = req.body ?? {};
+  return json(await calendar.createEvent({ summary: b.summary, start: b.start, durationMinutes: b.durationMinutes, description: b.description, location: b.location, timeZone: b.timeZone }, b.calendar ? { name: b.calendar } : undefined));
+});
 
 // Connected apps (Composio)
 route("POST", "/api/composio/key", async (req) => (await composio.connectComposio(String(req.body?.key ?? "")), json(publicSettings())));

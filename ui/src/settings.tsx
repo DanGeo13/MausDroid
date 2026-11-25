@@ -4,6 +4,7 @@ import { api } from "./api.ts";
 import type { Bot, Provider } from "./types.ts";
 import { IconBack } from "./icons.tsx";
 import { Routines } from "./routines.tsx";
+import { Calendars } from "./calendars.tsx";
 import { loadAppearance, saveAppearance, TEXT_SIZES, type Appearance } from "./appearance.ts";
 
 export const toast = (msg: string) => {
@@ -394,6 +395,7 @@ function AppsTab() {
           </button>
         </div>
       </div>
+      {(conns ?? []).some((c) => c.toolkit === "googlecalendar") ? <Calendars /> : null}
       <div class="section">
         <h2>Add an app</h2>
         <input value={search} onInput={(e) => setSearch(val(e))} placeholder="Search: gmail, drive, outlook, canva…" />

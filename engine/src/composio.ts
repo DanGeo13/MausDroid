@@ -10,7 +10,7 @@ import type { ToolSpec } from "./types.ts";
  * every bot search/connect/execute tools for every app Composio supports,
  * and lets you connect several accounts per app.
  */
-const API = "https://backend.composio.dev/api/v3";
+const API = process.env.MAUSDROID_COMPOSIO_API ?? "https://backend.composio.dev/api/v3";
 let client: McpClient | null = null;
 let tools: ToolSpec[] | null = null;
 
@@ -43,7 +43,7 @@ async function createSession(key: string, userId: string) {
   if (!res.ok) throw new Error(`Composio refused this key: ${await responseError(res)}`);
   const j = (await res.json()) as { session_id: string; mcp: { url: string } };
   const u = new URL(j.mcp.url);
-  if (u.protocol !== "https:" || !(u.hostname === "composio.dev" || u.hostname.endsWith(".composio.dev")))
+  if (!process.env.MAUSDROID_COMPOSIO_API && (u.protocol !== "https:" || !(u.hostname === "composio.dev" || u.hostname.endsWith(".composio.dev"))))
     throw new Error("Composio returned an untrusted MCP address");
   return j;
 }
@@ -155,4 +155,53 @@ export async function removeConnection(id: string) {
   const res = await fetch(`${API}/connected_accounts/${encodeURIComponent(id)}?revoke_on_delete=true`, { method: "DELETE", headers: headers(key) });
   if (!res.ok) throw new Error(await responseError(res));
   tools = null;
+}
+
+
+// ---------------- Direct tool execution (one chosen account) ----------------
+
+const toolInfo = new Map<string, { version?: string; params: string[] }>();
+
+/** A Composio tool's current version and input names (cached). */
+export async function describeTool(slug: string) {
+  const hit = toolInfo.get(slug);
+  if (hit) return hit;
+  const key = getSecret("composio");
+  if (!key) throw new Error("Composio is not connected.");
+  const res = await fetch(`${API}/tools/${encodeURIComponent(slug)}`, { headers: headers(key) });
+  if (!res.ok) throw new Error(`Composio tool ${slug}: ${await responseError(res)}`);
+  const j = (await res.json()) as any;
+  const info = { version: j.version ?? j.toolkit?.version, params: Object.keys(j.input_parameters?.properties ?? j.inputParameters?.properties ?? {}) };
+  toolInfo.set(slug, info);
+  return info;
+}
+
+/** Picks the input name Composio uses (e.g. calendar_id vs calendarId). */
+export async function argsFor(slug: string, wanted: Record<string, { names: string[]; value: unknown }>) {
+  const { params } = await describeTool(slug);
+  const out: Record<string, unknown> = {};
+  for (const { names, value } of Object.values(wanted)) {
+    if (value === undefined || value === null || value === "") continue;
+    const name = names.find((n) => params.includes(n)) ?? (params.length ? undefined : names[0]);
+    if (name) out[name] = value;
+  }
+  return out;
+}
+
+/** Runs one Composio tool as one specific connected account. Returns its data or throws its error. */
+export async function executeTool(slug: string, args: Record<string, unknown>, connectedAccountId: string): Promise<any> {
+  const key = getSecret("composio");
+  const userId = settings().composio.userId;
+  if (!key || !userId) throw new Error("Composio is not connected.");
+  const info = await describeTool(slug).catch(() => ({ version: undefined }));
+  const res = await fetch(`${API}/tools/execute/${encodeURIComponent(slug)}`, {
+    method: "POST",
+    headers: headers(key, true),
+    body: JSON.stringify({ user_id: userId, connected_account_id: connectedAccountId, arguments: args, ...(info.version ? { version: info.version } : {}) }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw new Error(await responseError(res));
+  const j = (await res.json()) as any;
+  if (j.successful === false || j.error) throw new Error(typeof j.error === "string" ? j.error : JSON.stringify(j.error ?? "Composio reported a failure"));
+  return j.data ?? j;
 }
