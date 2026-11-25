@@ -1,0 +1,97 @@
+# Builds MausDroid and publishes over-the-air updates to the `updates` branch.
+# Engine/UI changes ship as a signed engine bundle (no reinstall).
+# A new APK is built only when version.json's "apk" number changes.
+#
+# Repository secrets needed (Settings → Secrets and variables → Actions):
+#   MAUSDROID_UPDATE_KEY_PEM   contents of update-signing-key.pem
+#   MAUSDROID_KEYSTORE_B64     base64 of mausdroid-release.jks
+#   MAUSDROID_KEYSTORE_PASSWORD
+name: release
+on:
+  push:
+    branches: [main]
+    paths: ["engine/**", "ui/**", "android/**", "tsbridge/**", "version.json", ".github/workflows/release.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.24.6", cache-dependency-path: tsbridge/go.sum }
+
+      - name: Check secrets
+        env:
+          K: ${{ secrets.MAUSDROID_UPDATE_KEY_PEM }}
+        run: |
+          if [ -z "$K" ]; then echo "::error::Add the MAUSDROID_UPDATE_KEY_PEM secret (see docs/RELEASING.md)"; exit 1; fi
+
+      - name: Engine + UI
+        run: ./scripts/package-engine.sh
+
+      - name: Engine tests (Node 18, same as the phone)
+        run: |
+          curl -sSL https://nodejs.org/dist/v18.20.4/node-v18.20.4-linux-x64.tar.xz | tar xJ -C /tmp
+          cd engine && ENGINE_NODE=/tmp/node-v18.20.4-linux-x64/bin/node node --test test/*.test.mjs
+
+      - name: Is a new APK needed?
+        id: apk
+        run: |
+          WANT=$(node -p 'require("./version.json").apk')
+          HAVE=$(curl -sf https://raw.githubusercontent.com/${{ github.repository }}/updates/update.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(JSON.parse(s).payload).apk?.versionName??"")}catch{console.log("")}})' || true)
+          echo "want=$WANT have=$HAVE"
+          if [ "$WANT" != "$HAVE" ]; then echo "build=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Build APK
+        if: steps.apk.outputs.build == 'true'
+        env:
+          KS_B64: ${{ secrets.MAUSDROID_KEYSTORE_B64 }}
+          MAUSDROID_KEYSTORE_PASSWORD: ${{ secrets.MAUSDROID_KEYSTORE_PASSWORD }}
+          MAUSDROID_KEY_PASSWORD: ${{ secrets.MAUSDROID_KEYSTORE_PASSWORD }}
+          MAUSDROID_KEY_ALIAS: mausdroid
+        run: |
+          echo "$KS_B64" | base64 -d > /tmp/release.jks
+          export MAUSDROID_KEYSTORE_FILE=/tmp/release.jks
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          ./scripts/fetch-native.sh
+          cd android && ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk ../dist/MausDroid.apk
+
+      - name: Sign update manifest
+        env:
+          MAUSDROID_UPDATE_KEY_PEM: ${{ secrets.MAUSDROID_UPDATE_KEY_PEM }}
+        run: |
+          if [ -f dist/MausDroid.apk ]; then node scripts/publish-update.mjs dist/MausDroid.apk; else
+            # Keep offering the current APK in the manifest.
+            curl -sf https://raw.githubusercontent.com/${{ github.repository }}/updates/update.json -o /tmp/prev.json || true
+            KEEP_APK_FROM=/tmp/prev.json node scripts/publish-update.mjs
+          fi
+
+      - name: Publish to the updates branch
+        run: |
+          git config user.name "mausdroid-release"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin updates --depth=1 || true
+          mkdir -p /tmp/pub && cd /tmp/pub
+          if git -C "$GITHUB_WORKSPACE" rev-parse --verify origin/updates >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" worktree add /tmp/pub/w origin/updates && cd w && git switch -c updates-tmp
+          else
+            git -C "$GITHUB_WORKSPACE" worktree add --orphan -b updates-tmp /tmp/pub/w && cd w
+          fi
+          cp "$GITHUB_WORKSPACE"/dist/updates/* .
+          # Keep only the newest 3 engine bundles and APKs.
+          ls -t engine-*.zip 2>/dev/null | tail -n +4 | xargs -r git rm -q --ignore-unmatch
+          ls -t MausDroid-*.apk 2>/dev/null | tail -n +4 | xargs -r git rm -q --ignore-unmatch
+          git add -A && git commit -qm "Release $(node -p 'require(process.env.GITHUB_WORKSPACE+"/version.json").engine')" || echo "nothing new"
+          git push origin HEAD:updates

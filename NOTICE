@@ -1,0 +1,14 @@
+MausDroid
+Copyright 2026 the MausDroid authors. Licensed under the Apache License 2.0.
+
+MausDroid is an Android adaptation inspired by and following the design of
+OpenMausBot (https://github.com/milind-soni/OpenMausBot), Copyright Milind
+Soni, Apache License 2.0. The Composio Tool Router Session approach, the
+Claude Code / Codex permission-prompt-over-MCP approach and the SKILL.md
+skills format follow OpenMausBot. OpenMausBot's `enterprise/` folder
+(separately licensed) was not used.
+
+Bundled third-party components:
+- nodejs-mobile 18.20.4 (MIT and Node.js licenses) — JavaScript runtime
+- Tailscale tsnet (BSD-3-Clause) — built-in Tailscale (tsbridge)
+- Preact (MIT), qrcode-generator (MIT), NanoHTTPD (BSD-3-Clause), AndroidX (Apache-2.0)

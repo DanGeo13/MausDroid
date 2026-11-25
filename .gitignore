@@ -1,0 +1,17 @@
+node_modules/
+dist/
+engine/dist/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/keystore.properties
+android/app/src/main/jniLibs/**/*.so
+android/app/src/main/cpp/libnode/
+android/app/src/main/assets/engine.zip
+android/app/src/main/assets/engine-version.txt
+*.jks
+*.pem
+.mausdroid-data/
+relay/.wrangler/
