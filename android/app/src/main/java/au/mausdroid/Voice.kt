@@ -153,14 +153,31 @@ class Voice(private val ctx: Context) {
 
     fun available() = SpeechRecognizer.isRecognitionAvailable(ctx)
 
+    /** Speech services on the phone: the phone's default first, then Google's, then any others. */
+    private fun recognizers(): List<android.content.ComponentName?> {
+        val found = runCatching {
+            ctx.packageManager.queryIntentServices(Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0)
+                .map { android.content.ComponentName(it.serviceInfo.packageName, it.serviceInfo.name) }
+        }.getOrDefault(emptyList())
+        val rank = { c: android.content.ComponentName -> when (c.packageName) { "com.google.android.googlequicksearchbox" -> 0; "com.google.android.tts" -> 1; "com.google.android.as" -> 2; else -> 3 } }
+        return listOf<android.content.ComponentName?>(null) + found.sortedBy(rank)
+    }
+    @Volatile private var preferred: android.content.ComponentName? = null
+    @Volatile private var preferredSet = false
+    @Volatile private var dropLanguage = false
+
     /** Starts listening (must be called on the main thread). */
-    fun listen(l: Listener, silenceMs: Long = 0) {
+    fun listen(l: Listener, silenceMs: Long = 0, service: android.content.ComponentName? = if (preferredSet) preferred else null) {
         recognizer?.destroy()
         recognizer = null
         if (!available()) return l.onError("Speech recognition isn't available on this phone. Install or enable Google's speech services.")
         if (ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             return l.onError("MausDroid needs microphone permission (Settings → Voice & assistant → Microphone).", SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS)
-        val r = SpeechRecognizer.createSpeechRecognizer(ctx)
+        val r = try {
+            if (service != null) SpeechRecognizer.createSpeechRecognizer(ctx, service) else SpeechRecognizer.createSpeechRecognizer(ctx)
+        } catch (e: Exception) {
+            return l.onError("The speech service couldn't start: ${e.message}", SpeechRecognizer.ERROR_CLIENT)
+        }
         recognizer = r
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
@@ -193,8 +210,8 @@ class Voice(private val ctx: Context) {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
             .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, ctx.packageName)
+        if (!dropLanguage) intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
         if (silenceMs > 0) {
             intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs)
             intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs)
@@ -210,8 +227,13 @@ class Voice(private val ctx: Context) {
      * retried once.
      */
     fun listenBlocking(timeoutSec: Long = 45, silenceMs: Long = 0): Triple<String?, String?, Int> {
-        var attempt = 0
-        while (true) {
+        // Problems with the speech service itself (not "didn't catch that") try the next service on the phone.
+        val serviceProblem = setOf(SpeechRecognizer.ERROR_CLIENT, SpeechRecognizer.ERROR_SERVER, SpeechRecognizer.ERROR_RECOGNIZER_BUSY, 10, 11, 12, 13)
+        val candidates = (if (preferredSet) listOf(preferred) else emptyList()) + recognizers()
+        var last: Triple<String?, String?, Int> = Triple(null, "No speech service on this phone.", -1)
+        val tried = mutableSetOf<String>()
+        for (svc in candidates) {
+            if (!tried.add(svc?.flattenToShortString() ?: "default")) continue
             val latch = CountDownLatch(1)
             var text: String? = null
             var err: String? = null
@@ -220,13 +242,21 @@ class Voice(private val ctx: Context) {
                 listen(object : Listener {
                     override fun onFinal(t: String) { text = t; latch.countDown() }
                     override fun onError(message: String, c: Int) { err = message; code = c; latch.countDown() }
-                }, silenceMs)
+                }, silenceMs, svc)
             }
             if (!latch.await(timeoutSec, TimeUnit.SECONDS)) { stopListening(); return Triple(null, "Listening timed out.", -2) }
-            val retry = code == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || code == SpeechRecognizer.ERROR_CLIENT || code == 11 /* server disconnected */
-            if (retry && attempt++ == 0) { Thread.sleep(250); continue }
-            return Triple(text, err, code)
+            if (text != null || code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                preferred = svc
+                preferredSet = true
+                return Triple(text, err, code)
+            }
+            Diag.log(ctx, "speech service ${svc?.flattenToShortString() ?: "default"} failed: code $code $err")
+            last = Triple(null, "$err [${svc?.packageName ?: "default"}]", code)
+            if (code == 12 || code == 13) dropLanguage = true // language not supported: let the service pick
+            if (code !in serviceProblem) return last
+            Thread.sleep(200)
         }
+        return last
     }
 
     /** Speaks text aloud, replacing anything being said; onDone runs when finished. */

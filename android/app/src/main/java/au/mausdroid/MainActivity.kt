@@ -7,6 +7,9 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.provider.MediaStore
+import android.speech.RecognizerIntent
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -32,7 +35,8 @@ import java.net.URL
  */
 class MainActivity : Activity() {
     companion object {
-        private const val PICK_FILES = 41
+        private const val DICTATE = 4712
+        const val PICK_FILES = 41
     }
 
     private lateinit var web: WebView
@@ -56,14 +60,25 @@ class MainActivity : Activity() {
         // Always load the current engine's screens, never ones saved from an older version.
         web.clearCache(true)
         web.webChromeClient = object : WebChromeClient() {
-            // The 📎 button: Android's file picker, any type, several at once.
+            // The 📎 button: Android's file picker (any type, several at once), with the camera offered too.
+            // The 📷 button (capture): straight to the camera.
             override fun onShowFileChooser(view: WebView, callback: android.webkit.ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
                 fileCallback?.onReceiveValue(null)
                 fileCallback = callback
-                val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
-                    .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+                val accept = params.acceptTypes.joinToString(",")
+                val video = accept.contains("video") && !accept.contains("image")
+                val cameraIntent = cameraIntent(video)
                 return try {
-                    startActivityForResult(Intent.createChooser(pick, "Add files"), PICK_FILES)
+                    if (params.isCaptureEnabled && cameraIntent != null) {
+                        startActivityForResult(cameraIntent, PICK_FILES)
+                    } else {
+                        val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+                            .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+                        val chooser = Intent.createChooser(pick, "Add files")
+                        val extras = listOfNotNull(cameraIntent(false), cameraIntent(true))
+                        if (extras.isNotEmpty()) chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, extras.toTypedArray())
+                        startActivityForResult(chooser, PICK_FILES)
+                    }
                     true
                 } catch (e: Exception) {
                     fileCallback = null
@@ -71,6 +86,7 @@ class MainActivity : Activity() {
                 }
             }
         }
+        web.addJavascriptInterface(Shell(), "MausDroidShell")
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url
@@ -284,16 +300,66 @@ class MainActivity : Activity() {
     }
 
     private var fileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
+    private var pendingPhoto: java.io.File? = null
+    private var pendingVideo: java.io.File? = null
+
+    /** The phone's camera app, saving into MausDroid's cache (no camera permission needed). */
+    private fun cameraIntent(video: Boolean): Intent? {
+        val i = Intent(if (video) MediaStore.ACTION_VIDEO_CAPTURE else MediaStore.ACTION_IMAGE_CAPTURE)
+        if (i.resolveActivity(packageManager) == null) return null
+        val dir = java.io.File(cacheDir, "camera").apply { mkdirs() }
+        val f = java.io.File(dir, "${if (video) "video" else "photo"}-${System.currentTimeMillis()}.${if (video) "mp4" else "jpg"}")
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", f)
+        if (video) pendingVideo = f else pendingPhoto = f
+        return i.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            .also { it.clipData = android.content.ClipData.newRawUri("", uri) }
+    }
+
+    /** Things the app's screens can ask the phone for. */
+    inner class Shell {
+        /** Google's speech pop-up; the words come back through window.mausdroidDictation(text, error). */
+        @JavascriptInterface
+        fun dictate(): Boolean {
+            val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to your bot")
+            if (i.resolveActivity(packageManager) == null) return false
+            runOnUiThread {
+                try {
+                    startActivityForResult(i, DICTATE)
+                } catch (e: Exception) {
+                    web.evaluateJavascript("window.mausdroidDictation && window.mausdroidDictation(null, ${org.json.JSONObject.quote("Speech input couldn't start: ${e.message}")})", null)
+                }
+            }
+            return true
+        }
+    }
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == DICTATE) {
+            val text = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            val error = if (resultCode == RESULT_OK || resultCode == RESULT_CANCELED) null else "Speech input failed (code $resultCode)."
+            web.evaluateJavascript("window.mausdroidDictation && window.mausdroidDictation(${if (text == null) "null" else org.json.JSONObject.quote(text)}, ${if (error == null) "null" else org.json.JSONObject.quote(error)})", null)
+            return
+        }
         if (requestCode != PICK_FILES) return
         val uris = mutableListOf<Uri>()
         if (resultCode == RESULT_OK && data != null) {
             data.clipData?.let { cd -> for (i in 0 until cd.itemCount) uris.add(cd.getItemAt(i).uri) }
             if (uris.isEmpty()) data.data?.let { uris.add(it) }
         }
+        // A photo or video from the camera is saved where we asked, not returned in data.
+        if (resultCode == RESULT_OK && uris.isEmpty()) {
+            listOfNotNull(pendingPhoto, pendingVideo).firstOrNull { f -> f.exists() && f.length() > 0 }?.let { f ->
+                uris.add(androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", f))
+            }
+        }
+        listOfNotNull(pendingPhoto, pendingVideo).filter { it.length() == 0L }.forEach { it.delete() }
+        pendingPhoto = null
+        pendingVideo = null
         fileCallback?.onReceiveValue(if (uris.isEmpty()) null else uris.toTypedArray())
         fileCallback = null
     }

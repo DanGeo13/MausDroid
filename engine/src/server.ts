@@ -343,7 +343,7 @@ route("PUT", "/api/settings/voice", (req) => {
   emit("settings.changed");
   return json(publicSettings());
 });
-route("POST", "/api/voice/listen", async () => json(await bridge("/voice/listen", {}, 60_000)));
+route("POST", "/api/voice/listen", async (req) => json(await bridge("/voice/listen", { soft: Boolean(req.body?.soft) }, 60_000)));
 route("GET", "/api/voice/engines", async () => json(await bridge("/voice/engines", {})));
 route("POST", "/api/voice/voices", async (req) => json(await bridge("/voice/voices", { engine: String(req.body?.engine ?? "") }, 20_000)));
 route("POST", "/api/voice/speak", async (req) => (await voice.speak(String(req.body?.text ?? ""), Boolean(req.body?.wait)), json({ ok: true })));

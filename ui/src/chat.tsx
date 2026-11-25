@@ -2,10 +2,35 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
-import { IconBack, IconClip, IconEdit, IconMic, IconSend, IconStop, IconX } from "./icons.tsx";
+import { IconBack, IconCamera, IconClip, IconEdit, IconMic, IconSend, IconStop, IconX } from "./icons.tsx";
 import { fileIcon, fileSize, uploadFile, type Attachment } from "./files.ts";
 
 /** Bot picture: emoji on its colour. `size` in rem so it follows the text-size setting. */
+/**
+ * Speech to text. In the app: Google's speech pop-up on the visible screen
+ * (the most reliable way); otherwise the phone's background listener.
+ */
+function dictate(): Promise<string> {
+  const shell = (window as any).MausDroidShell;
+  if (shell?.dictate) {
+    return new Promise((resolve, reject) => {
+      (window as any).mausdroidDictation = (text: string | null, error: string | null) => {
+        delete (window as any).mausdroidDictation;
+        if (error) reject(new Error(error));
+        else resolve(text ?? "");
+      };
+      if (!shell.dictate()) {
+        delete (window as any).mausdroidDictation;
+        reject(new Error("Speech input isn't available."));
+      }
+    });
+  }
+  return api<{ text: string; error?: string }>("voice/listen", { body: { soft: true } }).then((r) => {
+    if (r.error) throw new Error(r.error);
+    return r.text ?? "";
+  });
+}
+
 export function Avatar({ bot, size = 3, live = false }: { bot: Pick<Bot, "emoji" | "color">; size?: number; live?: boolean }) {
   return (
     <div class="avatar" style={{ background: `linear-gradient(135deg, ${bot.color}, ${bot.color}cc)`, width: `${size}rem`, height: `${size}rem`, fontSize: `${size / 2}rem` }}>
@@ -122,6 +147,7 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
   const [pending, setPending] = useState<Attachment[]>(initial?.attachments ?? []);
   const [uploading, setUploading] = useState(0);
   const picker = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (initial?.attachments?.length) setPending(initial.attachments);
     if (initial?.text) setText(initial.text);
@@ -158,10 +184,10 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
   const talk = async () => {
     setListening(true);
     try {
-      const r = await api<{ text: string }>("voice/listen", { body: {} });
-      if (r.text) await api(`bots/${bot.id}/voice`, { body: { text: r.text } });
+      const said = (await dictate()).trim();
+      if (said) await api(`bots/${bot.id}/voice`, { body: { text: said } });
     } catch (e) {
-      alert((e as Error).message);
+      alert(`🎤 ${(e as Error).message}`);
     } finally {
       setListening(false);
     }
@@ -324,8 +350,12 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
         }}
       >
         <input ref={picker} type="file" multiple hidden onChange={(e) => (void addFiles((e.target as HTMLInputElement).files), ((e.target as HTMLInputElement).value = ""))} />
+        <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => (void addFiles((e.target as HTMLInputElement).files), ((e.target as HTMLInputElement).value = ""))} />
         <button class="send mic" aria-label="Add files" title="Add files (any type)" onClick={() => picker.current?.click()}>
           <IconClip />
+        </button>
+        <button class="send mic" aria-label="Take a photo" title="Take a photo" onClick={() => camera.current?.click()}>
+          <IconCamera />
         </button>
         {voiceOk ? (
           <button class={`send mic ${listening ? "on" : ""}`} aria-label="Talk" title="Talk" onClick={talk} disabled={listening}>
