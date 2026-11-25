@@ -6,6 +6,7 @@ import { IconBack } from "./icons.tsx";
 import { Routines } from "./routines.tsx";
 import { Calendars } from "./calendars.tsx";
 import { AddEndpoint, ModelPicker } from "./models.tsx";
+import { CallSettings } from "./call.tsx";
 import { loadAppearance, saveAppearance, TEXT_SIZES, type Appearance } from "./appearance.ts";
 
 export const toast = (msg: string) => {
@@ -838,8 +839,9 @@ function VoiceTab({ bots }: { bots: Bot[] }) {
           <span>Answer out loud</span>
           <input type="checkbox" checked={s.assistant?.speak ?? true} onChange={() => save({ assistantSpeak: !(s.assistant?.speak ?? true) })()} />
         </label>
-        <p class="help">The assistant bot uses its own AI (e.g. your Claude, ChatGPT or Gemini sign-in), skills and connected apps. Say “use the … skill” to pick a skill.</p>
+        <p class="help">The assistant bot uses its own AI (e.g. your Claude or ChatGPT sign-in), skills and connected apps. Say “use the … skill” to pick a skill.</p>
       </div>
+      <CallSettings />
       <div class="section">
         <h2>Voice</h2>
         <div class="field">

@@ -164,3 +164,14 @@ input[type="range"] { padding: 0; accent-color: var(--accent); background: trans
 .loc-banner { position: fixed; top: calc(var(--safe-top) + .4rem); left: 50%; transform: translateX(-50%); z-index: 60; background: #1d4ed8; color: #fff; padding: .45rem .9rem; border-radius: 999px; font-size: .82rem; box-shadow: 0 6px 18px rgba(0,0,0,.3); max-width: 92%; text-align: center; }
 .loc-banner.active { animation: pulse 1.4s infinite; }
 .loc-banner.done { background: #334155; }
+.call { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: calc(2rem + var(--safe-top)) 1.2rem calc(2rem + var(--safe-bottom)); background: radial-gradient(circle at 50% 25%, rgba(124, 92, 255, .25), transparent 60%), var(--bg); min-height: 100%; }
+.call-top { text-align: center; }
+.call-top h2 { margin: .8rem 0 .2rem; font-size: 1.6rem; }
+.call-avatar { width: 7rem; height: 7rem; border-radius: 50%; display: grid; place-items: center; font-size: 3.5rem; background: linear-gradient(135deg, var(--accent), var(--accent2)); margin: 0 auto; }
+.call-avatar.listening { box-shadow: 0 0 0 .5rem rgba(61, 214, 140, .35); animation: pulse 1.2s infinite; }
+.call-avatar.speaking { box-shadow: 0 0 0 .5rem rgba(124, 92, 255, .45); }
+.call-avatar.thinking { opacity: .7; animation: pulse 1.6s infinite; }
+.call-lines { width: 100%; max-width: 32rem; font-size: .95rem; }
+.call-lines p { background: var(--panel); padding: .5rem .8rem; border-radius: .9rem; margin: .35rem 0; }
+.call-lines p.mine { background: var(--accent-soft); }
+.call-btn { width: 100%; max-width: 20rem; padding: 1rem; font-size: 1.1rem; }

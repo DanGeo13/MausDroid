@@ -24,6 +24,10 @@ class MausApp : Application() {
         nm.createNotificationChannel(NotificationChannel(CH_ALERTS, "Bot alerts", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(NotificationChannel(CH_APPROVALS, "Approvals & questions", NotificationManager.IMPORTANCE_HIGH))
         nm.createNotificationChannel(NotificationChannel(CH_QUIET, "Low-priority updates", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(CH_CALLS, "Calls from Maus", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Maus calling you (never during calendar events or lock-out times)"
+            setSound(null, null) // the call screen plays your ringtone itself
+        })
     }
 
     companion object {
@@ -31,6 +35,7 @@ class MausApp : Application() {
         const val CH_ALERTS = "alerts"
         const val CH_APPROVALS = "approvals"
         const val CH_QUIET = "quiet"
+        const val CH_CALLS = "calls"
         const val ENGINE_PORT = 8737
         const val BRIDGE_PORT = 8738
         const val TAILNET_PROXY_PORT = 8739

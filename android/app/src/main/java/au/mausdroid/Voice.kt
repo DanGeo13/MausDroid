@@ -118,6 +118,13 @@ class Voice(private val ctx: Context) {
         }
     }
 
+    /** Speaks and waits until finished (calls: so listening doesn't hear the bot's own voice). */
+    fun speakBlocking(text: String, rate: Float = 1f, timeoutSec: Long = 170) {
+        val latch = CountDownLatch(1)
+        speak(text, rate) { latch.countDown() }
+        latch.await(timeoutSec, TimeUnit.SECONDS)
+    }
+
     fun stopSpeaking() = main.post { tts?.stop() }
 
     fun shutdown() = main.post {

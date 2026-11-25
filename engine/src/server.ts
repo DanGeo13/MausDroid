@@ -32,6 +32,7 @@ import * as brief from "./brief.ts";
 import * as audit from "./audit.ts";
 import * as location from "./location.ts";
 import * as models from "./models.ts";
+import * as calls from "./calls.ts";
 
 export type Via = "local" | "tailnet" | "relay";
 export interface Req {
@@ -338,7 +339,7 @@ route("PUT", "/api/settings/voice", (req) => {
   return json(publicSettings());
 });
 route("POST", "/api/voice/listen", async () => json(await bridge("/voice/listen", {}, 60_000)));
-route("POST", "/api/voice/speak", async (req) => (await voice.speak(String(req.body?.text ?? "")), json({ ok: true })));
+route("POST", "/api/voice/speak", async (req) => (await voice.speak(String(req.body?.text ?? ""), Boolean(req.body?.wait)), json({ ok: true })));
 route("POST", "/api/voice/stop", async () => json(await bridge("/voice/stop", {}).catch(() => ({}))));
 route("POST", "/api/bots/:id/voice", (req, [id]) => json(voice.sendByVoice(id, String(req.body?.text ?? ""))));
 route("GET", "/api/assistant", () => {
@@ -376,6 +377,30 @@ route("GET", "/api/location", async () =>
     recent: location.recentLocationUses(),
   }),
 );
+
+// Calls with Maus
+route("GET", "/api/calls", () => {
+  const b = calls.callBot();
+  return json({ settings: calls.callSettings(), bot: b ? { id: b.id, name: b.name, emoji: b.emoji } : null, log: calls.callLog() });
+});
+route("PUT", "/api/calls/settings", (req) => json(calls.saveCallSettings(req.body ?? {})));
+route("GET", "/api/calls/may", async () => json(await calls.mayCall()));
+route("POST", "/api/calls/start", () => json(calls.startOutgoing()));
+route("GET", "/api/calls/:id", (_r, [id]) => {
+  const c = calls.getCall(id);
+  if (!c) throw new HttpError(404, "No such call");
+  return json(c);
+});
+route("POST", "/api/calls/:id/answer", (req, [id]) => json(calls.answerCall(id, req.body?.answer !== false)));
+route("POST", "/api/calls/:id/turn", async (req, [id]) => {
+  try {
+    return json(await calls.callTurn(id, String(req.body?.text ?? "")));
+  } catch (e) {
+    throw new HttpError(400, errorText(e));
+  }
+});
+route("POST", "/api/calls/:id/end", (_r, [id]) => json(calls.endCall(id)));
+route("POST", "/api/calls/test", async (req) => json(await calls.ringUser(String(req.body?.reason ?? "Test call"), "Hi, this is a test call from MausDroid.")));
 
 // Weekly audit reports and wiki status
 route("GET", "/api/audits", () => json(audit.listAudits().map(({ scored, ...a }) => ({ ...a, candidates: scored.length }))));

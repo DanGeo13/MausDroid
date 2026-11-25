@@ -16,6 +16,7 @@ import * as brief from "../brief.ts";
 import * as audit from "../audit.ts";
 import { searchMarketplace } from "../skills.ts";
 import { describeLocationError, getLocation } from "../location.ts";
+import * as calls from "../calls.ts";
 import { listSkills, readSkill, readSkillFile } from "../skills.ts";
 import { callComposio, composioTools } from "../composio.ts";
 import fs from "node:fs";
@@ -206,10 +207,14 @@ const builtins: Tool[] = [
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools()])];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
+  // Only the call bot (Maus) can phone the person.
+  const allowed = list.filter((t) => t.spec.name !== "call_user" || calls.isCallBot(bot.id));
+  list.length = 0;
+  list.push(...allowed);
   if (bot.tools.apps) {
     try {
       for (const spec of await composioTools())
@@ -581,6 +586,29 @@ function locationTools(): Tool[] {
         const r = await getLocation(requester, Math.round(Number(i.max_age_minutes ?? 2) * 60_000));
         const err = describeLocationError(r);
         return err ? { text: JSON.stringify({ ...r, message: err }), isError: true } : JSON.stringify(r);
+      },
+    },
+  ];
+}
+
+// ---------------- Calls ----------------
+
+function callTools(): Tool[] {
+  return [
+    {
+      group: "core",
+      spec: {
+        name: "call_user",
+        description:
+          "Phone the person (a ringing call on their phone) when something is worth talking about now. It never rings during their calendar events or lock-out times, and at most a few times an hour — if it can't call, it tells you why and leaves a quiet note. Prefer notify_user for anything that can wait.",
+        inputSchema: obj({ reason: str("Why you're calling (shown on the incoming-call screen)"), opening_line: str("What you'll say first when they answer") }, ["reason"]),
+      },
+      run: async (_c, i) => {
+        const c = await calls.ringUser(String(i.reason), i.opening_line ? String(i.opening_line) : undefined);
+        if (c.state === "blocked") return `Didn't call: ${c.detail} A quiet notification was left instead.`;
+        if (c.state === "declined") return "The person declined the call. Send a message instead if it matters.";
+        if (c.state === "missed") return "No answer. A missed-call notification was left.";
+        return "They answered. The conversation continues by voice; their words will arrive as messages from the call.";
       },
     },
   ];

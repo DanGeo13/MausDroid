@@ -219,3 +219,37 @@ export async function testWrite(target?: { accountId?: string; calendarId?: stri
   });
   return result;
 }
+
+
+/**
+ * Whether any of your calendars has a timed event overlapping [from, to]
+ * (all-day events like holidays don't count). Throws if none can be read.
+ */
+export async function busyBetween(from: Date, to: Date): Promise<{ busy: boolean; event?: string; error?: string }> {
+  const found = lastDiscovery() ?? (await discoverCalendars());
+  if (!found.calendars.length) throw new Error(found.problems[0]?.error ?? "No Google Calendar is connected");
+  let readable = 0;
+  for (const c of found.calendars.filter((x) => x.accessRole !== "freeBusyReader").slice(0, 10)) {
+    try {
+      const args = await argsFor(SLUGS.events, {
+        cal: { names: ["calendarId", "calendar_id"], value: c.calendarId },
+        min: { names: ["timeMin", "time_min"], value: from.toISOString() },
+        max: { names: ["timeMax", "time_max"], value: to.toISOString() },
+        single: { names: ["singleEvents", "single_events"], value: true },
+      });
+      const items = findArray(await executeTool(SLUGS.events, args, c.accountId), ["items", "events"]);
+      readable++;
+      for (const ev of items) {
+        const st = ev.start?.dateTime;
+        const en = ev.end?.dateTime;
+        if (!st) continue; // all-day
+        if (ev.transparency === "transparent" || ev.status === "cancelled") continue;
+        if (new Date(st) < to && (!en || new Date(en) > from)) return { busy: true, event: String(ev.summary ?? "an event") };
+      }
+    } catch {
+      /* one unreadable calendar: keep checking the others */
+    }
+  }
+  if (!readable) throw new Error("none of your calendars could be read");
+  return { busy: false };
+}

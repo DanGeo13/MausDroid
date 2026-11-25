@@ -8,6 +8,7 @@ import { IconBell, IconGear, IconPlus, IconSearch } from "./icons.tsx";
 import { applyAppearance, loadAppearance } from "./appearance.ts";
 import { fileIcon, type Attachment } from "./files.ts";
 import { Briefing } from "./briefing.tsx";
+import { CallScreen } from "./call.tsx";
 
 applyAppearance(loadAppearance());
 
@@ -19,7 +20,7 @@ function when(iso?: string) {
   return d.toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
-type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string };
+type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string } | { kind: "call"; callId?: string; botId?: string };
 
 function Home({ poll }: { poll: boolean }) {
   const [bots, setBots] = useState<Bot[]>([]);
@@ -113,6 +114,7 @@ function Home({ poll }: { poll: boolean }) {
     // Notification links, e.g. "briefing:<id>" opens that Morning Brief.
     (window as any).mausdroidLink = (link: string) => {
       if (link.startsWith("briefing:")) setView({ kind: "briefing", id: link.slice(9) || undefined });
+      if (link.startsWith("call:")) setView({ kind: "call", callId: link.slice(5) });
     };
     // The Android app hands over shared files (already saved) and text.
     (window as any).mausdroidShare = (payload: { attachments: Attachment[]; text?: string }) => setShared(payload);
@@ -272,6 +274,7 @@ function Home({ poll }: { poll: boolean }) {
             voiceOk={voiceOk}
             remote={poll}
             openSettings={(tab) => setView({ kind: "settings", tab })}
+            onCall={() => setView({ kind: "call", botId: current.id })}
             initial={initial?.botId === current.id ? initial : undefined}
           />
         ) : view.kind === "edit" ? (
@@ -283,6 +286,8 @@ function Home({ poll }: { poll: boolean }) {
               else goBack();
             }}
           />
+        ) : view.kind === "call" ? (
+          <CallScreen callId={view.callId} onEnd={() => setView({ kind: "list" })} />
         ) : view.kind === "briefing" ? (
           <Briefing initialId={view.id} onBack={() => setView({ kind: "list" })} />
         ) : view.kind === "settings" ? (

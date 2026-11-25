@@ -114,9 +114,9 @@ function FileChip({ a }: { a: Attachment }) {
   );
 }
 
-export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voiceOk, remote, initial, openSettings }: {
+export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voiceOk, remote, initial, openSettings, onCall }: {
   bot: Bot; messages: Msg[]; cards: Card[]; busy: boolean; onBack: () => void; onEdit: () => void; refresh: () => void; voiceOk: boolean;
-  remote: boolean; initial?: { text?: string; attachments?: Attachment[] }; openSettings?: (tab: string) => void;
+  remote: boolean; initial?: { text?: string; attachments?: Attachment[] }; openSettings?: (tab: string) => void; onCall?: () => void;
 }) {
   const [text, setText] = useState(initial?.text ?? "");
   const [pending, setPending] = useState<Attachment[]>(initial?.attachments ?? []);
@@ -141,6 +141,12 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
     }
   };
   const [listening, setListening] = useState(false);
+  // Only the call bot (Maus) shows the Call button.
+  const [canCall, setCanCall] = useState(false);
+  useEffect(() => {
+    if (!voiceOk) return;
+    void api("calls").then((c) => setCanCall(Boolean(c.settings.enabled && c.bot?.id === bot.id))).catch(() => {});
+  }, [bot.id, voiceOk]);
   const [skills, setSkills] = useState<{ name: string; description: string }[]>([]);
   useEffect(() => {
     void api("skills").then(setSkills).catch(() => {});
@@ -203,6 +209,11 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
         {busy ? (
           <button class="icon-btn" aria-label="Stop" title="Stop" onClick={() => api(`bots/${bot.id}/stop`, { body: {} })}>
             <IconStop />
+          </button>
+        ) : null}
+        {canCall && onCall ? (
+          <button class="icon-btn" onClick={onCall} aria-label={`Call ${bot.name}`} title={`Call ${bot.name}`}>
+            📞
           </button>
         ) : null}
         <button class="icon-btn" onClick={onEdit} aria-label="Bot settings" title="Edit bot">

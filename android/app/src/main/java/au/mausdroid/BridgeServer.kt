@@ -77,7 +77,13 @@ class BridgeServer(
                     val (text, error) = voice.listenBlocking()
                     if (text != null) ok(JSONObject().put("text", text)) else err(Response.Status.BAD_REQUEST, error ?: "No speech")
                 }
-                "/voice/speak" -> { voice.speak(body.optString("text"), body.optDouble("rate", 1.0).toFloat()); ok() }
+                "/voice/speak" -> {
+                    if (body.optBoolean("wait")) voice.speakBlocking(body.optString("text"), body.optDouble("rate", 1.0).toFloat())
+                    else voice.speak(body.optString("text"), body.optDouble("rate", 1.0).toFloat())
+                    ok()
+                }
+                "/call/ring" -> { CallRinger.ring(ctx, body.getString("callId"), body.optString("name", "Maus"), body.optString("emoji", "🐭"), body.optString("reason")); ok() }
+                "/call/stop-ring" -> { CallRinger.stop(ctx); ok() }
                 "/voice/stop" -> { voice.stopSpeaking(); voice.stopListening(); ok() }
                 "/location/get" -> ok(DeviceLocation.get(ctx, body.optLong("maxAgeMs", 120_000), body.optLong("timeoutMs", 20_000)))
                 "/location/permission" -> ok(JSONObject().put("permission", DeviceLocation.permissionState(ctx)))

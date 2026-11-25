@@ -26,9 +26,10 @@ export function speakable(text: string): string {
     .slice(0, 3000);
 }
 
-export async function speak(text: string) {
+/** Speaks text; with wait=true returns only when the phone has finished speaking (for calls). */
+export async function speak(text: string, wait = false) {
   if (!bridgeAvailable() || !text.trim()) return;
-  await bridge("/voice/speak", { text: speakable(text), rate: settings().voice.rate }).catch(() => {});
+  await bridge("/voice/speak", { text: speakable(text), rate: settings().voice.rate, wait }, wait ? 180_000 : 60_000).catch(() => {});
 }
 
 /** Bots that last heard you by voice answer out loud (setting: "voice" / "always" / "never"). */
