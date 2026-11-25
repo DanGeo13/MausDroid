@@ -25,6 +25,7 @@ import { errorText } from "./util.ts";
 import { runRoutineNow } from "./scheduler.ts";
 import * as subs from "./subscriptions.ts";
 import * as voice from "./voice.ts";
+import * as files from "./files.ts";
 
 export type Via = "local" | "tailnet" | "relay";
 export interface Req {
@@ -168,7 +169,29 @@ route("DELETE", "/api/bots/:id", (_r, [id]) => {
   return json({ ok: true });
 });
 route("GET", "/api/bots/:id/messages", (req, [id]) => json(bots.messages(id, req.query.get("before") ?? undefined)));
-route("POST", "/api/bots/:id/messages", (req, [id]) => json(sendToBot(id, String(req.body?.text ?? ""), "you", req.body?.images)));
+const attachmentsFrom = (ids: unknown): files.Attachment[] => (Array.isArray(ids) ? ids.map((x) => files.getFile(String(x))).filter((x): x is files.Attachment => Boolean(x)) : []);
+route("POST", "/api/bots/:id/messages", (req, [id]) => json(sendToBot(id, String(req.body?.text ?? ""), "you", attachmentsFrom(req.body?.attachments))));
+// Small files as JSON (the website and the assistant use this): { name, mime, b64 }.
+route("POST", "/api/files/json", (req) => {
+  const b = req.body ?? {};
+  const data = Buffer.from(String(b.b64 ?? ""), "base64");
+  if (!data.length) throw new HttpError(400, "Empty file");
+  return json(files.saveFile(String(b.name ?? "file"), b.mime, data, b.note));
+});
+route("GET", "/api/files/:id/info", (_r, [id]) => {
+  const a = files.getFile(id);
+  if (!a) throw new HttpError(404, "No such file");
+  return json(a);
+});
+route("GET", "/api/files/:id", (_r, [id]) => {
+  const a = files.getFile(id);
+  if (!a) throw new HttpError(404, "No such file");
+  return {
+    status: 200,
+    headers: { "content-type": a.mime, "content-disposition": `inline; filename="${a.name.replace(/"/g, "")}"`, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff", "content-security-policy": "sandbox" },
+    body: fs.readFileSync(files.filePath(a)),
+  };
+});
 route("POST", "/api/bots/:id/stop", (_r, [id]) => (stopBot(id), json({ ok: true })));
 route("POST", "/api/bots/:id/clear", (_r, [id]) => (bots.clearChat(id), json({ ok: true })));
 route("POST", "/api/bots/:id/read", (_r, [id]) => json(bots.updateBot(id, { unread: 0 })));
@@ -278,7 +301,7 @@ route("GET", "/api/assistant", () => {
   const b = voice.assistantBot();
   return json({ botId: b?.id ?? null, botName: b?.name ?? null, emoji: b?.emoji ?? null, color: b?.color ?? null, speak: settings().assistant.speak });
 });
-route("POST", "/api/assistant/ask", async (req) => json(await voice.askAssistant(String(req.body?.text ?? ""))));
+route("POST", "/api/assistant/ask", async (req) => json(await voice.askAssistant(String(req.body?.text ?? ""), attachmentsFrom(req.body?.attachments), req.body?.screen)));
 
 // Connected apps (Composio)
 route("POST", "/api/composio/key", async (req) => (await composio.connectComposio(String(req.body?.key ?? "")), json(publicSettings())));
@@ -380,6 +403,26 @@ export function startServer() {
     if (via === "local" && url.searchParams.get("t") === config.localToken) {
       out.writeHead(302, { location: "/", "set-cookie": `md_t=${config.localToken}; Path=/; HttpOnly; SameSite=Strict` });
       return out.end();
+    }
+    // Large files (videos, documents) stream straight to disk: POST /api/files with the raw bytes.
+    if (url.pathname === "/api/files" && inc.method === "POST") {
+      const headers0 = Object.fromEntries(Object.entries(inc.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : v]));
+      if (auth({ method: "POST", path: url.pathname, query: url.searchParams, headers: headers0, body: undefined, via, prefix: "/" }) !== "owner") return out.writeHead(401).end();
+      const name = decodeURIComponent(String(inc.headers["x-file-name"] ?? "file"));
+      const up = files.startUpload(name, String(inc.headers["content-type"] ?? ""));
+      let size = 0;
+      inc.on("data", (c: Buffer) => {
+        size += c.length;
+        if (size > 500 * 1024 * 1024) inc.destroy();
+      });
+      inc.pipe(up.stream);
+      up.stream.on("finish", () => {
+        up.finish(size);
+        out.writeHead(200, { "content-type": "application/json" });
+        out.end(JSON.stringify({ ...up.attachment, size }));
+      });
+      up.stream.on("error", () => out.writeHead(500).end());
+      return;
     }
     const chunks: Buffer[] = [];
     let size = 0;

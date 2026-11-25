@@ -3,6 +3,7 @@ import { onTurnEnd, sendToBot } from "./agent.ts";
 import { getBot, listBots } from "./bots.ts";
 import { settings } from "./settings.ts";
 import { notifyUser } from "./notify.ts";
+import type { Attachment } from "./files.ts";
 
 /**
  * Voice and the digital assistant. Speech in and out use the phone's own
@@ -53,7 +54,13 @@ export function assistantBot() {
  * The assistant asks a bot and waits for the answer (up to `waitMs`). Long
  * jobs keep running; the person gets a notification when they finish.
  */
-export function askAssistant(text: string, waitMs = 75_000): Promise<{ botId: string; botName: string; reply: string | null }> {
+export interface ScreenContext {
+  app?: string;
+  url?: string;
+  text?: string;
+}
+
+export function askAssistant(text: string, attachments: Attachment[] = [], screen?: ScreenContext, waitMs = 75_000): Promise<{ botId: string; botName: string; reply: string | null }> {
   const bot = assistantBot();
   if (!bot) throw new Error("Create a bot first.");
   return new Promise((resolve) => {
@@ -77,6 +84,13 @@ export function askAssistant(text: string, waitMs = 75_000): Promise<{ botId: st
         void notifyUser({ title: `${bot.emoji} ${bot.name}`, body: reply.slice(0, 400) || "Finished.", botId: bot.id, priority: "high" });
       });
     }, waitMs);
-    sendToBot(bot.id, text, "assistant");
+    // What was on screen when the assistant was opened (only when the person allows it).
+    const parts = [text];
+    if (screen && (screen.text || screen.url || screen.app)) {
+      parts.push(
+        `\n[Screen context — what the person was looking at when they asked${screen.app ? `, in ${screen.app}` : ""}${screen.url ? `, page ${screen.url}` : ""}. Use it only if relevant; it may include private info.]${screen.text ? `\n${screen.text.slice(0, 6000)}` : ""}`,
+      );
+    }
+    sendToBot(bot.id, parts.join("\n"), "assistant", attachments);
   });
 }

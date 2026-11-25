@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { collection, dataPath } from "./store.ts";
 import { id, now } from "./util.ts";
 import type { Msg } from "./types.ts";
+import type { Attachment } from "./files.ts";
 
 export type ApprovalMode = "ask-risky" | "ask-all" | "auto";
 
@@ -34,6 +35,7 @@ export interface ChatMessage {
   tool?: { name: string; input?: unknown; result?: string; isError?: boolean; status: "running" | "done" | "denied" };
   status?: "streaming" | "done" | "error" | "stopped";
   source?: string;
+  attachments?: Attachment[];
 }
 
 const botsFile = collection<Bot[]>("bots", []);

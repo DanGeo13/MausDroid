@@ -39,13 +39,14 @@ function args(run) {
   }
   const base = ["exec", "--json", "--skip-git-repo-check", "-c", `mcp_servers.mausdroid.url="${run.mcpUrl}"`, "-c", `mcp_servers.mausdroid.bearer_token="${run.mcpToken}"`];
   if (run.model && run.model !== "default") base.push("-m", run.model);
+  for (const img of run.images ?? []) base.push("-i", img);
   return ["codex", run.resume ? ["exec", "resume", run.resume, ...base.slice(1), run.prompt] : [...base, `${run.systemPrompt}\n\n${run.prompt}`]];
 }
 
 const ok = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 http
-  .createServer((req, res) => {
+  .createServer({ maxHeaderSize: 65536 }, (req, res) => {
     const auth = (req.headers.authorization ?? "").replace(/^Bearer /, "");
     if (!ok(auth, TOKEN)) return res.writeHead(401).end("bad token");
     if (req.method === "GET" && req.url === "/health") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, host: os.hostname() }));
@@ -60,6 +61,14 @@ http
         return res.writeHead(400).end("bad json");
       }
       if (!["claude", "codex", "gemini"].includes(run.engine)) return res.writeHead(400).end("unknown engine");
+      // Files attached on the phone arrive with the request; save them in the work folder.
+      for (const f of run.files ?? []) {
+        const dest = path.resolve(WORK, f.path);
+        if (!dest.startsWith(path.resolve(WORK) + path.sep)) continue;
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, Buffer.from(f.b64, "base64"));
+      }
+      for (const img of run.images ?? []) if (!path.resolve(WORK, img).startsWith(path.resolve(WORK) + path.sep)) return res.writeHead(400).end("bad image path");
       const [cmd, a] = args(run);
       const child = spawn(cmd, a, { cwd: WORK, shell: process.platform === "win32", stdio: ["ignore", "pipe", "pipe"] });
       res.writeHead(200, { "content-type": "application/x-ndjson" });

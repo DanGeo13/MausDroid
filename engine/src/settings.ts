@@ -8,12 +8,12 @@ export interface ProviderConfig {
   id: string;
   label: string;
   kind: ProviderKind;
-  /** OpenAI-compatible base URL (OpenAI, Gemini, OpenRouter, Groq, Ollama, LM Studio, your PC…). */
+  /** OpenAI-compatible base URL (OpenRouter, Groq, Ollama, LM Studio, your PC…). */
   baseUrl?: string;
   defaultModel: string;
   models: string[];
-  /** Subscription providers: which sign-in (Claude, ChatGPT or Gemini). */
-  subId?: "claude" | "chatgpt" | "gemini";
+  /** Subscription providers: which sign-in (Claude or ChatGPT). */
+  subId?: "claude" | "chatgpt";
   /** Where the official program runs: this phone (computer as backup), or always the computer. */
   runOn?: "phone" | "computer";
   computerUrl?: string;
@@ -28,7 +28,6 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
   // Your subscriptions: sign in with your account (no API keys). Each runs the company's official program.
   { id: "claude", label: "Claude", kind: "subscription", subId: "claude", defaultModel: "default", models: ["default", "opus", "sonnet", "haiku"], runOn: "phone", enabled: false, needsKey: false, note: "Sign in with your Claude account (Pro or Max). Uses Anthropic's official Claude Code." },
   { id: "chatgpt", label: "ChatGPT", kind: "subscription", subId: "chatgpt", defaultModel: "default", models: ["default"], runOn: "phone", enabled: false, needsKey: false, note: "Sign in with your ChatGPT account (Plus, Pro, Business or Edu). Uses OpenAI's official Codex." },
-  { id: "gemini", label: "Gemini", kind: "subscription", subId: "gemini", defaultModel: "default", models: ["default", "gemini-2.5-pro", "gemini-2.5-flash"], runOn: "phone", enabled: false, needsKey: false, free: true, note: "Sign in with your Google account (free, or your Google AI plan). Uses Google's official Gemini CLI." },
   // Other models: API keys, free services, and local models.
   { id: "openrouter", label: "OpenRouter (many models, some free)", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openrouter/auto", models: ["openrouter/auto"], enabled: false, needsKey: true, free: true, note: "Models ending in :free cost nothing." },
   { id: "groq", label: "Groq (free tier)", kind: "openai", baseUrl: "https://api.groq.com/openai/v1", defaultModel: "llama-3.3-70b-versatile", models: ["llama-3.3-70b-versatile"], enabled: false, needsKey: true, free: true },
@@ -72,9 +71,10 @@ settingsFile.update((s) => {
 });
 
 // Keep providers in step with this version: subscriptions are sign-in only,
-// old API-key entries for Claude/ChatGPT/Gemini are removed, new presets appear.
+// old API-key entries for Claude/ChatGPT and Gemini are removed, new presets appear.
 settingsFile.update((s) => {
-  s.providers = s.providers.filter((p) => !RENAMED[p.id] && !(p.id === "gemini" && p.kind !== "subscription"));
+  // Gemini (API key or sign-in) was removed: Claude and ChatGPT are the subscriptions.
+  s.providers = s.providers.filter((p) => !RENAMED[p.id] && p.id !== "gemini");
   for (const p of PROVIDER_PRESETS) {
     const have = s.providers.find((x) => x.id === p.id);
     if (!have) s.providers.push(p);
@@ -82,6 +82,7 @@ settingsFile.update((s) => {
   }
   s.providers.sort((a, b) => PROVIDER_PRESETS.findIndex((p) => p.id === a.id) - PROVIDER_PRESETS.findIndex((p) => p.id === b.id));
   if (s.defaultProvider && RENAMED[s.defaultProvider]) s.defaultProvider = RENAMED[s.defaultProvider];
+  if (s.defaultProvider === "gemini") s.defaultProvider = null;
   if (s.defaultProvider && !s.providers.find((p) => p.id === s.defaultProvider)) s.defaultProvider = null;
 });
 

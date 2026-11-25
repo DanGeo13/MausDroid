@@ -3,11 +3,13 @@ import readline from "node:readline";
 import { StringDecoder } from "node:string_decoder";
 import { getSecret } from "../secrets.ts";
 import type { ProviderConfig } from "../settings.ts";
-import { isSignedIn, programCommand, programEnv, workDir, writeGeminiSettings, SUBS, type SubId } from "../subscriptions.ts";
+import fs from "node:fs";
+import path from "node:path";
+import { describe, exportTo, filePath, type Attachment } from "../files.ts";
+import { isSignedIn, programCommand, programEnv, workDir, SUBS, type SubId } from "../subscriptions.ts";
 
 /**
- * Subscription engines: the official Claude Code, Codex and Gemini CLI
- * programs, signed in with your own account. They run their own agent loop;
+ * Subscription engines: the official Claude Code and Codex programs, signed in with your own account. They run their own agent loop;
  * MausDroid gives them its tools (browser, connected apps, alerts…) over MCP
  * and turns their permission prompts into approval cards.
  *
@@ -15,13 +17,17 @@ import { isSignedIn, programCommand, programEnv, workDir, writeGeminiSettings, S
  * through the MausDroid companion (when one is set up).
  */
 export interface CliRun {
-  engine: "claude" | "codex" | "gemini";
+  engine: "claude" | "codex";
   prompt: string;
   model?: string;
   resume?: string;
   mcpUrl: string;
   mcpToken: string;
   systemPrompt: string;
+  /** Relative paths (in the work folder) of pictures, given to Codex as images. */
+  images?: string[];
+  /** For a computer: the attached files themselves (the companion saves them). */
+  files?: { path: string; b64: string }[];
 }
 
 export interface CliEvent {
@@ -32,7 +38,7 @@ export interface CliEvent {
   sessionId?: string;
 }
 
-const engineFor = (sub: SubId): CliRun["engine"] => (sub === "chatgpt" ? "codex" : sub);
+const engineFor = (sub: SubId): CliRun["engine"] => (sub === "chatgpt" ? "codex" : "claude");
 
 export function cliArgs(run: CliRun): string[] {
   if (run.engine === "claude") {
@@ -43,16 +49,14 @@ export function cliArgs(run: CliRun): string[] {
     if (run.resume) args.push("--resume", run.resume);
     return args;
   }
-  if (run.engine === "codex") {
+  {
     const base = ["exec", "--json", "--skip-git-repo-check", "-c", `mcp_servers.mausdroid.url="${run.mcpUrl}"`,
       "-c", `mcp_servers.mausdroid.bearer_token="${run.mcpToken}"`];
     if (run.model && run.model !== "default") base.push("-m", run.model);
+    for (const img of run.images ?? []) base.push("-i", img);
     return run.resume ? ["exec", "resume", run.resume, ...base.slice(1), run.prompt] : [...base, `${run.systemPrompt}\n\n${run.prompt}`];
   }
-  // Gemini CLI: MCP server comes from its settings file; context is included in the prompt.
-  const args = ["-p", `${run.systemPrompt}\n\n${run.prompt}`, "--output-format", "stream-json", "--yolo"];
-  if (run.model && run.model !== "default") args.push("-m", run.model);
-  return args;
+  return [];
 }
 
 /** Turns one line of the program's JSON output into MausDroid events. */
@@ -88,23 +92,6 @@ export function parseCliLine(engine: CliRun["engine"], line: string, acc: { text
     }
     if (ev.type === "turn.completed") out.push({ kind: "done" });
     if (ev.type === "turn.failed" || ev.type === "error") out.push({ kind: "error", text: ev.error?.message ?? ev.message ?? "ChatGPT (Codex) error" });
-  } else {
-    const flush = () => {
-      if (acc.text.trim()) out.push({ kind: "text", text: acc.text.trim() });
-      acc.text = "";
-    };
-    if (ev.type === "init" && ev.session_id) out.push({ kind: "session", sessionId: ev.session_id });
-    if (ev.type === "message" && ev.role === "assistant") acc.text += ev.content ?? "";
-    if (ev.type === "tool_use") {
-      flush();
-      out.push({ kind: "tool", name: String(ev.tool_name ?? ev.name ?? "tool").replace(/^mcp_mausdroid_/, ""), input: ev.parameters ?? ev.args });
-    }
-    if (ev.type === "tool_result") out.push({ kind: "tool_result", text: String(ev.output ?? ev.result ?? "").slice(0, 2000) });
-    if (ev.type === "error") out.push({ kind: "error", text: ev.message ?? "Gemini error" });
-    if (ev.type === "result") {
-      flush();
-      out.push(ev.status === "error" ? { kind: "error", text: ev.error?.message ?? "Gemini reported an error" } : { kind: "done" });
-    }
   }
   return out;
 }
@@ -139,7 +126,6 @@ async function* runOnComputer(p: ProviderConfig, run: CliRun, signal: AbortSigna
 }
 
 async function* runOnPhone(sub: SubId, run: CliRun, signal: AbortSignal): AsyncGenerator<string> {
-  if (sub === "gemini") writeGeminiSettings({ url: run.mcpUrl, token: run.mcpToken });
   const [cmd, args] = programCommand(sub, cliArgs(run));
   const child = spawn(cmd, args, { cwd: workDir(), env: programEnv(sub), stdio: ["ignore", "pipe", "pipe"] });
   signal.addEventListener("abort", () => child.kill("SIGTERM"), { once: true });
@@ -155,9 +141,36 @@ async function* runOnPhone(sub: SubId, run: CliRun, signal: AbortSignal): AsyncG
   if (code !== 0 && !signal.aborted) throw new Error(`${SUBS[sub].program} stopped (code ${code}): ${stderr.slice(-600)}`);
 }
 
-export async function* runCli(p: ProviderConfig, run: Omit<CliRun, "engine">, signal: AbortSignal): AsyncGenerator<CliEvent> {
+/** Adds attached files to the prompt; on a computer the files travel with the request. */
+function withFiles(run: CliRun, list: Attachment[], forComputer: boolean): CliRun {
+  if (!list.length) return run;
+  let rels: string[];
+  let files: CliRun["files"];
+  if (forComputer) {
+    let total = 0;
+    files = [];
+    rels = [];
+    for (const a of list) {
+      if ((total += a.size) > 40_000_000) break;
+      const rel = path.join("attachments", `${a.id.slice(5, 11)}-${a.name}`);
+      files.push({ path: rel, b64: fs.readFileSync(filePath(a)).toString("base64") });
+      rels.push(rel);
+    }
+  } else rels = exportTo(workDir(), list);
+  const lines = list.map((a, i) => (rels[i] ? `- ${rels[i]} — ${describe(a)}` : null)).filter(Boolean);
+  const images = list.map((a, i) => (a.kind === "image" && rels[i] ? rels[i] : null)).filter(Boolean) as string[];
+  return {
+    ...run,
+    images: run.engine === "codex" ? images : undefined,
+    files,
+    prompt: `${run.prompt}\n\nAttached files (open them with your tools; paths are relative to the current folder):\n${lines.join("\n")}`,
+  };
+}
+
+export async function* runCli(p: ProviderConfig, run: Omit<CliRun, "engine"> & { attachments?: Attachment[] }, signal: AbortSignal): AsyncGenerator<CliEvent> {
   const sub = p.subId!;
-  const full: CliRun = { ...run, engine: engineFor(sub) };
+  const { attachments = [], ...rest } = run;
+  const base: CliRun = { ...rest, engine: engineFor(sub) };
   const acc = { text: "" };
   const canComputer = Boolean(p.computerUrl);
   const phoneReady = p.runOn !== "computer" && isSignedIn(sub);
@@ -165,6 +178,7 @@ export async function* runCli(p: ProviderConfig, run: Omit<CliRun, "engine">, si
     throw new Error(`Sign in to ${SUBS[sub].label} first: Settings → AI → ${SUBS[sub].label} → Sign in.`);
   }
   let source: AsyncGenerator<string>;
+  let full = withFiles(base, attachments, !phoneReady);
   if (phoneReady) {
     try {
       source = runOnPhone(sub, full, signal);
@@ -173,6 +187,7 @@ export async function* runCli(p: ProviderConfig, run: Omit<CliRun, "engine">, si
     } catch (e) {
       if (!canComputer) throw e;
       yield { kind: "tool", name: "switching to your computer", input: { reason: String((e as Error).message).slice(0, 200) } };
+      full = withFiles(base, attachments, true);
       source = runOnComputer(p, full, signal);
     }
   } else source = runOnComputer(p, full, signal);

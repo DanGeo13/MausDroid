@@ -8,6 +8,8 @@ import { appendMemory, readMemory } from "../memory.ts";
 import { createRoutine, deleteRoutine, listRoutines, type Schedule } from "../routines.ts";
 import { listSkills, readSkill, readSkillFile } from "../skills.ts";
 import { callComposio, composioTools } from "../composio.ts";
+import fs from "node:fs";
+import { describe as describeFile, filePath, getFile, readText } from "../files.ts";
 
 export interface ToolContext {
   bot: Bot;
@@ -184,6 +186,26 @@ const builtins: Tool[] = [
     group: "core",
     spec: { name: "skill_read", description: "Open an installed skill's instructions (or one of its files) before doing a task it covers.", inputSchema: obj({ name: str("Skill name"), file: str("Optional file inside the skill") }, ["name"]) },
     run: async (_c, i) => (i.file ? readSkillFile(i.name, i.file) : readSkill(i.name)),
+  },
+  {
+    group: "core",
+    spec: {
+      name: "file_read",
+      description: "Look inside a file the person attached (by its file id). Text-like files (txt, md, json, html, csv, code…) return their text, pictures are shown to you; other types return their details.",
+      inputSchema: obj({ file_id: str("The file id, e.g. file_0123abcd…"), offset: { type: "number", description: "Character to start from, for long files" } }, ["file_id"]),
+    },
+    run: async (_c, i) => {
+      const a = getFile(String(i.file_id));
+      if (!a) return { text: "No such file.", isError: true };
+      if (a.kind === "text") {
+        const t = readText(a, 2_000_000);
+        const off = Math.max(0, Number(i.offset ?? 0));
+        return `${describeFile(a)}\n\n${t.slice(off, off + 30_000)}${t.length > off + 30_000 ? `\n\n[More: call again with offset ${off + 30_000}]` : ""}`;
+      }
+      if (a.kind === "image" && a.size < 5_000_000 && /png|jpe?g|gif|webp/.test(a.mime))
+        return { text: describeFile(a), images: [{ mediaType: a.mime, data: fs.readFileSync(filePath(a)).toString("base64") }] };
+      return `${describeFile(a)}. This type can't be read as text here. Claude Code and ChatGPT (Codex) bots can open it directly; you can also upload it to a connected app (e.g. Google Drive) or describe what to do with it.`;
+    },
   },
   {
     group: "web",

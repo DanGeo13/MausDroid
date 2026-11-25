@@ -7,24 +7,22 @@ import { config } from "./config.ts";
 import { dataPath } from "./store.ts";
 import { emit } from "./events.ts";
 import { getSecret, setSecret } from "./secrets.ts";
-import { download, extractTarGz, extractZip } from "./archive.ts";
+import { download, extractTarGz } from "./archive.ts";
 import { errorText } from "./util.ts";
 
 /**
- * Subscription sign-in for Claude, ChatGPT and Gemini — by login only, never
+ * Subscription sign-in for Claude and ChatGPT — by login only, never
  * an API key. Each uses the company's own official program, downloaded to
  * the phone, and that program's own sign-in page:
  *   Claude  → Claude Code   (claude setup-token)  · your Claude Pro/Max plan
  *   ChatGPT → Codex         (codex login)          · your ChatGPT plan
- *   Gemini  → Gemini CLI    (Login with Google)    · your Google account / Google AI plan
  * If a program can't run on this phone, the bot uses your computer instead
  * (the MausDroid companion), when one is set up.
  */
-export type SubId = "claude" | "chatgpt" | "gemini";
+export type SubId = "claude" | "chatgpt";
 export const SUBS: Record<SubId, { label: string; program: string; company: string }> = {
   claude: { label: "Claude", program: "Claude Code", company: "Anthropic" },
   chatgpt: { label: "ChatGPT", program: "Codex", company: "OpenAI" },
-  gemini: { label: "Gemini", program: "Gemini CLI", company: "Google" },
 };
 
 export interface SubStatus {
@@ -69,13 +67,12 @@ function set(id: SubId, patch: Partial<SubStatus>) {
 }
 
 const installed = (id: SubId) =>
-  id === "chatgpt" ? fs.existsSync(bin("codex")) : id === "claude" ? fs.existsSync(bin("claude")) && hasMusl() : fs.existsSync(bin("bun")) && fs.existsSync(path.join(root(), "gemini", "bundle", "gemini.js")) && hasMusl();
+  id === "chatgpt" ? fs.existsSync(bin("codex")) : fs.existsSync(bin("claude")) && hasMusl();
 const hasMusl = () => fs.existsSync(path.join(lib(), "ld-musl-aarch64.so.1"));
 
 export function isSignedIn(id: SubId): boolean {
   if (id === "claude") return Boolean(getSecret("sub:claude:token"));
-  if (id === "chatgpt") return fs.existsSync(path.join(subHome("chatgpt"), ".codex", "auth.json"));
-  return fs.existsSync(path.join(subHome("gemini"), ".gemini", "oauth_creds.json"));
+  return fs.existsSync(path.join(subHome("chatgpt"), ".codex", "auth.json"));
 }
 
 export function subStatus(id: SubId): SubStatus {
@@ -104,7 +101,7 @@ function checkIntegrity(file: string, integrity: string) {
 
 /** Official Alpine Linux packages for the musl loader and C++ libraries the programs need. */
 async function ensureMusl(id: SubId) {
-  if (hasMusl() && fs.existsSync(path.join(lib(), "libstdc++.so.6"))) return;
+  if (hasMusl()) return;
   set(id, { message: "Getting system libraries (Alpine Linux)…" });
   const base = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/aarch64";
   const idxFile = path.join(root(), "dl", "APKINDEX.tar.gz");
@@ -115,7 +112,10 @@ async function ensureMusl(id: SubId) {
   const versionOf = (pkg: string) => index.match(new RegExp(`\\nP:${pkg.replace(/[+]/g, "\\+")}\\nV:([^\\n]+)`))?.[1];
   for (const pkg of ["musl", "libstdc++", "libgcc"]) {
     const v = versionOf(pkg);
-    if (!v) throw new Error(`Alpine package ${pkg} not found`);
+    if (!v) {
+      if (pkg === "musl") throw new Error(`Alpine package ${pkg} not found`);
+      continue;
+    }
     const f = path.join(root(), "dl", `${pkg}-${v}.apk`);
     await download(`${base}/${pkg}-${v}.apk`, f);
     await extractTarGz(f, (n) => (/^(usr\/)?lib\/[^/]+\.so[.\d]*$/.test(n) ? path.join(lib(), path.basename(n)) : null));
@@ -163,7 +163,7 @@ export async function install(id: SubId) {
     set(id, { message: "Unpacking…" });
     await extractTarGz(f, (n) => (/aarch64-unknown-linux-musl\/bin\/(codex|codex-code-mode-host)$/.test(n) ? bin(path.basename(n)) : null));
     fs.rmSync(f, { force: true });
-  } else if (id === "claude") {
+  } else {
     await ensureMusl(id);
     const t = await npmTarball("@anthropic-ai/claude-code-linux-arm64-musl");
     const f = path.join(dl, "claude.tgz");
@@ -173,25 +173,6 @@ export async function install(id: SubId) {
     await extractTarGz(f, (n) => (n === "package/claude" ? bin("claude") : null));
     fs.rmSync(f, { force: true });
     patchInterpreter(bin("claude"));
-  } else {
-    await ensureMusl(id);
-    const BUN = "1.4.5";
-    const z = path.join(dl, "bun.zip");
-    await download(`https://github.com/oven-sh/bun/releases/download/bun-v${BUN}/bun-linux-aarch64-musl.zip`, z, progress(id, `Bun ${BUN} runtime`));
-    const sums = await (await fetch(`https://github.com/oven-sh/bun/releases/download/bun-v${BUN}/SHASUMS256.txt`)).text().catch(() => "");
-    const want = sums.split("\n").find((l) => l.includes("bun-linux-aarch64-musl.zip"))?.split(/\s+/)[0];
-    if (want && crypto.createHash("sha256").update(fs.readFileSync(z)).digest("hex") !== want) throw new Error("Bun download check failed. Try again.");
-    extractZip(z, (n) => (n.endsWith("/bun") ? bin("bun") : null));
-    fs.rmSync(z, { force: true });
-    patchInterpreter(bin("bun"));
-    const t = await npmTarball("@google/gemini-cli");
-    const f = path.join(dl, "gemini.tgz");
-    await download(t.url, f, progress(id, `Gemini CLI ${t.version}`));
-    checkIntegrity(f, t.integrity);
-    const dest = path.join(root(), "gemini");
-    fs.rmSync(dest, { recursive: true, force: true });
-    await extractTarGz(f, (n) => (n.startsWith("package/") ? path.join(dest, n.slice(8)) : null));
-    fs.rmSync(f, { force: true });
   }
   set(id, { stage: "installed", progress: undefined, message: `${SUBS[id].program} is installed.` });
 }
@@ -232,34 +213,15 @@ export function programEnv(id: SubId): NodeJS.ProcessEnv {
     if (tok) env.CLAUDE_CODE_OAUTH_TOKEN = tok;
     env.DISABLE_AUTOUPDATER = "1";
   }
-  if (id === "gemini") {
-    env.NO_BROWSER = "true";
-    env.GEMINI_CLI_NO_RELAUNCH = "true";
-  }
   return env;
 }
 
 /** The command line to run a program; [cmd, args]. */
 export function programCommand(id: SubId, args: string[]): [string, string[]] {
   if (id === "chatgpt") return [bin("codex"), args];
-  if (id === "claude") return [bin("claude"), args];
-  return [bin("bun"), [path.join(root(), "gemini", "bundle", "gemini.js"), ...args]];
+  return [bin("claude"), args];
 }
 
-function writeGeminiSettings(mcp?: { url: string; token: string }) {
-  const dir = path.join(subHome("gemini"), ".gemini");
-  fs.mkdirSync(dir, { recursive: true });
-  const s: any = {
-    security: { auth: { selectedType: "oauth-personal" } },
-    // Gemini's own shell and file-writing tools stay off on the phone; MausDroid's tools ask before risky actions.
-    tools: { exclude: ["run_shell_command", "write_file", "replace"] },
-    general: { disableAutoUpdate: true, disableUpdateNag: true },
-    privacy: { usageStatisticsEnabled: false },
-  };
-  if (mcp) s.mcpServers = { mausdroid: { httpUrl: mcp.url, headers: { Authorization: `Bearer ${mcp.token}` }, trust: true } };
-  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify(s, null, 1));
-}
-export { writeGeminiSettings };
 
 // ---------------- Signing in ----------------
 
@@ -276,10 +238,9 @@ export async function signIn(id: SubId, openUrl: (url: string) => Promise<void>)
   }
   sessions.get(id)?.kill();
   workDir();
-  if (id === "gemini") writeGeminiSettings();
-  const loginArgs = id === "chatgpt" ? ["login"] : id === "claude" ? ["setup-token"] : ["-p", "Reply with the single word OK."];
+  const loginArgs = id === "chatgpt" ? ["login"] : ["setup-token"];
   const [cmd, args] = programCommand(id, loginArgs);
-  // Claude Code and Gemini CLI want a real terminal: run them through the pty helper.
+  // Claude Code's sign-in wants a real terminal: run it through the pty helper.
   const native = process.env.MAUSDROID_NATIVE_DIR;
   const usePty = id !== "chatgpt" && native;
   const child = usePty ? spawn(path.join(native!, "libtsbridge.so"), ["pty", cmd, ...args], { cwd: workDir(), env: programEnv(id) }) : spawn(cmd, args, { cwd: workDir(), env: programEnv(id) });
@@ -292,7 +253,7 @@ export async function signIn(id: SubId, openUrl: (url: string) => Promise<void>)
   const onData = (d: Buffer) => {
     log = (log + stripAnsi(d.toString("utf8"))).slice(-6000);
     const compact = log.replace(/\n(?=\S)/g, (m, off) => (/[A-Za-z0-9%&=._~:/?#-]$/.test(log.slice(0, off)) ? "" : m));
-    const url = compact.match(/https:\/\/[^\s"'<>]+(oauth|authorize|accounts\.google\.com|auth\.openai\.com)[^\s"'<>]*/)?.[0];
+    const url = compact.match(/https:\/\/[^\s"'<>]+(oauth|authorize|auth\.openai\.com)[^\s"'<>]*/)?.[0];
     const needsCode = /paste|authorization code|enter.*code/i.test(log) && id !== "chatgpt";
     if (id === "claude") {
       const tok = compact.match(/sk-ant-oat[0-9A-Za-z_-]{20,}/)?.[0];
@@ -333,13 +294,11 @@ export async function signOut(id: SubId) {
   cancelSignIn(id);
   if (id === "claude") await setSecret("sub:claude:token", null);
   if (id === "chatgpt") fs.rmSync(path.join(subHome("chatgpt"), ".codex", "auth.json"), { force: true });
-  if (id === "gemini") fs.rmSync(path.join(subHome("gemini"), ".gemini", "oauth_creds.json"), { force: true });
   set(id, { stage: installed(id) ? "installed" : "not-installed", message: "Signed out." });
 }
 
 export async function uninstall(id: SubId) {
   await signOut(id);
-  for (const f of id === "chatgpt" ? ["codex", "codex-code-mode-host"] : id === "claude" ? ["claude"] : ["bun"]) fs.rmSync(bin(f), { force: true });
-  if (id === "gemini") fs.rmSync(path.join(root(), "gemini"), { recursive: true, force: true });
+  for (const f of id === "chatgpt" ? ["codex", "codex-code-mode-host"] : ["claude"]) fs.rmSync(bin(f), { force: true });
   set(id, { stage: "not-installed", message: "Removed from this phone." });
 }

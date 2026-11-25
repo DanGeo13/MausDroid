@@ -40,6 +40,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Share any file, link or text to MausDroid from any app. -->
+            <intent-filter android:label="MausDroid">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter android:label="MausDroid">
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
 
         <activity
@@ -83,6 +94,11 @@
             <meta-data android:name="android.speech" android:resource="@xml/recognition" />
             <intent-filter><action android:name="android.speech.RecognitionService" /></intent-filter>
         </service>
+        <activity
+            android:name=".FilePickActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity
             android:name=".AssistActivity"
             android:exported="true"

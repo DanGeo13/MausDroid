@@ -17,7 +17,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -47,6 +46,21 @@ class MausSession(ctx: Context) : VoiceInteractionSession(ctx) {
         val p = AssistPanel(context) { hide() }
         panel = p
         return p.view
+    }
+
+    // What's on screen when you summon the assistant. Android only shares it
+    // when "Use text from screen" / "Use screenshot" are on in the assistant settings.
+    @Deprecated("Deprecated in Java")
+    override fun onHandleAssist(data: Bundle?, structure: android.app.assist.AssistStructure?, content: android.app.assist.AssistContent?) {
+        panel?.setScreen(ScreenReader.read(context, structure, content))
+    }
+
+    override fun onHandleAssist(state: AssistState) {
+        panel?.setScreen(ScreenReader.read(context, state.assistStructure, state.assistContent))
+    }
+
+    override fun onHandleScreenshot(screenshot: android.graphics.Bitmap?) {
+        if (screenshot != null) panel?.setScreenshot(screenshot)
     }
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
@@ -80,6 +94,63 @@ class AssistActivity : Activity() {
     }
 }
 
+/** Reads the visible text of the app on screen (never password fields). */
+object ScreenReader {
+    data class Screen(val app: String?, val url: String?, val text: String)
+
+    fun read(ctx: Context, structure: android.app.assist.AssistStructure?, content: android.app.assist.AssistContent?): Screen? {
+        if (structure == null && content == null) return null
+        val sb = StringBuilder()
+        var domain: String? = null
+        fun walk(n: android.app.assist.AssistStructure.ViewNode, depth: Int) {
+            if (depth > 60 || sb.length > 8000) return
+            val pwd = (n.inputType and android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD) == android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                (n.inputType and android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD) == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            if (!pwd) {
+                val t = n.text?.toString()?.trim()
+                if (!t.isNullOrEmpty()) sb.append(t).append('\n')
+                else n.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() && it.length < 200 }?.let { sb.append(it).append('\n') }
+            }
+            if (domain == null) n.webDomain?.let { domain = it }
+            for (i in 0 until n.childCount) walk(n.getChildAt(i), depth + 1)
+        }
+        structure?.let { st -> for (w in 0 until st.windowNodeCount) walk(st.getWindowNodeAt(w).rootViewNode, 0) }
+        val pkg = structure?.activityComponent?.packageName
+        val app = pkg?.let { p ->
+            try { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(p, 0)).toString() } catch (_: Exception) { p }
+        }
+        val url = content?.webUri?.toString() ?: domain?.let { "https://$it" }
+        return Screen(app, url, sb.toString().lines().distinct().joinToString("\n").take(8000))
+    }
+}
+
+/** Opens the file picker for the assistant and hands the chosen files back. */
+class FilePickActivity : Activity() {
+    companion object {
+        var onPicked: ((List<JSONObject>) -> Unit)? = null
+    }
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        @Suppress("DEPRECATION") startActivityForResult(pick, 1)
+    }
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val uris = mutableListOf<android.net.Uri>()
+        if (resultCode == RESULT_OK && data != null) {
+            data.clipData?.let { cd -> for (i in 0 until cd.itemCount) uris.add(cd.getItemAt(i).uri) }
+            if (uris.isEmpty()) data.data?.let { uris.add(it) }
+        }
+        val cb = onPicked
+        Thread {
+            val out = uris.mapNotNull { try { Uploads.upload(this, it) } catch (_: Exception) { null } }
+            runOnUiThread { cb?.invoke(out); finish() }
+        }.start()
+        if (uris.isEmpty()) finish()
+    }
+}
+
 /** The assistant panel: listen → ask the chosen bot → show and speak the answer. */
 class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     private val voice = Voice(ctx)
@@ -89,11 +160,47 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
 
     private val title = TextView(ctx).apply { setTextColor(Color.WHITE); textSize = 16f; setTypeface(typeface, android.graphics.Typeface.BOLD) }
     private val heard = TextView(ctx).apply { setTextColor(Color.parseColor("#C9CEDA")); textSize = 18f; setPadding(0, px(10), 0, px(6)) }
-    private val answer = TextView(ctx).apply { setTextColor(Color.WHITE); textSize = 17f; setPadding(0, px(6), 0, px(6)); setTextIsSelectable(true) }
+    // At most 8 lines (scrolls), so the screen behind stays visible.
+    private val answer = TextView(ctx).apply {
+        setTextColor(Color.WHITE); textSize = 17f; setPadding(0, px(6), 0, px(6))
+        maxLines = 8
+        isVerticalScrollBarEnabled = true
+        movementMethod = android.text.method.ScrollingMovementMethod()
+    }
     private val statusLine = TextView(ctx).apply { setTextColor(Color.parseColor("#9AA3B5")); textSize = 13f }
     private var botId: String? = null
     private var speak = true
     @Volatile private var active = false
+    private var screen: ScreenReader.Screen? = null
+    private var screenshot: android.graphics.Bitmap? = null
+    private val files = mutableListOf<JSONObject>()
+    private val prefs = ctx.getSharedPreferences("assistant", Context.MODE_PRIVATE)
+    private var includeScreen = prefs.getBoolean("includeScreen", true)
+    private val chips = TextView(ctx).apply { setTextColor(Color.parseColor("#C9CEDA")); textSize = 13f; visibility = View.GONE }
+    private val screenToggle = TextView(ctx).apply {
+        textSize = 13f
+        setPadding(0, px(8), 0, 0)
+        setOnClickListener {
+            includeScreen = !includeScreen
+            prefs.edit().putBoolean("includeScreen", includeScreen).apply()
+            refreshScreenLabel()
+        }
+    }
+
+    fun setScreen(s: ScreenReader.Screen?) { screen = s; ui { refreshScreenLabel() } }
+    fun setScreenshot(b: android.graphics.Bitmap) { screenshot = b; ui { refreshScreenLabel() } }
+
+    private fun refreshScreenLabel() {
+        val what = listOfNotNull(screen?.app, if (screenshot != null) "screenshot" else null).joinToString(" + ")
+        screenToggle.setTextColor(if (includeScreen) Color.parseColor("#9D8CFF") else Color.parseColor("#7A8294"))
+        screenToggle.text = if (screen == null && screenshot == null) "Screen: not shared (turn on “Use text from screen” in assistant settings)"
+        else "${if (includeScreen) "☑" else "☐"} Include what's on screen${if (what.isNotEmpty()) " ($what)" else ""}"
+    }
+
+    private fun refreshChips() {
+        chips.visibility = if (files.isEmpty()) View.GONE else View.VISIBLE
+        chips.text = files.joinToString("   ") { "📎 " + it.optString("name") }
+    }
 
     private val mic = Button(ctx).apply {
         text = "🎤  Talk"
@@ -101,6 +208,15 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         setTextColor(Color.WHITE)
         background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(accent) }
         setOnClickListener { voice.stopSpeaking(); listen() }
+    }
+    private val addFile = Button(ctx).apply {
+        text = "📎"
+        setTextColor(Color.WHITE)
+        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2F3D")) }
+        setOnClickListener {
+            FilePickActivity.onPicked = { picked -> files.addAll(picked); refreshChips(); statusLine.text = if (picked.isEmpty()) "" else "Added. Tap Talk and say what to do with it." }
+            ctx.startActivity(Intent(ctx, FilePickActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
     }
     private val open = Button(ctx).apply {
         text = "Open chat"
@@ -116,7 +232,8 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     val view: View = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.BOTTOM
-        setBackgroundColor(Color.parseColor("#66000000"))
+        // Clear background: the screen you were on stays visible above the panel.
+        setBackgroundColor(Color.TRANSPARENT)
         setOnClickListener { close() }
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -128,11 +245,15 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
             isClickable = true
             addView(title)
             addView(statusLine)
+            addView(screenToggle)
+            addView(chips)
             addView(heard)
-            addView(ScrollView(ctx).apply { addView(answer) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { height = ViewGroup.LayoutParams.WRAP_CONTENT })
+            // Answers scroll inside a short area so most of the screen stays visible.
+            addView(answer)
             addView(LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, px(12), 0, 0)
+                addView(addFile, LinearLayout.LayoutParams(px(56), px(48)).apply { marginEnd = px(8) })
                 addView(mic, LinearLayout.LayoutParams(0, px(48), 1f).apply { marginEnd = px(8) })
                 addView(open, LinearLayout.LayoutParams(0, px(48), 1f))
             })
@@ -165,6 +286,9 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         statusLine.text = "Getting ready…"
         heard.text = ""
         answer.text = ""
+        files.clear()
+        refreshChips()
+        refreshScreenLabel()
         try { EngineService.start(ctx) } catch (_: Exception) {}
         Thread {
             try {
@@ -204,7 +328,19 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         statusLine.text = "Thinking…"
         Thread {
             try {
-                val r = engine("/api/assistant/ask", JSONObject().put("text", text))
+                val body = JSONObject().put("text", text)
+                val ids = org.json.JSONArray()
+                files.forEach { ids.put(it.optString("id")) }
+                if (includeScreen) {
+                    screen?.let { body.put("screen", JSONObject().put("app", it.app).put("url", it.url).put("text", it.text)) }
+                    screenshot?.let { bmp ->
+                        val out = java.io.ByteArrayOutputStream()
+                        android.graphics.Bitmap.createScaledBitmap(bmp, bmp.width / 2, bmp.height / 2, true).compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, out)
+                        try { ids.put(Uploads.uploadBytes(ctx, "screenshot.jpg", "image/jpeg", out.toByteArray()).optString("id")) } catch (_: Exception) {}
+                    }
+                }
+                body.put("attachments", ids)
+                val r = engine("/api/assistant/ask", body)
                 val reply = r.optString("reply").takeIf { !r.isNull("reply") }
                 ui {
                     if (reply == null) {

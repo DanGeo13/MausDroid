@@ -9,7 +9,7 @@ screen off), and **ask before anything risky**.
 ## Install on your phone (Poco F8 / any Android 9+, 64-bit)
 
 1. On the phone, download the latest APK:
-   **https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/MausDroid-0.2.0.apk**
+   **https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/MausDroid-0.3.0.apk**
 2. Open it. Android asks to allow installing from your browser/files app → allow → **Install**.
 3. Open **MausDroid** and follow the short tour.
 
@@ -22,8 +22,9 @@ you get a notification — tap it to install. Your bots, chats and settings stay
 | | |
 |---|---|
 | Bots like contacts | Chat list, personalities, pin, per-bot AI model, approval level, skills |
-| AI brains | **Your subscriptions by sign-in only (no API keys):** Claude (Claude Code), ChatGPT (Codex), Gemini (Gemini CLI) — official programs on the phone, your PC as backup ([companion](companion/README.md)) · other models: OpenRouter, Groq, local/custom endpoints |
-| Voice & assistant | Talk to any bot (mic button); replies read aloud with the phone's voice · **MausDroid as the phone's digital assistant** (long-press home/power) with your choice of bot |
+| AI brains | **Your subscriptions by sign-in only (no API keys):** Claude (Claude Code) and ChatGPT (Codex) — official programs on the phone, your PC as backup ([companion](companion/README.md)) · other models: OpenRouter, Groq, local/custom endpoints |
+| Files | Attach any file (images, voice notes, videos, PDFs, Word, JSON, HTML, Markdown, code, links) with 📎, paste, drag-and-drop, or **Share → MausDroid** from any app |
+| Voice & assistant | Talk to any bot (mic button); replies read aloud with the phone's voice · **MausDroid as the phone's digital assistant** (long-press home/power) with your choice of bot; the screen stays visible, it can include what's on screen (text, page, screenshot) and you can add files |
 | Background browser | Runs inside the app's background service; you keep using the phone; works with the screen off. Sign in yourself once ("browser_ask_login"), bots reuse the login |
 | Connected apps | Composio: Gmail, Google Drive, Calendar, Outlook, Slack, Notion and 500+ more, several accounts per app |
 | Skills marketplace | Search GitHub for skills (SKILL.md) or install from any repo link · type **/** in a chat to use one |

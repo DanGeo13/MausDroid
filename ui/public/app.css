@@ -150,3 +150,14 @@ input[type="range"] { padding: 0; accent-color: var(--accent); background: trans
 .slash { background: var(--panel); border-top: 1px solid var(--line); max-height: 16rem; overflow-y: auto; }
 .slash-item { display: flex; flex-direction: column; gap: .1rem; width: 100%; text-align: left; border: 0; background: transparent; padding: .55rem 1rem; font-size: .88rem; border-bottom: 1px solid var(--line); }
 .slash-item:active { background: var(--accent-soft); }
+.files { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .35rem; }
+.thumb { display: block; max-width: 14rem; border-radius: .8rem; overflow: hidden; }
+.thumb img, video.thumb { display: block; max-width: 100%; max-height: 16rem; border-radius: .8rem; }
+.file-chip { display: inline-flex; align-items: center; gap: .4rem; background: rgba(127,127,127,.15); border-radius: .7rem; padding: .35rem .6rem; font-size: .82rem; color: inherit; text-decoration: none; max-width: 100%; }
+.file-chip .fname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 12rem; }
+.file-chip .x { border: 0; background: transparent; width: 1.4rem; height: 1.4rem; padding: 0; display: grid; place-items: center; color: var(--muted); }
+.file-chip .x svg { width: .9rem; height: .9rem; }
+.pending { display: flex; flex-wrap: wrap; gap: .4rem; padding: .5rem .7rem 0; background: var(--panel); border-top: 1px solid var(--line); align-items: center; }
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 40; display: flex; align-items: flex-end; }
+.sheet { background: var(--panel); width: 100%; max-height: 80%; overflow-y: auto; border-radius: 1.4rem 1.4rem 0 0; padding: 1rem .6rem calc(1rem + var(--safe-bottom)); }
+.sheet h2 { font-size: 1rem; margin: 0 .6rem .6rem; }

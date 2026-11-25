@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
-import { IconBack, IconEdit, IconMic, IconSend, IconStop } from "./icons.tsx";
+import { IconBack, IconClip, IconEdit, IconMic, IconSend, IconStop, IconX } from "./icons.tsx";
+import { fileIcon, fileSize, uploadFile, type Attachment } from "./files.ts";
 
 /** Bot picture: emoji on its colour. `size` in rem so it follows the text-size setting. */
 export function Avatar({ bot, size = 3, live = false }: { bot: Pick<Bot, "emoji" | "color">; size?: number; live?: boolean }) {
@@ -94,10 +95,51 @@ function ToolLine({ m }: { m: Msg }) {
   );
 }
 
-export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voiceOk }: {
+/** A file in a message: pictures as thumbnails, other files as a card that opens it. */
+function FileChip({ a }: { a: Attachment }) {
+  if (a.kind === "image")
+    return (
+      <a href={`api/files/${a.id}`} target="_blank" class="thumb">
+        <img src={`api/files/${a.id}`} alt={a.name} loading="lazy" />
+      </a>
+    );
+  if (a.kind === "video") return <video class="thumb" src={`api/files/${a.id}`} controls preload="metadata" />;
+  if (a.kind === "audio") return <audio src={`api/files/${a.id}`} controls preload="metadata" style={{ maxWidth: "100%" }} />;
+  return (
+    <a href={`api/files/${a.id}`} target="_blank" class="file-chip">
+      <span>{fileIcon(a)}</span>
+      <span class="fname">{a.name}</span>
+      <span class="muted">{fileSize(a.size)}</span>
+    </a>
+  );
+}
+
+export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voiceOk, remote, initial }: {
   bot: Bot; messages: Msg[]; cards: Card[]; busy: boolean; onBack: () => void; onEdit: () => void; refresh: () => void; voiceOk: boolean;
+  remote: boolean; initial?: { text?: string; attachments?: Attachment[] };
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initial?.text ?? "");
+  const [pending, setPending] = useState<Attachment[]>(initial?.attachments ?? []);
+  const [uploading, setUploading] = useState(0);
+  const picker = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (initial?.attachments?.length) setPending(initial.attachments);
+    if (initial?.text) setText(initial.text);
+  }, [initial]);
+  const addFiles = async (list: FileList | File[] | null) => {
+    if (!list) return;
+    for (const f of Array.from(list)) {
+      setUploading((n) => n + 1);
+      try {
+        const a = await uploadFile(f, remote);
+        setPending((p) => [...p, a]);
+      } catch (e) {
+        alert((e as Error).message);
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  };
   const [listening, setListening] = useState(false);
   const [skills, setSkills] = useState<{ name: string; description: string }[]>([]);
   useEffect(() => {
@@ -127,14 +169,17 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
 
   const send = async () => {
     const t = text.trim();
-    if (!t) return;
+    if (!t && !pending.length) return;
     setSending(true);
     setText("");
+    const files = pending;
+    setPending([]);
     try {
-      await api(`bots/${bot.id}/messages`, { body: { text: t } });
+      await api(`bots/${bot.id}/messages`, { body: { text: t, attachments: files.map((a) => a.id) } });
     } catch (e) {
       alert((e as Error).message);
       setText(t);
+      setPending(files);
     } finally {
       setSending(false);
     }
@@ -199,6 +244,13 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
             <div class={`msg ${m.role === "user" ? "mine" : ""}`} key={m.id}>
               <div class={`bubble ${m.status === "error" ? "error" : ""}`}>
                 {m.source && m.source !== "you" ? <div class="source">⏰ {m.source}</div> : null}
+                {m.attachments?.length ? (
+                  <div class="files">
+                    {m.attachments.map((a) => (
+                      <FileChip a={a} />
+                    ))}
+                  </div>
+                ) : null}
                 {m.role === "user" ? m.text : <Markdown text={m.text} />}
               </div>
               <div class="stamp">{time(m.at)}</div>
@@ -231,7 +283,32 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
           <div class="slash-item muted">No skills yet. Add some in Settings → Skills.</div>
         </div>
       ) : null}
-      <div class="composer">
+      {pending.length || uploading ? (
+        <div class="pending">
+          {pending.map((a) => (
+            <span class="file-chip">
+              <span>{fileIcon(a)}</span>
+              <span class="fname">{a.name}</span>
+              <button class="x" aria-label={`Remove ${a.name}`} onClick={() => setPending((p) => p.filter((x) => x.id !== a.id))}>
+                <IconX />
+              </button>
+            </span>
+          ))}
+          {uploading ? <span class="muted" style={{ fontSize: ".8rem" }}>Uploading {uploading}…</span> : null}
+        </div>
+      ) : null}
+      <div
+        class="composer"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          void addFiles(e.dataTransfer?.files ?? null);
+        }}
+      >
+        <input ref={picker} type="file" multiple hidden onChange={(e) => (void addFiles((e.target as HTMLInputElement).files), ((e.target as HTMLInputElement).value = ""))} />
+        <button class="send mic" aria-label="Add files" title="Add files (any type)" onClick={() => picker.current?.click()}>
+          <IconClip />
+        </button>
         {voiceOk ? (
           <button class={`send mic ${listening ? "on" : ""}`} aria-label="Talk" title="Talk" onClick={talk} disabled={listening}>
             <IconMic />
@@ -241,6 +318,13 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
           rows={1}
           value={text}
           placeholder={listening ? "Listening…" : `Message ${bot.name} · / for skills`}
+          onPaste={(e) => {
+            const f = e.clipboardData?.files;
+            if (f?.length) {
+              e.preventDefault();
+              void addFiles(f);
+            }
+          }}
           onInput={(e) => {
             const el = e.target as HTMLTextAreaElement;
             setText(el.value);
@@ -254,7 +338,7 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
             }
           }}
         />
-        <button class="send" aria-label="Send" disabled={sending || !text.trim()} onClick={send}>
+        <button class="send" aria-label="Send" disabled={sending || uploading > 0 || (!text.trim() && !pending.length)} onClick={send}>
           <IconSend />
         </button>
       </div>

@@ -31,6 +31,10 @@ import java.net.URL
  * itself), so closing this screen never stops the bots.
  */
 class MainActivity : Activity() {
+    companion object {
+        private const val PICK_FILES = 41
+    }
+
     private lateinit var web: WebView
     private var pendingBot: String? = null
     private var loaded = false
@@ -49,7 +53,22 @@ class MainActivity : Activity() {
         web.setBackgroundColor(Color.parseColor("#0B0D12"))
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
-        web.webChromeClient = WebChromeClient()
+        web.webChromeClient = object : WebChromeClient() {
+            // The 📎 button: Android's file picker, any type, several at once.
+            override fun onShowFileChooser(view: WebView, callback: android.webkit.ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                fileCallback?.onReceiveValue(null)
+                fileCallback = callback
+                val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+                    .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+                return try {
+                    startActivityForResult(Intent.createChooser(pick, "Add files"), PICK_FILES)
+                    true
+                } catch (e: Exception) {
+                    fileCallback = null
+                    false
+                }
+            }
+        }
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url
@@ -62,10 +81,12 @@ class MainActivity : Activity() {
             override fun onPageFinished(view: WebView, url: String?) {
                 loaded = true
                 pendingBot?.let { openBot(it) }
+                view.postDelayed({ deliverShare() }, 800)
             }
         }
         pendingBot = intent.getStringExtra("botId")
         askMicrophoneOnce()
+        handleShare(intent)
         showSplash()
         waitForEngine()
     }
@@ -223,7 +244,52 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.getBooleanExtra("askMic", false)) askMicrophoneOnce(force = true)
+        handleShare(intent)
         intent.getStringExtra("botId")?.let { if (loaded) openBot(it) else pendingBot = it }
+    }
+
+    private var fileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != PICK_FILES) return
+        val uris = mutableListOf<Uri>()
+        if (resultCode == RESULT_OK && data != null) {
+            data.clipData?.let { cd -> for (i in 0 until cd.itemCount) uris.add(cd.getItemAt(i).uri) }
+            if (uris.isEmpty()) data.data?.let { uris.add(it) }
+        }
+        fileCallback?.onReceiveValue(if (uris.isEmpty()) null else uris.toTypedArray())
+        fileCallback = null
+    }
+
+    /** Files and links shared to MausDroid from any app: saved, then "which bot?" opens. */
+    private fun handleShare(intent: Intent?) {
+        if (intent == null || (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE)) return
+        val uris = mutableListOf<Uri>()
+        if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            @Suppress("DEPRECATION") intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { uris.addAll(it) }
+        } else {
+            @Suppress("DEPRECATION") (intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))?.let { uris.add(it) }
+        }
+        intent.clipData?.let { cd -> for (i in 0 until cd.itemCount) cd.getItemAt(i).uri?.let { if (it !in uris) uris.add(it) } }
+        val text = listOfNotNull(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()).joinToString("\n").trim()
+        intent.action = null // handle once
+        Thread {
+            for (i in 0 until 240) { if (engineUp()) break; Thread.sleep(250) }
+            val files = org.json.JSONArray()
+            for (u in uris) try { files.put(Uploads.upload(this, u)) } catch (e: Exception) { Diag.log(this, "share upload failed: $e") }
+            val payload = org.json.JSONObject().put("attachments", files).put("text", text)
+            runOnUiThread { pendingShare = payload.toString(); deliverShare() }
+        }.start()
+    }
+
+    private var pendingShare: String? = null
+    private fun deliverShare() {
+        val p = pendingShare ?: return
+        if (!loaded) return
+        web.evaluateJavascript("window.mausdroidShare && window.mausdroidShare($p)", null)
+        pendingShare = null
     }
 
     private var lastBackAt = 0L

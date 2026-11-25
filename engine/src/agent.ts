@@ -14,10 +14,11 @@ import { fmtLong } from "./time.ts";
 import { mcpTokenFor } from "./mcp-server.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
 import type { Block, ModelTurn, Msg } from "./types.ts";
+import { toBlocks, type Attachment } from "./files.ts";
 
 const MAX_STEPS = 40;
 const running = new Map<string, AbortController>();
-const queues = new Map<string, { text: string; source: string; images?: { mediaType: string; data: string }[] }[]>();
+const queues = new Map<string, { text: string; source: string; attachments?: Attachment[] }[]>();
 /** Called with the bot's final reply when a turn ends (voice read-aloud, assistant answers). */
 type TurnEnd = (botId: string, reply: string) => void;
 const turnEndListeners = new Set<TurnEnd>();
@@ -90,14 +91,14 @@ async function modelTurn(p: ProviderConfig, model: string, system: string, msgs:
 }
 
 /** Sends a message to a bot. Returns at once; progress arrives as events. */
-export function sendToBot(botId: string, text: string, source = "you", images?: { mediaType: string; data: string }[]) {
+export function sendToBot(botId: string, text: string, source = "you", attachments?: Attachment[]) {
   const bot = getBot(botId);
   if (!bot) throw new Error("No such bot");
-  const msg = addMessage(botId, { role: "user", text, source, status: "done" });
+  const msg = addMessage(botId, { role: "user", text, source, status: "done", ...(attachments?.length ? { attachments } : {}) });
   updateBot(botId, { lastMessageAt: msg.at });
   emit("message", { botId, message: msg });
   const q = queues.get(botId) ?? [];
-  q.push({ text: source === "you" ? text : `[${source}] ${text}`, source, images });
+  q.push({ text: source === "you" ? text : `[${source}] ${text}`, source, attachments });
   queues.set(botId, q);
   if (!running.has(botId)) void drain(botId);
   return msg;
@@ -116,7 +117,7 @@ async function drain(botId: string) {
       lastReply.delete(botId);
       try {
         const p = resolveProvider(bot);
-        if (p.kind === "subscription") await runCliTurn(bot, p, batch.map((b) => b.text).join("\n\n"), ctl.signal);
+        if (p.kind === "subscription") await runCliTurn(bot, p, batch.map((b) => b.text).join("\n\n"), ctl.signal, batch.flatMap((b) => b.attachments ?? []));
         else await runApiTurn(bot, p, batch, ctl.signal);
       } catch (e) {
         if (ctl.signal.aborted) break;
@@ -144,12 +145,12 @@ async function drain(botId: string) {
   }
 }
 
-async function runApiTurn(bot: Bot, p: ProviderConfig, batch: { text: string; images?: { mediaType: string; data: string }[] }[], signal: AbortSignal) {
+async function runApiTurn(bot: Bot, p: ProviderConfig, batch: { text: string; attachments?: Attachment[] }[], signal: AbortSignal) {
   const h = history(bot.id);
   const content: Block[] = [];
   for (const b of batch) {
-    content.push({ type: "text", text: b.text });
-    for (const img of b.images ?? []) content.push({ type: "image", ...img });
+    content.push({ type: "text", text: b.text || "(see attached)" });
+    content.push(...toBlocks(b.attachments ?? []));
   }
   h.push({ role: "user", content });
   const tools = await toolsFor(bot);
@@ -223,11 +224,12 @@ async function runTool(bot: Bot, tools: Tool[], call: Extract<Block, { type: "to
   }
 }
 
-async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: AbortSignal) {
+async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: AbortSignal, attachments: Attachment[] = []) {
   // On the phone the program reaches MausDroid locally; a computer reaches it over Tailscale.
   const onPhone = p.runOn !== "computer" && isSignedIn(p.subId!);
   const mcpBase = onPhone || !settings().tailscale.enabled ? `http://127.0.0.1:${config.port}` : `http://${settings().tailscale.hostname}`;
   const run = {
+    attachments,
     prompt: text,
     model: bot.model ?? p.defaultModel,
     resume: bot.cliSession,

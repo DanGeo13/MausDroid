@@ -1,5 +1,5 @@
 // Sign-in and chat through subscription programs, using stand-in programs
-// that behave like Codex and Gemini CLI (real logins need a phone + account).
+// that behave like Claude Code and Codex (real logins need a phone + account).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -9,32 +9,21 @@ import path from "node:path";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-test("ChatGPT and Gemini: sign in by login, then chat", async () => {
+test("Claude and ChatGPT: sign in by login, then chat", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-subs-"));
   const bin = path.join(dir, "subs", "bin");
   fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(path.join(dir, "subs", "lib"), { recursive: true });
   fs.writeFileSync(path.join(dir, "subs", "lib", "ld-musl-aarch64.so.1"), "");
   fs.writeFileSync(path.join(dir, "subs", "lib", "libstdc++.so.6"), "");
-  fs.mkdirSync(path.join(dir, "subs", "gemini", "bundle"), { recursive: true });
-  fs.writeFileSync(path.join(dir, "subs", "gemini", "bundle", "gemini.js"), "");
   // Stand-in Codex: `login` prints the OpenAI sign-in link and saves auth; `exec` answers.
   fs.writeFileSync(path.join(bin, "codex"), `#!/bin/sh
 if [ "$1" = "login" ]; then echo "Starting local login server on http://localhost:1455."; echo "If your browser did not open, navigate to this URL to authenticate:"; echo "https://auth.openai.com/oauth/authorize?client_id=x&redirect_uri=http%3A%2F%2Flocalhost%3A1455"; sleep 1; mkdir -p "$HOME/.codex"; echo '{}' > "$HOME/.codex/auth.json"; echo "Successfully logged in"; exit 0; fi
 echo '{"type":"thread.started","thread_id":"t1"}'
+for a in "$@"; do case "$a" in attachments/*) [ -f "$a" ] && echo '{"type":"item.completed","item":{"type":"agent_message","text":"I can open the picture"}}';; esac; done
 echo '{"type":"item.completed","item":{"type":"agent_message","text":"Hello from ChatGPT subscription"}}'
 echo '{"type":"turn.completed"}'
 `, { mode: 0o755 });
-  // Stand-in Bun running Gemini CLI: first run asks for a Google code, later runs answer in stream-json.
-  fs.writeFileSync(path.join(bin, "bun"), `#!/bin/sh
-if [ ! -f "$HOME/.gemini/oauth_creds.json" ]; then echo "Please visit the following URL to authorize the application:"; echo "https://accounts.google.com/o/oauth2/v2/auth?client_id=y&redirect_uri=https%3A%2F%2Fcodeassist.google.com%2Fauthcode"; echo "Enter the authorization code:"; read code; [ "$code" = "GOOD" ] || exit 3; mkdir -p "$HOME/.gemini"; echo '{}' > "$HOME/.gemini/oauth_creds.json"; echo OK; exit 0; fi
-grep -q mausdroid "$HOME/.gemini/settings.json" || { echo '{"type":"result","status":"error","error":{"message":"no mcp"}}'; exit 0; }
-echo '{"type":"init","session_id":"g1"}'
-echo '{"type":"message","role":"assistant","content":"Hello from ","delta":true}'
-echo '{"type":"message","role":"assistant","content":"Gemini account","delta":true}'
-echo '{"type":"result","status":"success"}'
-`, { mode: 0o755 });
-
   // Stand-in Claude Code: setup-token shows the Claude page, takes the code, prints a sign-in token.
   fs.writeFileSync(path.join(bin, "claude"), `#!/bin/sh
 if [ "$1" = "setup-token" ]; then echo "Browser didn't open? Use the url below to sign in:"; echo "https://claude.ai/oauth/authorize?code=true&client_id=z&response_type=code"; echo "Paste code here if prompted >"; read code; [ "$code" = "CLAUDECODE" ] || exit 4; echo "Your OAuth token (valid for 1 year):"; echo "sk-ant-oat01-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdef"; exit 0; fi
@@ -69,8 +58,9 @@ echo '{"type":"result","is_error":false,"session_id":"c1"}'
     const settings = await call("/api/settings");
     const ids = settings.providers.map((p) => p.id);
     for (const gone of ["anthropic", "openai", "claude-code", "codex"]) assert.ok(!ids.includes(gone), `${gone} API-key preset removed`);
-    assert.deepEqual(ids.slice(0, 3), ["claude", "chatgpt", "gemini"]);
-    assert.ok(settings.providers.slice(0, 3).every((p) => p.kind === "subscription" && !p.needsKey), "subscriptions need no key");
+    assert.deepEqual(ids.slice(0, 2), ["claude", "chatgpt"]);
+    assert.ok(!ids.includes("gemini"), "Gemini removed");
+    assert.ok(settings.providers.slice(0, 2).every((p) => p.kind === "subscription" && !p.needsKey), "subscriptions need no key");
 
     // ChatGPT: sign-in shows the official OpenAI page, then completes.
     await call("/api/subs/chatgpt/signin", "POST", {});
@@ -80,13 +70,6 @@ echo '{"type":"result","is_error":false,"session_id":"c1"}'
     const st = await call("/api/settings");
     assert.equal(st.providers.find((p) => p.id === "chatgpt").enabled, true);
     assert.equal(st.defaultProvider, "chatgpt", "first sign-in becomes the default");
-
-    // Gemini: Google page + pasted code.
-    await call("/api/subs/gemini/signin", "POST", {});
-    const s2 = await until(async () => (await call("/api/subs")).find((s) => s.id === "gemini" && s.needsCode), "gemini asks for code");
-    assert.match(s2.loginUrl, /^https:\/\/accounts\.google\.com\//);
-    await call("/api/subs/gemini/code", "POST", { code: "GOOD" });
-    await until(async () => (await call("/api/subs")).find((s) => s.id === "gemini").stage === "signed-in", "gemini signed in");
 
     // Claude: Claude page + pasted code → token kept (never shown in settings).
     await call("/api/subs/claude/signin", "POST", {});
@@ -100,13 +83,14 @@ echo '{"type":"result","is_error":false,"session_id":"c1"}'
     const bots = (await call("/api/state")).bots;
     await call(`/api/bots/${bots[0].id}/messages`, "POST", { text: "hi" });
     await until(async () => (await call(`/api/bots/${bots[0].id}/messages`)).some((m) => m.text === "Hello from ChatGPT subscription"), "chatgpt reply");
-    await call(`/api/bots/${bots[1].id}`, "PATCH", { providerId: "gemini" });
-    await call(`/api/bots/${bots[1].id}/messages`, "POST", { text: "hi" });
-    await until(async () => (await call(`/api/bots/${bots[1].id}/messages`)).some((m) => m.text === "Hello from Gemini account"), "gemini reply");
-
     await call(`/api/bots/${bots[2].id}`, "PATCH", { providerId: "claude" });
     await call(`/api/bots/${bots[2].id}/messages`, "POST", { text: "hi" });
     await until(async () => (await call(`/api/bots/${bots[2].id}/messages`)).some((m) => m.text === "Hello from Claude subscription"), "claude reply");
+
+    // Files reach the official program: copied into its folder, pictures passed as images.
+    const pic = await call("/api/files/json", "POST", { name: "photo.png", mime: "image/png", b64: Buffer.from("png").toString("base64") });
+    await call(`/api/bots/${bots[0].id}/messages`, "POST", { text: "look", attachments: [pic.id] });
+    await until(async () => (await call(`/api/bots/${bots[0].id}/messages`)).some((m) => m.text === "I can open the picture"), "codex got the picture");
 
     // Signing out removes the login.
     await call("/api/subs/chatgpt/signout", "POST", {});

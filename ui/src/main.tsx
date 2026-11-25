@@ -6,6 +6,7 @@ import { BotEditor, Settings, toast } from "./settings.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
 import { IconBell, IconGear, IconPlus, IconSearch } from "./icons.tsx";
 import { applyAppearance, loadAppearance } from "./appearance.ts";
+import { fileIcon, type Attachment } from "./files.ts";
 
 applyAppearance(loadAppearance());
 
@@ -50,6 +51,9 @@ function Home({ poll }: { poll: boolean }) {
   const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [query, setQuery] = useState("");
   const [voiceOk, setVoiceOk] = useState(false);
+  // Files/text shared to MausDroid from another app, waiting for "which bot?".
+  const [shared, setShared] = useState<{ attachments: Attachment[]; text?: string } | null>(null);
+  const [initial, setInitial] = useState<{ botId: string; text?: string; attachments?: Attachment[] } | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
   const refreshTimer = useRef<number | null>(null);
@@ -93,6 +97,8 @@ function Home({ poll }: { poll: boolean }) {
     });
     // Notification taps open the right chat: the shell calls window.mausdroidOpen(botId).
     (window as any).mausdroidOpen = (botId: string) => setView({ kind: "chat", botId });
+    // The Android app hands over shared files (already saved) and text.
+    (window as any).mausdroidShare = (payload: { attachments: Attachment[]; text?: string }) => setShared(payload);
     const hash = new URLSearchParams(location.hash.slice(1));
     if (hash.get("bot")) setView({ kind: "chat", botId: hash.get("bot")! });
     return () => off();
@@ -130,8 +136,40 @@ function Home({ poll }: { poll: boolean }) {
 
   if (onboarding) return <Onboarding onDone={() => (setOnboarding(false), void api("settings/general", { method: "PUT", body: { onboardingDone: true } }))} />;
 
+  const shareSheet = shared ? (
+    <div class="sheet-bg" onClick={() => setShared(null)}>
+      <div class="sheet" onClick={(e) => e.stopPropagation()}>
+        <h2>Send to which bot?</h2>
+        <div class="pending" style={{ border: 0, padding: "0 .6rem .6rem" }}>
+          {shared.attachments.map((a) => (
+            <span class="file-chip">
+              {fileIcon(a)} <span class="fname">{a.name}</span>
+            </span>
+          ))}
+          {shared.text ? <span class="file-chip">🔗 <span class="fname">{shared.text}</span></span> : null}
+        </div>
+        {sorted.map((b) => (
+          <button
+            class="row"
+            onClick={() => {
+              setInitial({ botId: b.id, text: shared.text, attachments: shared.attachments });
+              setShared(null);
+              setView({ kind: "chat", botId: b.id });
+            }}
+          >
+            <Avatar bot={b} />
+            <div class="meta">
+              <div class="name">{b.name}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div class={`layout ${view.kind !== "list" ? "in-chat" : ""}`}>
+      {shareSheet}
       <div class="sidebar">
         <div class="topbar">
           <h1 class="brand">
@@ -199,6 +237,8 @@ function Home({ poll }: { poll: boolean }) {
             onEdit={() => setView({ kind: "edit", botId: current.id })}
             refresh={() => void loadState()}
             voiceOk={voiceOk}
+            remote={poll}
+            initial={initial?.botId === current.id ? initial : undefined}
           />
         ) : view.kind === "edit" ? (
           <BotEditor
