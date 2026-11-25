@@ -40,6 +40,9 @@ type peer struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "pty" {
+		os.Exit(runPty(os.Args[2:]))
+	}
 	stateDir := flag.String("state", "", "state directory")
 	hostname := flag.String("hostname", "mausdroid", "tailnet hostname")
 	forward := flag.String("forward", "127.0.0.1:8737", "local engine address to expose on tailnet :80")

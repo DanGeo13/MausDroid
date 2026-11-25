@@ -41,7 +41,7 @@ function ProviderRow({ p, isDefault, reload }: { p: Provider; isDefault: boolean
   const [runOn, setRunOn] = useState(p.runOn ?? "computer");
   const [computerUrl, setComputerUrl] = useState(p.computerUrl ?? "");
   const [computerToken, setComputerToken] = useState("");
-  const isCli = p.kind.startsWith("cli-");
+  const isCli = false;
   const save = run(async () => {
     const body: any = { enabled: true, defaultModel: model };
     if (key) body.key = key;
@@ -139,13 +139,187 @@ function ProviderRow({ p, isDefault, reload }: { p: Provider; isDefault: boolean
   );
 }
 
+const SUB_LOOK: Record<string, { color: string; mark: string }> = {
+  claude: { color: "#D97757", mark: "✳︎" },
+  chatgpt: { color: "#10A37F", mark: "◎" },
+  gemini: { color: "#4C8DF6", mark: "✦" },
+};
+
+function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider; isDefault: boolean; reload: () => void }) {
+  const [code, setCode] = useState("");
+  const [advanced, setAdvanced] = useState(false);
+  const [computerUrl, setComputerUrl] = useState(p.computerUrl ?? "");
+  const [computerToken, setComputerToken] = useState("");
+  const [runOn, setRunOn] = useState(p.runOn ?? "phone");
+  const [model, setModel] = useState(p.defaultModel);
+  const look = SUB_LOOK[sub.id] ?? { color: "#666", mark: "•" };
+  const busy = sub.stage === "installing" || sub.stage === "signing-in";
+  const signedIn = sub.stage === "signed-in";
+  const stageText: Record<string, string> = {
+    "not-installed": "Not signed in",
+    installed: "Not signed in",
+    installing: "Getting ready…",
+    "signing-in": "Signing in…",
+    "signed-in": "Signed in",
+    error: "Needs attention",
+  };
+  return (
+    <div class="section">
+      <div class="inline" style={{ flexWrap: "nowrap" }}>
+        <div class="avatar" style={{ background: look.color, width: "2.8rem", height: "2.8rem", fontSize: "1.3rem" }}>
+          {look.mark}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <strong>{sub.label}</strong> {isDefault ? <span class="pill">default</span> : null}
+          <div class="muted" style={{ fontSize: ".8rem" }}>
+            <span class={`pill ${signedIn ? "ok" : sub.stage === "error" ? "bad" : busy ? "warn" : ""}`}>{stageText[sub.stage]}</span> · {sub.program} by {sub.company}
+          </div>
+        </div>
+      </div>
+      <p class="help" style={{ marginTop: ".6rem" }}>
+        {p.note}
+      </p>
+      {sub.message ? <p style={{ fontSize: ".88rem", margin: ".2rem 0 .6rem" }}>{sub.message}</p> : null}
+      {sub.stage === "installing" && sub.progress != null ? (
+        <div style={{ height: ".45rem", background: "var(--panel2)", borderRadius: "999px", overflow: "hidden", marginBottom: ".6rem" }}>
+          <div style={{ width: `${sub.progress}%`, height: "100%", background: "linear-gradient(90deg, var(--accent), var(--accent2))" }} />
+        </div>
+      ) : null}
+      {sub.stage === "signing-in" ? (
+        <div class="section" style={{ background: "var(--panel2)", boxShadow: "none" }}>
+          {sub.loginUrl ? (
+            <p style={{ margin: "0 0 .5rem" }}>
+              <a href={sub.loginUrl} target="_blank" rel="noopener">
+                Open the {sub.label} sign-in page
+              </a>{" "}
+              if it didn't open by itself.
+            </p>
+          ) : (
+            <p class="muted">Waiting for the sign-in page…</p>
+          )}
+          {sub.needsCode || sub.id !== "chatgpt" ? (
+            <div class="field">
+              <label>After signing in, paste the code {sub.label} shows you</label>
+              <div class="inline">
+                <input value={code} onInput={(e) => setCode(val(e))} placeholder="Paste code here" autocomplete="off" />
+                <button class="btn small" disabled={!code.trim()} onClick={run(async () => (await api(`subs/${sub.id}/code`, { body: { code } }), setCode("")))}>
+                  Submit
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p class="help">Finish signing in on the page that opened; this updates by itself.</p>
+          )}
+          {sub.log ? (
+            <details>
+              <summary class="muted" style={{ fontSize: ".8rem" }}>
+                Details
+              </summary>
+              <pre style={{ whiteSpace: "pre-wrap", fontSize: ".72rem", maxHeight: "10rem", overflow: "auto" }}>{sub.log}</pre>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+      <div class="inline">
+        {!signedIn && !busy ? (
+          <button class="btn" onClick={run(async () => api(`subs/${sub.id}/signin`, { body: {} }))}>
+            Sign in with {sub.label}
+          </button>
+        ) : null}
+        {busy ? (
+          <button class="btn secondary" onClick={run(async () => api(`subs/${sub.id}/cancel`, { body: {} }))}>
+            Cancel
+          </button>
+        ) : null}
+        {signedIn && !isDefault ? (
+          <button class="btn" onClick={run(async () => (await api("settings/general", { method: "PUT", body: { defaultProvider: p.id } }), reload()), `${sub.label} is now the default`)}>
+            Make default
+          </button>
+        ) : null}
+        {signedIn ? (
+          <button class="btn secondary" onClick={run(async () => api(`subs/${sub.id}/signout`, { body: {} }), "Signed out")}>
+            Sign out
+          </button>
+        ) : null}
+        <button class="btn secondary small" onClick={() => setAdvanced(!advanced)}>
+          {advanced ? "Hide options" : "Options"}
+        </button>
+      </div>
+      {advanced ? (
+        <div style={{ marginTop: ".8rem" }}>
+          <div class="field">
+            <label>Default model</label>
+            <select value={model} onChange={(e) => setModel(val(e))}>
+              {p.models.map((m) => (
+                <option value={m}>{m === "default" ? `${sub.label}'s default` : m}</option>
+              ))}
+            </select>
+          </div>
+          <div class="field">
+            <label>Where it runs</label>
+            <select value={runOn} onChange={(e) => setRunOn(val(e))}>
+              <option value="phone">This phone (your computer as backup)</option>
+              <option value="computer">Always my computer</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Computer backup: companion address (e.g. http://my-pc:8790 over Tailscale)</label>
+            <input value={computerUrl} onInput={(e) => setComputerUrl(val(e))} placeholder="Optional" />
+          </div>
+          <div class="field">
+            <label>Companion pairing token</label>
+            <input type="password" value={computerToken} onInput={(e) => setComputerToken(val(e))} placeholder="Shown by the companion when it starts" />
+          </div>
+          <p class="help">On the computer, sign in once by running the official program there (see companion/README.md).</p>
+          <div class="inline">
+            <button
+              class="btn secondary"
+              onClick={run(async () => {
+                await api(`settings/providers/${p.id}`, { method: "PUT", body: { defaultModel: model, runOn, computerUrl, ...(computerToken ? { computerToken } : {}), ...(runOn === "computer" && computerUrl ? { enabled: true } : {}) } });
+                setComputerToken("");
+                reload();
+              }, "Saved")}
+            >
+              Save options
+            </button>
+            {sub.stage !== "not-installed" && !busy ? (
+              <button class="btn secondary" onClick={run(async () => api(`subs/${sub.id}/uninstall`, { body: {} }), "Removed")}>
+                Remove from phone
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AiTab() {
   const [s, reload] = useLoad<any>("settings");
-  if (!s) return <p class="muted">Loading…</p>;
+  const [subs, reloadSubs] = useLoad<any[]>("subs");
+  useEffect(() => {
+    const t = setInterval(() => {
+      reloadSubs();
+    }, 1500);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (subs?.some((x) => x.stage === "signed-in")) reload();
+  }, [subs?.map((x) => x.stage).join()]);
+  if (!s || !subs) return <p class="muted">Loading…</p>;
+  const subProviders = s.providers.filter((p: Provider) => p.kind === "subscription");
+  const others = s.providers.filter((p: Provider) => p.kind !== "subscription");
   return (
     <>
-      <p class="help">Turn on at least one. Free choices: Gemini (free key from Google AI Studio), OpenRouter free models, Groq, or a local model. Claude Code and Codex use your existing subscriptions.</p>
-      {s.providers.map((p: Provider) => (
+      <h2 style={{ fontSize: "1rem", margin: ".2rem 0 .3rem" }}>Your subscriptions</h2>
+      <p class="help">Sign in with your own account. No API keys: each uses the company's official app and login page. The first sign-in downloads it to your phone (about 170 MB; Wi-Fi recommended).</p>
+      {subs.map((sub) => {
+        const p = subProviders.find((x: Provider) => x.id === sub.id);
+        return p ? <SubscriptionCard key={sub.id} sub={sub} p={p} isDefault={s.defaultProvider === p.id} reload={reload} /> : null;
+      })}
+      <h2 style={{ fontSize: "1rem", margin: "1.2rem 0 .3rem" }}>Other models</h2>
+      <p class="help">Optional extras with an API key, free services, or local models on your phone, PC or another device.</p>
+      {others.map((p: Provider) => (
         <ProviderRow p={p} key={p.id} isDefault={s.defaultProvider === p.id} reload={reload} />
       ))}
     </>
@@ -584,6 +758,100 @@ function WebsiteTab() {
   );
 }
 
+// ---------------- Voice & assistant ----------------
+function VoiceTab({ bots }: { bots: Bot[] }) {
+  const [s, reload] = useLoad<any>("settings");
+  const [sys, reloadSys] = useLoad<any>("system");
+  useEffect(() => {
+    const t = setInterval(reloadSys, 4000);
+    return () => clearInterval(t);
+  }, []);
+  if (!s) return <p class="muted">Loading…</p>;
+  const save = (body: object) => run(async () => (await api("settings/voice", { method: "PUT", body }), reload()));
+  const visible = bots.filter((b) => !b.hidden);
+  const fallback = visible.find((b) => b.pinned) ?? visible[0];
+  return (
+    <>
+      <div class="section">
+        <h2>Digital assistant</h2>
+        <p class="help">Use MausDroid instead of Google Assistant or ChatGPT: long-press the home button (or hold power), and your chosen bot listens straight away and answers out loud.</p>
+        <div class="toggle">
+          <span>MausDroid is your assistant {sys?.isDefaultAssistant ? <span class="pill ok">yes</span> : <span class="pill warn">not yet</span>}</span>
+          <button class="btn secondary small" onClick={run(async () => api("system/assistant", { body: {} }))}>
+            {sys?.isDefaultAssistant ? "Change" : "Set up"}
+          </button>
+        </div>
+        {!sys?.isDefaultAssistant ? <p class="help">In the screen that opens, choose “Digital assistant app” (or “Default assistant”) → MausDroid.</p> : null}
+        <div class="toggle">
+          <span>Microphone {sys?.microphoneAllowed ? <span class="pill ok">allowed</span> : <span class="pill warn">needed</span>}</span>
+          {!sys?.microphoneAllowed ? (
+            <button class="btn secondary small" onClick={run(async () => api("system/microphone", { body: {} }))}>
+              Allow
+            </button>
+          ) : null}
+        </div>
+        <div class="field" style={{ marginTop: ".6rem" }}>
+          <label>Which bot answers</label>
+          <select value={s.assistant?.botId ?? ""} onChange={(e) => save({ assistantBotId: val(e) || null })()}>
+            <option value="">{fallback ? `${fallback.emoji} ${fallback.name} (pinned bot)` : "Your first bot"}</option>
+            {visible.map((b) => (
+              <option value={b.id}>
+                {b.emoji} {b.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <label class="toggle">
+          <span>Answer out loud</span>
+          <input type="checkbox" checked={s.assistant?.speak ?? true} onChange={() => save({ assistantSpeak: !(s.assistant?.speak ?? true) })()} />
+        </label>
+        <p class="help">The assistant bot uses its own AI (e.g. your Claude, ChatGPT or Gemini sign-in), skills and connected apps. Say “use the … skill” to pick a skill.</p>
+      </div>
+      <div class="section">
+        <h2>Voice</h2>
+        <div class="field">
+          <label>Voice engine</label>
+          <select value={s.voice?.engine ?? "phone"} onChange={() => {}}>
+            <option value="phone">This phone's voice (free, works with every AI)</option>
+            <option value="api" disabled>
+              AI voices with an API key — coming later
+            </option>
+            <option value="local" disabled>
+              Local voice on phone or PC — coming later
+            </option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Read replies aloud</label>
+          <div class="seg">
+            {(
+              [
+                ["voice", "When I talk"],
+                ["always", "Always"],
+                ["never", "Never"],
+              ] as const
+            ).map(([k, label]) => (
+              <button class={(s.voice?.readReplies ?? "voice") === k ? "on" : ""} onClick={save({ readReplies: k })}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div class="field">
+          <label>Speaking speed: {Math.round((s.voice?.rate ?? 1) * 100)}%</label>
+          <input type="range" min="0.6" max="1.6" step="0.1" value={s.voice?.rate ?? 1} onChange={(e) => save({ rate: Number(val(e)) })()} />
+        </div>
+        <button class="btn secondary" onClick={run(async () => api("voice/speak", { body: { text: "Hi! This is how your bots will sound." } }))}>
+          Test voice
+        </button>
+        <p class="help" style={{ marginTop: ".6rem" }}>
+          To change the voice itself, use your phone's Settings → Accessibility → Text-to-speech.
+        </p>
+      </div>
+    </>
+  );
+}
+
 // ---------------- Appearance ----------------
 function AppearanceTab() {
   const [a, setA] = useState<Appearance>(loadAppearance());
@@ -671,7 +939,7 @@ function MemoryTab() {
   );
 }
 
-export const SETTINGS_TABS = ["AI", "Appearance", "Connected apps", "Skills", "Routines & alerts", "Phone", "Website & devices", "Memory"] as const;
+export const SETTINGS_TABS = ["AI", "Voice & assistant", "Appearance", "Connected apps", "Skills", "Routines & alerts", "Phone", "Website & devices", "Memory"] as const;
 
 export function Settings({ tab, setTab, bots, onBack }: { tab: string; setTab: (t: string) => void; bots: Bot[]; onBack: () => void }) {
   return (
@@ -690,7 +958,7 @@ export function Settings({ tab, setTab, bots, onBack }: { tab: string; setTab: (
         ))}
       </div>
       <div class="page">
-        {tab === "AI" ? <AiTab /> : tab === "Appearance" ? <AppearanceTab /> : tab === "Connected apps" ? <AppsTab /> : tab === "Skills" ? <SkillsTab /> : tab === "Routines & alerts" ? <RoutinesTab bots={bots} /> : tab === "Phone" ? <PhoneTab /> : tab === "Website & devices" ? <WebsiteTab /> : <MemoryTab />}
+        {tab === "AI" ? <AiTab /> : tab === "Voice & assistant" ? <VoiceTab bots={bots} /> : tab === "Appearance" ? <AppearanceTab /> : tab === "Connected apps" ? <AppsTab /> : tab === "Skills" ? <SkillsTab /> : tab === "Routines & alerts" ? <RoutinesTab bots={bots} /> : tab === "Phone" ? <PhoneTab /> : tab === "Website & devices" ? <WebsiteTab /> : <MemoryTab />}
       </div>
     </>
   );

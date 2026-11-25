@@ -26,6 +26,7 @@ class BridgeServer(
     }
 
     private val browser: BackgroundBrowser get() = browserProvider()
+    private val voice by lazy { Voice(ctx) }
 
     private fun ok(o: Any = JSONObject().put("ok", true)) = newFixedLengthResponse(Response.Status.OK, "application/json", o.toString())
     private fun err(status: Response.Status, msg: String) = newFixedLengthResponse(status, "application/json", JSONObject().put("error", msg).toString())
@@ -72,6 +73,12 @@ class BridgeServer(
                 "/update/apply" -> ok(JSONObject().put("restarting", hooks.applyUpdate()))
                 "/engine/ready" -> { hooks.engineReady(body.optString("version")); ok() }
                 "/busy" -> { hooks.setBusy(body.optBoolean("busy")); ok() }
+                "/voice/listen" -> {
+                    val (text, error) = voice.listenBlocking()
+                    if (text != null) ok(JSONObject().put("text", text)) else err(Response.Status.BAD_REQUEST, error ?: "No speech")
+                }
+                "/voice/speak" -> { voice.speak(body.optString("text"), body.optDouble("rate", 1.0).toFloat()); ok() }
+                "/voice/stop" -> { voice.stopSpeaking(); voice.stopListening(); ok() }
                 "/device/info" -> ok(DeviceSettings.info(ctx))
                 else -> if (session.uri.startsWith("/device/")) ok(JSONObject().put("opened", DeviceSettings.open(ctx, session.uri.removePrefix("/device/"))))
                 else err(Response.Status.NOT_FOUND, "unknown ${session.uri}")

@@ -109,6 +109,7 @@ class EngineService : Service(), BridgeServer.Hooks {
                 "MAUSDROID_TAILNET_PROXY" to "127.0.0.1:${MausApp.TAILNET_PROXY_PORT}",
                 "MAUSDROID_APK_VERSION" to BuildConfig.VERSION_NAME,
                 "MAUSDROID_PLATFORM" to "android",
+                "MAUSDROID_NATIVE_DIR" to applicationInfo.nativeLibraryDir,
                 "HOME" to data.absolutePath,
                 "TMPDIR" to cacheDir.absolutePath,
             )

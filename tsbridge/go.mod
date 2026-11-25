@@ -2,7 +2,10 @@ module github.com/DanGeo13/MausDroid/tsbridge
 
 go 1.24.6
 
-require tailscale.com v1.86.2
+require (
+	github.com/creack/pty v1.1.24
+	tailscale.com v1.86.2
+)
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect

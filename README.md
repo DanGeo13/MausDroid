@@ -9,7 +9,7 @@ screen off), and **ask before anything risky**.
 ## Install on your phone (Poco F8 / any Android 9+, 64-bit)
 
 1. On the phone, download the latest APK:
-   **https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/MausDroid-0.1.2.apk**
+   **https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/MausDroid-0.2.0.apk**
 2. Open it. Android asks to allow installing from your browser/files app → allow → **Install**.
 3. Open **MausDroid** and follow the short tour.
 
@@ -22,10 +22,11 @@ you get a notification — tap it to install. Your bots, chats and settings stay
 | | |
 |---|---|
 | Bots like contacts | Chat list, personalities, pin, per-bot AI model, approval level, skills |
-| AI brains | Claude / OpenAI API keys · free: Gemini (AI Studio key), OpenRouter free models, Groq · local or custom endpoints (phone, PC, any device) · **Claude Code and Codex with your subscriptions** via the [computer companion](companion/README.md) (on-phone mode experimental) |
+| AI brains | **Your subscriptions by sign-in only (no API keys):** Claude (Claude Code), ChatGPT (Codex), Gemini (Gemini CLI) — official programs on the phone, your PC as backup ([companion](companion/README.md)) · other models: OpenRouter, Groq, local/custom endpoints |
+| Voice & assistant | Talk to any bot (mic button); replies read aloud with the phone's voice · **MausDroid as the phone's digital assistant** (long-press home/power) with your choice of bot |
 | Background browser | Runs inside the app's background service; you keep using the phone; works with the screen off. Sign in yourself once ("browser_ask_login"), bots reuse the login |
 | Connected apps | Composio: Gmail, Google Drive, Calendar, Outlook, Slack, Notion and 500+ more, several accounts per app |
-| Skills marketplace | Search GitHub for skills (SKILL.md) or install from any repo link |
+| Skills marketplace | Search GitHub for skills (SKILL.md) or install from any repo link · type **/** in a chat to use one |
 | Approvals | Allow / Deny cards in chat and **in the notification** |
 | Smart alerts (base) | Routines & watchers ("every weekday 7am brief me", "only alert me if…"), quiet hours, alert history |
 | Built-in Tailscale | Joins your tailnet itself with an auth key — no Tailscale app needed |

@@ -10,5 +10,5 @@ export interface Msg {
 export interface Card { id: string; kind: "approval" | "question"; botId: string; title: string; detail: string; tool?: string; options?: string[] }
 export interface Provider {
   id: string; label: string; kind: string; baseUrl?: string; defaultModel: string; models: string[]; runOn?: string; computerUrl?: string;
-  enabled: boolean; needsKey: boolean; hasKey: boolean; note?: string; free?: boolean;
+  enabled: boolean; needsKey: boolean; hasKey: boolean; note?: string; free?: boolean; subId?: string;
 }

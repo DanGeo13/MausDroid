@@ -20,6 +20,16 @@ object DeviceSettings {
             .put("model", android.os.Build.MODEL)
             .put("android", android.os.Build.VERSION.RELEASE)
             .put("apk", BuildConfig.VERSION_NAME)
+            .put("microphoneAllowed", ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+            .put("isDefaultAssistant", isDefaultAssistant(ctx))
+    }
+
+    /** True when MausDroid is chosen as the phone's digital assistant. */
+    fun isDefaultAssistant(ctx: Context): Boolean = try {
+        val cr = ctx.contentResolver
+        listOf("voice_interaction_service", "assistant").any { Settings.Secure.getString(cr, it)?.contains(ctx.packageName) == true }
+    } catch (_: Exception) {
+        false
     }
 
     private fun launch(ctx: Context, vararg intents: Intent): Boolean {
@@ -53,6 +63,17 @@ object DeviceSettings {
             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName),
             appDetails(ctx),
         )
+        "assistant" -> launch(
+            ctx,
+            Intent(Settings.ACTION_VOICE_INPUT_SETTINGS),
+            Intent("android.settings.MANAGE_DEFAULT_APPS_SETTINGS"),
+            Intent(Settings.ACTION_SETTINGS),
+        )
+        "microphone" -> {
+            // Asks for the microphone from the app screen.
+            ctx.startActivity(Intent(ctx, MainActivity::class.java).putExtra("askMic", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            true
+        }
         else -> launch(ctx, appDetails(ctx))
     }
 }

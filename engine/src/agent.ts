@@ -1,10 +1,11 @@
 import { addMessage, getBot, history, patchMessage, setHistory, updateBot, type Bot } from "./bots.ts";
 import { emit } from "./events.ts";
-import { provider, settings, type ProviderConfig } from "./settings.ts";
+import { provider, renamedProvider, settings, type ProviderConfig } from "./settings.ts";
 import { getSecret } from "./secrets.ts";
 import { anthropicTurn } from "./providers/anthropic.ts";
 import { openaiTurn } from "./providers/openai.ts";
 import { runCli } from "./providers/cli.ts";
+import { isSignedIn } from "./subscriptions.ts";
 import { describeSkills, memoryContext, toolsFor, type Tool } from "./tools/index.ts";
 import { requestApproval } from "./approvals.ts";
 import { clip, errorText } from "./util.ts";
@@ -17,6 +18,14 @@ import type { Block, ModelTurn, Msg } from "./types.ts";
 const MAX_STEPS = 40;
 const running = new Map<string, AbortController>();
 const queues = new Map<string, { text: string; source: string; images?: { mediaType: string; data: string }[] }[]>();
+/** Called with the bot's final reply when a turn ends (voice read-aloud, assistant answers). */
+type TurnEnd = (botId: string, reply: string) => void;
+const turnEndListeners = new Set<TurnEnd>();
+export const onTurnEnd = (fn: TurnEnd) => {
+  turnEndListeners.add(fn);
+  return () => turnEndListeners.delete(fn);
+};
+const lastReply = new Map<string, string>();
 
 export const isBusy = (botId: string) => running.has(botId);
 export const busyBots = () => [...running.keys()];
@@ -33,9 +42,9 @@ export function stopBot(botId: string) {
 
 export function resolveProvider(bot: Bot): ProviderConfig {
   const s = settings();
-  const id = bot.providerId ?? s.defaultProvider ?? s.providers.find((p) => p.enabled)?.id;
+  const id = renamedProvider(bot.providerId) ?? s.defaultProvider ?? s.providers.find((p) => p.enabled)?.id;
   const p = id ? provider(id) : undefined;
-  if (!p || !p.enabled) throw new Error("No AI is set up for this bot yet. Open Settings → AI and turn one on (Gemini and OpenRouter have free options).");
+  if (!p || !p.enabled) throw new Error("No AI is set up for this bot yet. Open Settings → AI and sign in to Claude, ChatGPT or Gemini (Gemini is free with a Google account).");
   return p;
 }
 
@@ -104,14 +113,24 @@ async function drain(botId: string) {
       const batch = queues.get(botId)!.splice(0);
       const bot = getBot(botId);
       if (!bot) break;
+      lastReply.delete(botId);
       try {
         const p = resolveProvider(bot);
-        if (p.kind === "cli-claude" || p.kind === "cli-codex") await runCliTurn(bot, p, batch.map((b) => b.text).join("\n\n"), ctl.signal);
+        if (p.kind === "subscription") await runCliTurn(bot, p, batch.map((b) => b.text).join("\n\n"), ctl.signal);
         else await runApiTurn(bot, p, batch, ctl.signal);
       } catch (e) {
         if (ctl.signal.aborted) break;
         const m = addMessage(botId, { role: "assistant", text: `⚠️ ${errorText(e)}`, status: "error" });
         emit("message", { botId, message: m });
+        lastReply.set(botId, errorText(e));
+      }
+      const reply = lastReply.get(botId) ?? "";
+      for (const l of turnEndListeners) {
+        try {
+          l(botId, reply);
+        } catch {
+          /* listener problems never stop the bot */
+        }
       }
     }
   } finally {
@@ -156,6 +175,7 @@ async function runApiTurn(bot: Bot, p: ProviderConfig, batch: { text: string; im
     }
     const finalText = turn.blocks.filter((b) => b.type === "text").map((b: any) => b.text).join("");
     patchMessage(bot.id, reply.id, { text: finalText, status: "done" });
+    if (finalText.trim()) lastReply.set(bot.id, finalText);
     emit("message.updated", { botId: bot.id, messageId: reply.id, text: finalText, status: finalText ? "done" : "empty" });
     h.push({ role: "assistant", content: turn.blocks });
 
@@ -204,21 +224,23 @@ async function runTool(bot: Bot, tools: Tool[], call: Extract<Block, { type: "to
 }
 
 async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: AbortSignal) {
-  const mcpBase = p.runOn === "phone" ? `http://127.0.0.1:${config.port}` : settings().tailscale.enabled ? `http://${settings().tailscale.hostname}` : `http://127.0.0.1:${config.port}`;
+  // On the phone the program reaches MausDroid locally; a computer reaches it over Tailscale.
+  const onPhone = p.runOn !== "computer" && isSignedIn(p.subId!);
+  const mcpBase = onPhone || !settings().tailscale.enabled ? `http://127.0.0.1:${config.port}` : `http://${settings().tailscale.hostname}`;
   const run = {
-    engine: p.kind === "cli-claude" ? ("claude" as const) : ("codex" as const),
     prompt: text,
     model: bot.model ?? p.defaultModel,
     resume: bot.cliSession,
     mcpUrl: `${mcpBase}/mcp/${bot.id}`,
     mcpToken: mcpTokenFor(bot.id),
-    systemPrompt: systemPrompt(bot, "\n\nMausDroid's tools (browser on the phone, connected apps, alerts, memory, routines) are available through the mausdroid MCP server."),
+    systemPrompt: systemPrompt(bot, "\n\nMausDroid's tools (browser on the phone, connected apps, alerts, memory, routines, skills) are available through the mausdroid MCP server."),
   };
   let current: ReturnType<typeof addMessage> | null = null;
   for await (const ev of runCli(p, run, signal)) {
     if (ev.kind === "session" && ev.sessionId) updateBot(bot.id, { cliSession: ev.sessionId });
     else if (ev.kind === "text" && ev.text) {
       current = addMessage(bot.id, { role: "assistant", text: ev.text, status: "done" });
+      lastReply.set(bot.id, ev.text);
       emit("message", { botId: bot.id, message: current });
     } else if (ev.kind === "tool") {
       const m = addMessage(bot.id, { role: "tool", text: "", tool: { name: ev.name ?? "tool", input: ev.input, status: "done" } });

@@ -49,6 +49,7 @@ function Home({ poll }: { poll: boolean }) {
   const [onboarding, setOnboarding] = useState(false);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [query, setQuery] = useState("");
+  const [voiceOk, setVoiceOk] = useState(false);
   const viewRef = useRef(view);
   viewRef.current = view;
   const refreshTimer = useRef<number | null>(null);
@@ -58,6 +59,7 @@ function Home({ poll }: { poll: boolean }) {
     setBots(s.bots);
     setCards(s.cards);
     setUnreadAlerts(s.unreadAlerts);
+    setVoiceOk(Boolean(s.nativeBridge) && !poll);
     if (!s.onboardingDone && !poll) setOnboarding(true);
     return s;
   };
@@ -196,6 +198,7 @@ function Home({ poll }: { poll: boolean }) {
             onBack={goBack}
             onEdit={() => setView({ kind: "edit", botId: current.id })}
             refresh={() => void loadState()}
+            voiceOk={voiceOk}
           />
         ) : view.kind === "edit" ? (
           <BotEditor

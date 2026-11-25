@@ -23,6 +23,8 @@ import { handleMcp } from "./mcp-server.ts";
 import { collection } from "./store.ts";
 import { errorText } from "./util.ts";
 import { runRoutineNow } from "./scheduler.ts";
+import * as subs from "./subscriptions.ts";
+import * as voice from "./voice.ts";
 
 export type Via = "local" | "tailnet" | "relay";
 export interface Req {
@@ -221,6 +223,62 @@ route("PUT", "/api/settings/github", async (req) => {
   await setSecret("github", String(req.body?.token ?? "").trim() || null);
   return json(publicSettings());
 });
+
+// Subscriptions: sign in with your Claude / ChatGPT / Gemini account (no API keys)
+const subId = (id: string): subs.SubId => {
+  if (!(id in subs.SUBS)) throw new HttpError(404, "Unknown subscription");
+  return id as subs.SubId;
+};
+route("GET", "/api/subs", () => json(subs.allSubs()));
+// Signing in switches the subscription on, and makes it the default if none is set.
+subs.onSignedIn((sid) => {
+  updateSettings((st) => {
+    const p = st.providers.find((x) => x.id === sid);
+    if (p) p.enabled = true;
+    st.defaultProvider ??= sid;
+  });
+  emit("settings.changed");
+});
+route("POST", "/api/subs/:id/signin", (req, [id]) => {
+  const sid = subId(id);
+  const opener = async (url: string) => {
+    if (req.via === "local" && bridgeAvailable()) await bridge("/open-url", { url });
+  };
+  void subs.signIn(sid, opener);
+  return json(subs.subStatus(sid));
+});
+route("POST", "/api/subs/:id/code", (req, [id]) => (subs.sendCode(subId(id), String(req.body?.code ?? "")), json(subs.subStatus(subId(id)))));
+route("POST", "/api/subs/:id/cancel", (_r, [id]) => (subs.cancelSignIn(subId(id)), json(subs.subStatus(subId(id)))));
+route("POST", "/api/subs/:id/signout", async (_r, [id]) => {
+  await subs.signOut(subId(id));
+  return json(subs.subStatus(subId(id)));
+});
+route("POST", "/api/subs/:id/uninstall", async (_r, [id]) => {
+  await subs.uninstall(subId(id));
+  return json(subs.subStatus(subId(id)));
+});
+
+// Voice & digital assistant
+route("PUT", "/api/settings/voice", (req) => {
+  const b = req.body ?? {};
+  updateSettings((st) => {
+    if (b.readReplies) st.voice.readReplies = b.readReplies;
+    if (typeof b.rate === "number") st.voice.rate = Math.min(2, Math.max(0.5, b.rate));
+    if ("assistantBotId" in b) st.assistant.botId = b.assistantBotId || null;
+    if ("assistantSpeak" in b) st.assistant.speak = Boolean(b.assistantSpeak);
+  });
+  emit("settings.changed");
+  return json(publicSettings());
+});
+route("POST", "/api/voice/listen", async () => json(await bridge("/voice/listen", {}, 60_000)));
+route("POST", "/api/voice/speak", async (req) => (await voice.speak(String(req.body?.text ?? "")), json({ ok: true })));
+route("POST", "/api/voice/stop", async () => json(await bridge("/voice/stop", {}).catch(() => ({}))));
+route("POST", "/api/bots/:id/voice", (req, [id]) => json(voice.sendByVoice(id, String(req.body?.text ?? ""))));
+route("GET", "/api/assistant", () => {
+  const b = voice.assistantBot();
+  return json({ botId: b?.id ?? null, botName: b?.name ?? null, emoji: b?.emoji ?? null, color: b?.color ?? null, speak: settings().assistant.speak });
+});
+route("POST", "/api/assistant/ask", async (req) => json(await voice.askAssistant(String(req.body?.text ?? ""))));
 
 // Connected apps (Composio)
 route("POST", "/api/composio/key", async (req) => (await composio.connectComposio(String(req.body?.key ?? "")), json(publicSettings())));

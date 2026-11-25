@@ -2,7 +2,7 @@ import { collection } from "./store.ts";
 import { hasSecret } from "./secrets.ts";
 import { deviceTimeZone } from "./time.ts";
 
-export type ProviderKind = "anthropic" | "openai" | "cli-claude" | "cli-codex";
+export type ProviderKind = "anthropic" | "openai" | "subscription";
 
 export interface ProviderConfig {
   id: string;
@@ -12,7 +12,9 @@ export interface ProviderConfig {
   baseUrl?: string;
   defaultModel: string;
   models: string[];
-  /** Where a CLI engine runs: on this phone, or on a paired computer through its companion. */
+  /** Subscription providers: which sign-in (Claude, ChatGPT or Gemini). */
+  subId?: "claude" | "chatgpt" | "gemini";
+  /** Where the official program runs: this phone (computer as backup), or always the computer. */
   runOn?: "phone" | "computer";
   computerUrl?: string;
   enabled: boolean;
@@ -23,15 +25,18 @@ export interface ProviderConfig {
 
 /** Ready-made presets. Free options are marked so new people can start without paying. */
 export const PROVIDER_PRESETS: ProviderConfig[] = [
-  { id: "anthropic", label: "Claude (API key)", kind: "anthropic", defaultModel: "claude-sonnet-5-5", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], enabled: false, needsKey: true },
-  { id: "openai", label: "ChatGPT / OpenAI (API key)", kind: "openai", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-5.1", models: ["gpt-5.1", "gpt-5.1-mini"], enabled: false, needsKey: true },
-  { id: "gemini", label: "Gemini (free tier key from Google AI Studio)", kind: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModel: "gemini-2.5-flash", models: ["gemini-2.5-flash", "gemini-2.5-pro"], enabled: false, needsKey: true, free: true, note: "Get a free key at aistudio.google.com with your Google account." },
-  { id: "openrouter", label: "OpenRouter (has free models)", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openrouter/auto", models: ["openrouter/auto"], enabled: false, needsKey: true, free: true, note: "Models ending in :free cost nothing." },
+  // Your subscriptions: sign in with your account (no API keys). Each runs the company's official program.
+  { id: "claude", label: "Claude", kind: "subscription", subId: "claude", defaultModel: "default", models: ["default", "opus", "sonnet", "haiku"], runOn: "phone", enabled: false, needsKey: false, note: "Sign in with your Claude account (Pro or Max). Uses Anthropic's official Claude Code." },
+  { id: "chatgpt", label: "ChatGPT", kind: "subscription", subId: "chatgpt", defaultModel: "default", models: ["default"], runOn: "phone", enabled: false, needsKey: false, note: "Sign in with your ChatGPT account (Plus, Pro, Business or Edu). Uses OpenAI's official Codex." },
+  { id: "gemini", label: "Gemini", kind: "subscription", subId: "gemini", defaultModel: "default", models: ["default", "gemini-2.5-pro", "gemini-2.5-flash"], runOn: "phone", enabled: false, needsKey: false, free: true, note: "Sign in with your Google account (free, or your Google AI plan). Uses Google's official Gemini CLI." },
+  // Other models: API keys, free services, and local models.
+  { id: "openrouter", label: "OpenRouter (many models, some free)", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openrouter/auto", models: ["openrouter/auto"], enabled: false, needsKey: true, free: true, note: "Models ending in :free cost nothing." },
   { id: "groq", label: "Groq (free tier)", kind: "openai", baseUrl: "https://api.groq.com/openai/v1", defaultModel: "llama-3.3-70b-versatile", models: ["llama-3.3-70b-versatile"], enabled: false, needsKey: true, free: true },
-  { id: "local", label: "Local / custom endpoint (Ollama, LM Studio, your PC)", kind: "openai", baseUrl: "http://127.0.0.1:11434/v1", defaultModel: "llama3.2", models: [], enabled: false, needsKey: false, free: true, note: "Any OpenAI-compatible server: on this phone, your PC over Tailscale, or another device." },
-  { id: "claude-code", label: "Claude Code (your Claude subscription)", kind: "cli-claude", defaultModel: "default", models: ["default", "opus", "sonnet", "haiku"], runOn: "computer", enabled: false, needsKey: false, note: "Uses your Claude Pro/Max login. Runs on a paired computer; on-phone mode is experimental." },
-  { id: "codex", label: "Codex (your ChatGPT subscription)", kind: "cli-codex", defaultModel: "default", models: ["default"], runOn: "computer", enabled: false, needsKey: false, note: "Uses your ChatGPT Plus/Pro login. Runs on a paired computer; on-phone mode is experimental." },
+  { id: "local", label: "Local / custom model (phone, PC or any device)", kind: "openai", baseUrl: "http://127.0.0.1:11434/v1", defaultModel: "llama3.2", models: [], enabled: false, needsKey: false, free: true, note: "Any OpenAI-compatible server: on this phone, your PC over Tailscale, or another device." },
 ];
+
+/** Old provider ids from earlier versions and what replaced them. */
+const RENAMED: Record<string, string> = { anthropic: "claude", openai: "chatgpt", "claude-code": "claude", codex: "chatgpt" };
 
 export interface Settings {
   providers: ProviderConfig[];
@@ -42,6 +47,10 @@ export interface Settings {
   onboardingDone: boolean;
   timeZone: string;
   quietHours: { start: string; end: string } | null;
+  /** Voice: "phone" = the phone's own speech recognition and voice (API and local voices later). */
+  voice: { engine: "phone"; readReplies: "voice" | "always" | "never"; rate: number };
+  /** Digital assistant (long-press home/power): which bot answers. null = the pinned/first bot. */
+  assistant: { botId: string | null; speak: boolean };
 }
 
 const settingsFile = collection<Settings>("settings", {
@@ -53,12 +62,30 @@ const settingsFile = collection<Settings>("settings", {
   onboardingDone: false,
   timeZone: deviceTimeZone(),
   quietHours: null,
+  voice: { engine: "phone", readReplies: "voice", rate: 1 },
+  assistant: { botId: null, speak: true },
 });
 
-// New presets added in later engine updates appear automatically.
 settingsFile.update((s) => {
-  for (const p of PROVIDER_PRESETS) if (!s.providers.find((x) => x.id === p.id)) s.providers.push(p);
+  s.voice ??= { engine: "phone", readReplies: "voice", rate: 1 };
+  s.assistant ??= { botId: null, speak: true };
 });
+
+// Keep providers in step with this version: subscriptions are sign-in only,
+// old API-key entries for Claude/ChatGPT/Gemini are removed, new presets appear.
+settingsFile.update((s) => {
+  s.providers = s.providers.filter((p) => !RENAMED[p.id] && !(p.id === "gemini" && p.kind !== "subscription"));
+  for (const p of PROVIDER_PRESETS) {
+    const have = s.providers.find((x) => x.id === p.id);
+    if (!have) s.providers.push(p);
+    else if (p.kind === "subscription") Object.assign(have, { label: p.label, note: p.note, kind: p.kind, subId: p.subId, needsKey: false, baseUrl: undefined });
+  }
+  s.providers.sort((a, b) => PROVIDER_PRESETS.findIndex((p) => p.id === a.id) - PROVIDER_PRESETS.findIndex((p) => p.id === b.id));
+  if (s.defaultProvider && RENAMED[s.defaultProvider]) s.defaultProvider = RENAMED[s.defaultProvider];
+  if (s.defaultProvider && !s.providers.find((p) => p.id === s.defaultProvider)) s.defaultProvider = null;
+});
+
+export const renamedProvider = (id: string | null) => (id && RENAMED[id]) || id;
 
 export const settings = () => settingsFile.get();
 export const updateSettings = (fn: (s: Settings) => void) => settingsFile.update(fn);

@@ -92,8 +92,17 @@ test("chat, tools and approvals work end to end", async () => {
     const mem = (await call("/api/memory/about-me")).data.text;
     assert.match(mem, /likes tea/);
 
+    // Digital assistant: the chosen bot answers and the answer comes back to the panel.
+    const research = st.data.bots[1];
+    await call("/api/settings/voice", "PUT", { assistantBotId: research.id });
+    const who = (await call("/api/assistant")).data;
+    assert.equal(who.botId, research.id);
+    const ans = (await call("/api/assistant/ask", "POST", { text: "quick question" })).data;
+    assert.equal(ans.botName, research.name);
+    assert.match(ans.reply, /All done/);
+
     // Secrets never come back to the UI.
-    await call("/api/settings/providers/openai", "PUT", { key: "sk-secret-123" });
+    await call("/api/settings/providers/openrouter", "PUT", { key: "sk-secret-123" });
     const s = JSON.stringify((await call("/api/settings")).data);
     assert.ok(!s.includes("sk-secret-123"));
     assert.ok(s.includes('"hasKey":true'));

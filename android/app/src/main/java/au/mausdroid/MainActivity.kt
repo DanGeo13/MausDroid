@@ -65,6 +65,7 @@ class MainActivity : Activity() {
             }
         }
         pendingBot = intent.getStringExtra("botId")
+        askMicrophoneOnce()
         showSplash()
         waitForEngine()
     }
@@ -205,6 +206,15 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    /** Microphone for talking to bots and the assistant; asked once, or when Settings asks again. */
+    private fun askMicrophoneOnce(force: Boolean = false) {
+        val prefs = getSharedPreferences("ui", MODE_PRIVATE)
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        if (!force && prefs.getBoolean("askedMic", false)) return
+        prefs.edit().putBoolean("askedMic", true).apply()
+        requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 9)
+    }
+
     private fun openBot(botId: String) {
         web.evaluateJavascript("window.mausdroidOpen && window.mausdroidOpen(${org.json.JSONObject.quote(botId)})", null)
         pendingBot = null
@@ -212,6 +222,7 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.getBooleanExtra("askMic", false)) askMicrophoneOnce(force = true)
         intent.getStringExtra("botId")?.let { if (loaded) openBot(it) else pendingBot = it }
     }
 

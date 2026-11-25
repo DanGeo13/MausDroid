@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// MausDroid computer companion: lets bots on your phone use the Claude Code
-// and Codex programs (and your subscriptions) installed on this computer.
+// MausDroid computer companion: lets bots on your phone use Claude Code,
+// Codex and Gemini CLI (with your subscriptions) installed on this computer.
 // Reach it over Tailscale. Start:  node companion.mjs
 // It prints a pairing token; paste it in the phone under Settings → AI.
 import http from "node:http";
@@ -28,6 +28,15 @@ function args(run) {
     if (run.resume) a.push("--resume", run.resume);
     return ["claude", a];
   }
+  if (run.engine === "gemini") {
+    // Project settings in the work folder give Gemini CLI the phone's tools (MCP).
+    const g = path.join(WORK, ".gemini");
+    fs.mkdirSync(g, { recursive: true });
+    fs.writeFileSync(path.join(g, "settings.json"), JSON.stringify({ mcpServers: { mausdroid: { httpUrl: run.mcpUrl, headers: { Authorization: `Bearer ${run.mcpToken}` }, trust: true } } }));
+    const a = ["-p", `${run.systemPrompt}\n\n${run.prompt}`, "--output-format", "stream-json", "--yolo"];
+    if (run.model && run.model !== "default") a.push("-m", run.model);
+    return ["gemini", a];
+  }
   const base = ["exec", "--json", "--skip-git-repo-check", "-c", `mcp_servers.mausdroid.url="${run.mcpUrl}"`, "-c", `mcp_servers.mausdroid.bearer_token="${run.mcpToken}"`];
   if (run.model && run.model !== "default") base.push("-m", run.model);
   return ["codex", run.resume ? ["exec", "resume", run.resume, ...base.slice(1), run.prompt] : [...base, `${run.systemPrompt}\n\n${run.prompt}`]];
@@ -50,7 +59,7 @@ http
       } catch {
         return res.writeHead(400).end("bad json");
       }
-      if (!["claude", "codex"].includes(run.engine)) return res.writeHead(400).end("unknown engine");
+      if (!["claude", "codex", "gemini"].includes(run.engine)) return res.writeHead(400).end("unknown engine");
       const [cmd, a] = args(run);
       const child = spawn(cmd, a, { cwd: WORK, shell: process.platform === "win32", stdio: ["ignore", "pipe", "pipe"] });
       res.writeHead(200, { "content-type": "application/x-ndjson" });
@@ -59,7 +68,7 @@ http
       child.stderr.on("data", (d) => (err = (err + d).slice(-2000)));
       child.on("error", (e) => res.end(JSON.stringify({ type: "result", is_error: true, result: `${cmd} not found on this computer: ${e.message}` }) + "\n"));
       child.on("close", (code) => {
-        if (code && !res.writableEnded) res.write(JSON.stringify(run.engine === "claude" ? { type: "result", is_error: true, result: err || `exit ${code}` } : { type: "error", message: err || `exit ${code}` }) + "\n");
+        if (code && !res.writableEnded) res.write(JSON.stringify(run.engine === "claude" ? { type: "result", is_error: true, result: err || `exit ${code}` } : run.engine === "gemini" ? { type: "result", status: "error", error: { message: err || `exit ${code}` } } : { type: "error", message: err || `exit ${code}` }) + "\n");
         res.end();
       });
       req.on("close", () => !child.killed && child.kill());

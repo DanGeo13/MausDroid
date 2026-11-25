@@ -12,3 +12,4 @@ export const IconSend = I("M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z");
 export const IconSearch = I("M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3");
 export const IconStop = I("M6 6h12v12H6z");
 export const IconEdit = I("M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z");
+export const IconMic = I("M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3");

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
-import { IconBack, IconEdit, IconSend, IconStop } from "./icons.tsx";
+import { IconBack, IconEdit, IconMic, IconSend, IconStop } from "./icons.tsx";
 
 /** Bot picture: emoji on its colour. `size` in rem so it follows the text-size setting. */
 export function Avatar({ bot, size = 3, live = false }: { bot: Pick<Bot, "emoji" | "color">; size?: number; live?: boolean }) {
@@ -94,10 +94,30 @@ function ToolLine({ m }: { m: Msg }) {
   );
 }
 
-export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy }: {
-  bot: Bot; messages: Msg[]; cards: Card[]; busy: boolean; onBack: () => void; onEdit: () => void; refresh: () => void;
+export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voiceOk }: {
+  bot: Bot; messages: Msg[]; cards: Card[]; busy: boolean; onBack: () => void; onEdit: () => void; refresh: () => void; voiceOk: boolean;
 }) {
   const [text, setText] = useState("");
+  const [listening, setListening] = useState(false);
+  const [skills, setSkills] = useState<{ name: string; description: string }[]>([]);
+  useEffect(() => {
+    void api("skills").then(setSkills).catch(() => {});
+  }, []);
+  // Typing "/" lists the skills this bot can use.
+  const slash = text.startsWith("/") && !text.includes(" ") ? text.slice(1).toLowerCase() : null;
+  const usable = skills.filter((s) => !bot.skills?.length || bot.skills.includes(s.name));
+  const matches = slash !== null ? usable.filter((s) => s.name.toLowerCase().includes(slash)).slice(0, 8) : [];
+  const talk = async () => {
+    setListening(true);
+    try {
+      const r = await api<{ text: string }>("voice/listen", { body: {} });
+      if (r.text) await api(`bots/${bot.id}/voice`, { body: { text: r.text } });
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setListening(false);
+    }
+  };
   const [sending, setSending] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => end.current?.scrollIntoView({ block: "end" }), [messages.length, cards.length, messages[messages.length - 1]?.text]);
@@ -197,11 +217,30 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy }: {
         ))}
         <div ref={end} />
       </div>
+      {matches.length ? (
+        <div class="slash">
+          {matches.map((s) => (
+            <button class="slash-item" onClick={() => setText(`Use the ${s.name} skill: `)}>
+              <strong>/{s.name}</strong>
+              <span class="muted">{s.description.slice(0, 90)}</span>
+            </button>
+          ))}
+        </div>
+      ) : slash !== null && !usable.length ? (
+        <div class="slash">
+          <div class="slash-item muted">No skills yet. Add some in Settings → Skills.</div>
+        </div>
+      ) : null}
       <div class="composer">
+        {voiceOk ? (
+          <button class={`send mic ${listening ? "on" : ""}`} aria-label="Talk" title="Talk" onClick={talk} disabled={listening}>
+            <IconMic />
+          </button>
+        ) : null}
         <textarea
           rows={1}
           value={text}
-          placeholder={`Message ${bot.name}`}
+          placeholder={listening ? "Listening…" : `Message ${bot.name} · / for skills`}
           onInput={(e) => {
             const el = e.target as HTMLTextAreaElement;
             setText(el.value);
