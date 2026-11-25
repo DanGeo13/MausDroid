@@ -654,6 +654,12 @@ function PhoneTab() {
         <div class="muted" style={{ fontSize: 13 }}>
           App {upd?.apkVersion ?? "?"} · Engine {upd?.engineVersion ?? "?"} · {upd?.state ?? ""} {upd?.lastChecked ? `· checked ${new Date(upd.lastChecked).toLocaleString()}` : ""}
           {upd?.message ? <div>{upd.message}</div> : null}
+          {upd?.appUpdate ? (
+            <div>
+              📦 App update: {upd.appUpdate.replace(/ Get it from \S+$/, "")}{" "}
+              {/https:\/\/\S+\.apk/.test(upd.appUpdate) ? <a href={upd.appUpdate.match(/https:\/\/\S+\.apk/)![0]} target="_blank" rel="noopener">Download the app</a> : null}
+            </div>
+          ) : null}
         </div>
         <div class="inline" style={{ marginTop: 8 }}>
           <button class="btn secondary" onClick={run(async () => (await api("update/check", { body: {} }), reloadUpd()), "Checked")}>

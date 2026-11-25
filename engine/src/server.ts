@@ -557,7 +557,7 @@ route("PUT", "/api/tailscale", async (req) => {
   return json(publicSettings());
 });
 route("GET", "/api/update", async () => json(bridgeAvailable() ? await bridge("/update/status") : { state: "dev" }));
-route("POST", "/api/update/check", async () => json(await bridge("/update/check", {}, 120_000)));
+route("POST", "/api/update/check", async () => json(await bridge("/update/check", {}, 300_000)));
 route("POST", "/api/update/apply", async () => json(await bridge("/update/apply", {}, 300_000)));
 route("GET", "/api/system", async () => json({ ...(bridgeAvailable() ? await bridge("/device/info").catch(() => ({})) : {}), engine: config.version }));
 route("POST", "/api/system/:action", async (req, [action]) => json(await bridge(`/device/${action}`, req.body ?? {})));

@@ -36,6 +36,8 @@ class Updater(private val ctx: Context) {
     private val prefs = ctx.getSharedPreferences("updater", Context.MODE_PRIVATE)
 
     @Volatile var state = "idle"
+
+    @Volatile var appUpdate: String? = null
     @Volatile var message = ""
     @Volatile var available: String? = null
     @Volatile private var staged: String? = null
@@ -90,6 +92,7 @@ class Updater(private val ctx: Context) {
 
     fun status(): JSONObject = JSONObject()
         .put("state", state).put("message", message).put("available", available ?: JSONObject.NULL)
+        .put("appUpdate", appUpdate ?: JSONObject.NULL)
         .put("engineVersion", runningVersion()).put("apkVersion", BuildConfig.VERSION_NAME)
         .put("lastChecked", prefs.getLong("lastChecked", 0).takeIf { it > 0 }?.let { java.time.Instant.ofEpochMilli(it).toString() } ?: JSONObject.NULL)
 
@@ -123,8 +126,13 @@ class Updater(private val ctx: Context) {
             val payload = JSONObject(payloadText)
             prefs.edit().putLong("lastChecked", System.currentTimeMillis()).apply()
 
+            // A problem fetching the new app version must never stop the engine update below.
+            appUpdate = null
             payload.optJSONObject("apk")?.let { apk ->
-                if (apk.getInt("versionCode") > BuildConfig.VERSION_CODE) offerApk(apk)
+                if (apk.getInt("versionCode") > BuildConfig.VERSION_CODE) {
+                    appUpdate = try { offerApk(apk); "Version ${apk.optString("versionName")} is ready — tap the notification to install." }
+                    catch (e: Exception) { Log.w(TAG, "app update download failed", e); "Version ${apk.optString("versionName")} couldn't be downloaded (${e.message}). Get it from ${apk.getString("url")}" }
+                }
             }
             val eng = payload.getJSONObject("engine")
             val v = eng.getString("version")
@@ -167,9 +175,20 @@ class Updater(private val ctx: Context) {
 
     private fun offerApk(apk: JSONObject) {
         val file = File(ctx.cacheDir, "update.apk")
-        val bytes = get(apk.getString("url"))
-        if (sha256(bytes) != apk.getString("sha256")) throw SecurityException("Downloaded app update is damaged — ignored.")
-        file.writeBytes(bytes)
+        // Streamed to a file (the app is ~28 MB), checked before it's offered.
+        val part = File(ctx.cacheDir, "update.apk.part")
+        val c = URL(apk.getString("url")).openConnection() as HttpURLConnection
+        c.connectTimeout = 20_000
+        c.readTimeout = 60_000
+        if (c.responseCode != 200) throw RuntimeException("HTTP ${c.responseCode}")
+        val md = MessageDigest.getInstance("SHA-256")
+        c.inputStream.use { input -> part.outputStream().use { out ->
+            val buf = ByteArray(64 * 1024)
+            while (true) { val n = input.read(buf); if (n < 0) break; md.update(buf, 0, n); out.write(buf, 0, n) }
+        } }
+        if (md.digest().joinToString("") { "%02x".format(it) } != apk.getString("sha256")) { part.delete(); throw SecurityException("Downloaded app update is damaged — ignored.") }
+        file.delete()
+        part.renameTo(file)
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
         val install = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
