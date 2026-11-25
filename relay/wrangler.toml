@@ -6,6 +6,14 @@ compatibility_date = "2025-09-01"
 name = "DEVICE"
 class_name = "Device"
 
+[[durable_objects.bindings]]
+name = "PAIRING"
+class_name = "Pairing"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Device"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Pairing"]

@@ -6,8 +6,9 @@ import { settings, updateSettings } from "./settings.ts";
 /**
  * Devices you trust to control MausDroid from elsewhere (your PC's browser,
  * a tablet): through the always-on website or over Tailscale. A device is
- * added by scanning the QR code shown on the phone, then the website asks
- * for your password too.
+ * added by opening the website on it and scanning the QR code it shows
+ * with the phone (or typing its short code); the website then asks for
+ * your password too.
  */
 interface Device {
   id: string;
@@ -85,4 +86,39 @@ export function configureWebsite(relayUrl: string, enabled: boolean) {
     s.website.enabled = enabled;
     s.website.deviceId ??= randomBytes(9).toString("base64url");
   });
+}
+
+/** The 8-character linking code from a scanned QR ("https://…/p/ABCD2345") or typed code ("ABCD-2345"). */
+export function linkCodeFrom(text: string, relayUrl: string): string {
+  const t = text.trim();
+  const url = t.match(/^https?:\/\/[^\s]+$/)?.[0];
+  if (url) {
+    let u: URL;
+    try {
+      u = new URL(url);
+    } catch {
+      throw new Error("That QR code isn't a MausDroid one.");
+    }
+    if (u.origin !== new URL(relayUrl).origin) throw new Error(`That QR code is for a different website (${u.host}). Open ${new URL(relayUrl).host} on your PC.`);
+    const m = u.pathname.match(/^\/p\/([A-Za-z0-9]{8})$/);
+    if (!m) throw new Error("That QR code isn't a MausDroid linking code.");
+    return m[1].toUpperCase();
+  }
+  const code = t.toUpperCase().replace(/[\s-]/g, "");
+  if (!/^[A-Z0-9]{8}$/.test(code)) throw new Error("The code has 8 letters and numbers, like ABCD-2345.");
+  return code;
+}
+
+/** Links the PC / tablet showing that code: it opens this phone's page with a one-time pairing code. */
+export async function linkDevice(text: string): Promise<{ ok: true }> {
+  const w = settings().website;
+  if (!w.enabled || !w.relayUrl || !w.deviceId) throw new Error("Turn on the website first (address and password above).");
+  if (!getSecret("website:password")) throw new Error("Set a website password first.");
+  const code = linkCodeFrom(text, w.relayUrl);
+  const pair = createPairingCode();
+  const link = pairingLink(pair.code, websiteBase()!);
+  const r = await fetch(`${w.relayUrl.replace(/\/$/, "")}/p/${code}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ link }), signal: AbortSignal.timeout(20_000) });
+  const j = (await r.json().catch(() => ({}))) as { error?: string };
+  if (!r.ok) throw new Error(j.error ?? `The website said HTTP ${r.status}. Refresh the page on your PC for a new code.`);
+  return { ok: true };
 }

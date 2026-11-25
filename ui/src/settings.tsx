@@ -729,14 +729,37 @@ function WebsiteTab() {
   const [devices, reloadD] = useLoad<any[]>("devices");
   const [relay, setRelay] = useState("");
   const [pw, setPw] = useState("");
-  const [pair, setPair] = useState<{ link: string; expiresAt: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [linking, setLinking] = useState(false);
+  const [linkMsg, setLinkMsg] = useState("");
+  const link = async (text: string) => {
+    setLinking(true);
+    setLinkMsg("Linking…");
+    try {
+      await api("pair/link", { body: { text } });
+      setLinkMsg("✅ Linked — the PC is opening MausDroid. Enter your website password there.");
+      setCode("");
+      setTimeout(reloadD, 4000);
+    } catch (e) {
+      setLinkMsg(`⚠️ ${(e as Error).message}`);
+    }
+    setLinking(false);
+  };
+  const scan = () => {
+    (window as any).mausdroidScan = (text: string | null, error: string | null) => {
+      delete (window as any).mausdroidScan;
+      if (error) setLinkMsg(`⚠️ ${error}`);
+      else if (text) void link(text);
+    };
+    if (!(window as any).MausDroidShell.scanQr()) setLinkMsg("⚠️ The scanner isn't available on this phone — type the code instead.");
+  };
   if (!s) return <p class="muted">Loading…</p>;
   return (
     <>
       <div class="section">
         <h2>Always-on website</h2>
         <p class="help">
-          Control your bots from any browser. Uses a free Cloudflare Worker you deploy once (instructions in the MausDroid repo: <code>relay/README.md</code>). The website only passes messages to your phone; your data stays on the phone, and every device must scan a QR code and know your password.
+          Control your bots from any browser. Uses a free Cloudflare Worker you deploy once (instructions in the MausDroid repo: <code>relay/README.md</code>). The website only passes messages to your phone; your data stays on the phone, and every device must be linked from this phone and know your password.
         </p>
         <div class="field">
           <label>Website address (your Worker URL)</label>
@@ -758,20 +781,32 @@ function WebsiteTab() {
         </div>
       </div>
       <div class="section">
-        <h2>Add a device (QR code)</h2>
-        <p class="help">Scan with the other device's camera. It opens your website, links that device, then asks for your password. The code works once and expires in 10 minutes.</p>
-        <button class="btn" disabled={!s.website.passwordSet} onClick={run(async () => setPair(await api("pair/create", { body: {} })))}>
-          Show QR code
-        </button>
-        {!s.website.passwordSet ? <p class="help">Set a website password first.</p> : null}
-        {pair ? (
-          <div style={{ marginTop: 12, textAlign: "center" }}>
-            <Qr text={pair.link} />
-            <p class="muted" style={{ fontSize: 12, wordBreak: "break-all" }}>
-              {pair.link}
-            </p>
-          </div>
-        ) : null}
+        <h2>Link a PC or tablet</h2>
+        {s.website.enabled && s.website.relayUrl ? (
+          <>
+            <ol class="help" style={{ paddingLeft: "1.1rem" }}>
+              <li>
+                On the PC or tablet, open <b style={{ wordBreak: "break-all" }}>{s.website.relayUrl}</b> — it shows a QR code.
+              </li>
+              <li>Scan it here. That device opens your MausDroid and asks for your password.</li>
+            </ol>
+            {(window as any).MausDroidShell?.scanQr ? (
+              <button class="btn" disabled={!s.website.passwordSet || linking} onClick={scan}>
+                📷 Scan the QR on your PC
+              </button>
+            ) : null}
+            <div class="inline" style={{ marginTop: ".6rem" }}>
+              <input value={code} onInput={(e) => setCode(val(e))} placeholder="Or type its code, e.g. ABCD-2345" style={{ maxWidth: "15rem" }} autocapitalize="characters" />
+              <button class="btn secondary" disabled={!s.website.passwordSet || linking || code.replace(/[\s-]/g, "").length < 8} onClick={() => link(code)}>
+                Link
+              </button>
+            </div>
+            {!s.website.passwordSet ? <p class="help">Set a website password first.</p> : null}
+            {linkMsg ? <p class="help">{linkMsg}</p> : null}
+          </>
+        ) : (
+          <p class="help">Turn on the website above first.</p>
+        )}
       </div>
       <div class="section">
         <h2>Linked devices</h2>

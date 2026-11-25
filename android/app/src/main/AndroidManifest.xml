@@ -129,6 +129,8 @@
             </intent-filter>
         </activity>
 
+        <!-- Fetch Google's QR scanner when the app is installed, so the first scan works straight away. -->
+        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

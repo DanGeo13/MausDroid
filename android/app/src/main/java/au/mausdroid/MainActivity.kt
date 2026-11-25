@@ -316,8 +316,29 @@ class MainActivity : Activity() {
             .also { it.clipData = android.content.ClipData.newRawUri("", uri) }
     }
 
+    private fun jsScan(text: String?, error: String?) = web.evaluateJavascript(
+        "window.mausdroidScan && window.mausdroidScan(${if (text == null) "null" else org.json.JSONObject.quote(text)}, ${if (error == null) "null" else org.json.JSONObject.quote(error)})", null)
+
     /** Things the app's screens can ask the phone for. */
     inner class Shell {
+        /** Scans a QR code (linking a PC); the text comes back through window.mausdroidScan(text, error). */
+        @JavascriptInterface
+        fun scanQr(): Boolean {
+            runOnUiThread {
+                try {
+                    val opts = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+                        .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE).build()
+                    com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(this@MainActivity, opts).startScan()
+                        .addOnSuccessListener { b -> jsScan(b.rawValue ?: "", null) }
+                        .addOnCanceledListener { jsScan(null, null) }
+                        .addOnFailureListener { e -> jsScan(null, "The scanner couldn't start (${e.message}). Type the code shown on your PC instead.") }
+                } catch (e: Throwable) {
+                    jsScan(null, "The scanner isn't available on this phone. Type the code shown on your PC instead.")
+                }
+            }
+            return true
+        }
+
         /** Google's speech pop-up; the words come back through window.mausdroidDictation(text, error). */
         @JavascriptInterface
         fun dictate(): Boolean {

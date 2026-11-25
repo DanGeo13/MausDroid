@@ -529,6 +529,13 @@ route("PUT", "/api/memory/:scope", (req, [scope]) => (writeMemory(scope, String(
 // Devices, website, pairing
 route("GET", "/api/devices", () => json(pairing.listDevices()));
 route("DELETE", "/api/devices/:id", (_r, [id]) => (pairing.revokeDevice(id), json({ ok: true })));
+route("POST", "/api/pair/link", async (req) => {
+  try {
+    return json(await pairing.linkDevice(String(req.body?.text ?? "")));
+  } catch (e) {
+    throw new HttpError(400, (e as Error).message);
+  }
+});
 route("POST", "/api/pair/create", () => {
   const base = pairing.websiteBase();
   if (!base) throw new HttpError(400, "Turn on the website (or Tailscale) first so other devices have an address to open.");

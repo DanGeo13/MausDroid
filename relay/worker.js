@@ -2,6 +2,12 @@
 // It stores nothing but a hash of your phone's key: each browser request is
 // handed to your phone over a long-poll and the phone's answer is sent back.
 // Pairing, passwords and all data checks happen on the phone.
+//
+// Linking a PC or tablet: open the website's main address on it. It shows a
+// QR code (and a short code). Scan it with MausDroid on the phone; the phone
+// tells this relay which personal page that browser should open, with a
+// one-time pairing code, and the browser then asks for your password.
+import qrcode from "qrcode-generator";
 
 const JSON_H = { "content-type": "application/json" };
 const MAX_BODY = 4 * 1024 * 1024;
@@ -9,15 +15,105 @@ const MAX_BODY = 4 * 1024 * 1024;
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    const m = url.pathname.match(/^\/d\/([A-Za-z0-9_-]{8,40})(\/.*)?$/);
-    if (!m) {
-      return new Response("MausDroid relay is running. Open the link from your phone's QR code.", { headers: { "content-type": "text/plain" } });
+    if (url.pathname === "/" || url.pathname === "/link") return linkPage(url.origin);
+    const p = url.pathname.match(/^\/p\/([A-Za-z0-9]{8})$/);
+    if (p) {
+      const code = p[1].toUpperCase();
+      return env.PAIRING.get(env.PAIRING.idFromName(code)).fetch(new Request(`${url.origin}/p/${code}`, req));
     }
+    const m = url.pathname.match(/^\/d\/([A-Za-z0-9_-]{8,40})(\/.*)?$/);
+    if (!m) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain" } });
     if (!m[2]) return Response.redirect(`${url.origin}/d/${m[1]}/`, 301);
     const stub = env.DEVICE.get(env.DEVICE.idFromName(m[1]));
     return stub.fetch(req);
   },
 };
+
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const LINK_MINUTES = 10;
+
+function newCode() {
+  const b = crypto.getRandomValues(new Uint8Array(8));
+  return [...b].map((x) => CODE_CHARS[x % CODE_CHARS.length]).join("");
+}
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** The PC / tablet page: a QR code for the phone to scan, then it opens your MausDroid. */
+function linkPage(origin) {
+  const code = newCode();
+  const q = qrcode(0, "M");
+  q.addData(`${origin}/p/${code}`);
+  q.make();
+  const svg = q.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Link to MausDroid</title><style>
+:root{color-scheme:light dark;--bg:#f3f4f8;--card:#fff;--text:#11131a;--muted:#5f6577;--accent:#6c5cff}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0d12;--card:#151922;--text:#eef0f6;--muted:#9aa1b2}}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif}
+.card{background:var(--card);border-radius:20px;padding:28px 24px;max-width:380px;width:calc(100% - 32px);box-sizing:border-box;text-align:center;box-shadow:0 10px 40px #0002}
+h1{font-size:1.35rem;margin:.2rem 0 .4rem}.qr{background:#fff;border-radius:14px;padding:10px;margin:16px auto;max-width:260px}.qr svg{width:100%;height:auto;display:block}
+.code{font:600 1.5rem ui-monospace,monospace;letter-spacing:.12em}.muted{color:var(--muted);font-size:.92rem}ol{text-align:left;padding-left:1.2rem;color:var(--muted);font-size:.92rem}
+.status{margin-top:12px;font-weight:600;color:var(--accent)}</style></head><body><main class="card">
+<h1>🐭 Link this device to MausDroid</h1>
+<ol><li>On your phone, open <b>MausDroid → Settings → Website &amp; devices</b>.</li><li>Tap <b>Scan the QR on your PC</b> and point the phone at this code.</li></ol>
+<div class="qr" role="img" aria-label="QR code to scan with MausDroid">${svg}</div>
+<div class="muted">No scanner? Type this code on the phone:</div><div class="code">${esc(code.slice(0, 4))}-${esc(code.slice(4))}</div>
+<div class="status" id="s" role="status">Waiting for your phone…</div></main>
+<script>
+const code=${JSON.stringify(code)};const until=Date.now()+${LINK_MINUTES}*60000;const s=document.getElementById("s");
+async function poll(){if(Date.now()>until){s.textContent="This code expired — getting a new one…";return setTimeout(()=>location.reload(),1200)}
+try{const r=await fetch("/p/"+code,{headers:{accept:"application/json"},cache:"no-store"});const j=await r.json();
+if(j.link){s.textContent="Linked! Opening MausDroid…";return location.replace(j.link)}}catch(e){}setTimeout(poll,2000)}poll();
+</script></body></html>`;
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "referrer-policy": "no-referrer" } });
+}
+
+/**
+ * One linking code: the phone posts the page this browser should open
+ * (its own /d/... address with a one-time pairing code); the browser
+ * collects it once. Codes last 10 minutes and can be used once.
+ */
+export class Pairing {
+  constructor(state) {
+    this.state = state;
+  }
+  async fetch(req) {
+    const url = new URL(req.url);
+    const now = Date.now();
+    let rec = (await this.state.storage.get("rec")) ?? null;
+    if (rec && now - rec.at > LINK_MINUTES * 60_000) {
+      await this.state.storage.deleteAll();
+      rec = null;
+    }
+    if (req.method === "POST") {
+      let body;
+      try {
+        body = await req.json();
+      } catch {
+        return new Response(JSON.stringify({ error: "Bad request" }), { status: 400, headers: JSON_H });
+      }
+      const link = String(body?.link ?? "");
+      if (!link.startsWith(`${url.origin}/d/`) || !link.includes("#pair=") || link.length > 300)
+        return new Response(JSON.stringify({ error: "That isn't a MausDroid link for this website." }), { status: 400, headers: JSON_H });
+      if (rec?.link) return new Response(JSON.stringify({ error: "This code was already used." }), { status: 409, headers: JSON_H });
+      await this.state.storage.put("rec", { link, at: now });
+      return new Response(JSON.stringify({ ok: true }), { headers: JSON_H });
+    }
+    if ((req.headers.get("accept") ?? "").includes("application/json")) {
+      if (rec?.link) {
+        await this.state.storage.deleteAll(); // handed over once
+        return new Response(JSON.stringify({ link: rec.link }), { headers: { ...JSON_H, "cache-control": "no-store" } });
+      }
+      return new Response(JSON.stringify({ waiting: true }), { headers: { ...JSON_H, "cache-control": "no-store" } });
+    }
+    // Opened with an ordinary camera app instead of MausDroid.
+    return new Response(
+      `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>MausDroid</title><body style="font:16px system-ui;padding:24px;max-width:480px;margin:auto"><h2>Scan this with MausDroid</h2><p>Open <b>MausDroid → Settings → Website &amp; devices</b> on your phone and tap <b>Scan the QR on your PC</b>, then point it at the code on your computer.</p></body>`,
+      { headers: { "content-type": "text/html; charset=utf-8" } },
+    );
+  }
+}
 
 async function sha256(s) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));

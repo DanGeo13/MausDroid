@@ -71,4 +71,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+    // Scanning the QR code on your PC to link it (Google's scanner: no camera permission needed).
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 }
