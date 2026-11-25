@@ -71,6 +71,9 @@ export function userName(): string {
  * the very first piece even earlier, at a comma, so Maus starts talking
  * quickly; long runs at a space.
  */
+/** True when there's something to say (not just spaces or punctuation). Plain ranges: the phone's Node.js has no Unicode tables. */
+const SPEAKABLE = /[^\s!-/:-@[-`{-~\u2013\u2014\u2018\u2019\u201c\u201d\u2026]/;
+
 export class SpeechChunker {
   private buf = "";
   private first = true;
@@ -92,7 +95,7 @@ export class SpeechChunker {
       if (cut < 0) break;
       const piece = this.buf.slice(0, cut).trim();
       this.buf = this.buf.slice(cut);
-      if (piece.replace(/[^\p{L}\p{N}]/gu, "").length) {
+      if (SPEAKABLE.test(piece)) {
         out.push(piece);
         this.first = false;
       }
@@ -102,7 +105,7 @@ export class SpeechChunker {
   flush(): string {
     const rest = this.buf.trim();
     this.buf = "";
-    return rest.replace(/[^\p{L}\p{N}]/gu, "").length ? rest : "";
+    return SPEAKABLE.test(rest) ? rest : "";
   }
 }
 

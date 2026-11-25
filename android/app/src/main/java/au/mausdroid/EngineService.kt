@@ -91,6 +91,8 @@ class EngineService : Service(), BridgeServer.Hooks {
             .build()
     }
 
+    @Volatile private var starts = 0
+
     private fun startEngine(bridgeToken: String) {
         if (started) return
         started = true
@@ -115,6 +117,26 @@ class EngineService : Service(), BridgeServer.Hooks {
             )
             for ((k, v) in env) NodeRuntime.setEnv(k, v)
             NodeRuntime.setLogFile(Diag.engineLog(this).absolutePath)
+            // Counted BEFORE starting: a fatal error in the engine ends the whole process, so
+            // nothing after NodeRuntime.start may run. "Ready" clears the count.
+            starts = Diag.crashesRecently(this)
+            if (starts > 3) {
+                if (updater.markBad(dir.name)) {
+                    Diag.log(this, "engine ${dir.name} failed to start 3 times; going back to the built-in version")
+                    Diag.clearCrashes(this)
+                    restartProcess(this)
+                } else {
+                    Diag.log(this, "engine ${dir.name} failed to start 3 times in 5 minutes; looking for a fixed version online")
+                    // The built-in engine is broken: a fixed one may already be published.
+                    val st = try { updater.check() } catch (e: Exception) { null }
+                    if (st?.optString("state") == "ready" && updater.stageForRestart()) {
+                        Diag.log(this, "found engine ${st.optString("available")}; trying it")
+                        Diag.clearCrashes(this)
+                        restartProcess(this)
+                    } else Diag.log(this, "no fixed version found (${st?.optString("state")}: ${st?.optString("message")}); not restarting automatically")
+                }
+                return@Thread
+            }
             Diag.log(this, "starting engine ${dir.name}")
             val code = NodeRuntime.start(arrayOf("node", File(dir, "engine.cjs").absolutePath))
             Diag.log(this, "engine exited with code $code")
@@ -122,7 +144,7 @@ class EngineService : Service(), BridgeServer.Hooks {
             Diag.log(this, "engine could not start: ${android.util.Log.getStackTraceString(e)}")
           }
             // Restart, but stop after repeated failures so the problem can be seen and reported.
-            if (Diag.crashesRecently(this) <= 3) restartProcess(this)
+            if (starts <= 3) restartProcess(this)
             else Diag.log(this, "engine failed 3 times in 5 minutes; not restarting automatically")
         }, "node-engine", 64L * 1024 * 1024).apply { isDaemon = true }.start()
     }

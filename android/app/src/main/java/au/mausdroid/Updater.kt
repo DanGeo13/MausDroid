@@ -60,7 +60,8 @@ class Updater(private val ctx: Context) {
             }
         }
         val bundled = bundledVersion()
-        val current = currentFile.takeIf { it.exists() }?.readText()?.trim()
+        val bad = if (badFile.exists()) badFile.readLines().map { it.trim() } else emptyList()
+        val current = currentFile.takeIf { it.exists() }?.readText()?.trim()?.takeIf { it !in bad }
         val use = if (current == null || compare(bundled, current) > 0) bundled else current
         val dir = File(root, use)
         if (use == bundled && !File(dir, "engine.cjs").exists()) {
@@ -75,6 +76,19 @@ class Updater(private val ctx: Context) {
             return File(root, bundled)
         }
         return dir
+    }
+
+    /**
+     * A downloaded engine that keeps crashing is set aside for good and the
+     * built-in one is used. False when it is the built-in one (nothing to go back to).
+     */
+    fun markBad(version: String): Boolean {
+        if (version == bundledVersion()) return false
+        badFile.appendText("$version\n")
+        if (currentFile.exists() && currentFile.readText().trim() == version) currentFile.delete()
+        trialFile.delete(); triedFile.delete()
+        message = "Update $version didn't start properly, so the built-in version is used."
+        return true
     }
 
     /** The engine said it started fine: keep this version. */
