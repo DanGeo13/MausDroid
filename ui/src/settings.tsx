@@ -3,6 +3,7 @@ import qrcode from "qrcode-generator";
 import { api } from "./api.ts";
 import type { Bot, Provider } from "./types.ts";
 import { IconBack } from "./icons.tsx";
+import { Routines } from "./routines.tsx";
 import { loadAppearance, saveAppearance, TEXT_SIZES, type Appearance } from "./appearance.ts";
 
 export const toast = (msg: string) => {
@@ -501,42 +502,11 @@ function SkillsTab() {
 
 // ---------------- Routines & alerts ----------------
 function RoutinesTab({ bots }: { bots: Bot[] }) {
-  const [list, reload] = useLoad<any[]>("routines");
   const [alerts, reloadAlerts] = useLoad<any[]>("alerts");
   const [s, reloadS] = useLoad<any>("settings");
-  const name = (id: string) => bots.find((b) => b.id === id)?.name ?? "?";
-  const describe = (sc: any) =>
-    sc.kind === "once" ? `once at ${new Date(sc.at).toLocaleString()}` : sc.kind === "interval" ? `every ${sc.minutes} min` : sc.kind === "daily" ? `daily at ${sc.time}` : `weekly ${(sc.days ?? []).map((d: number) => "SMTWTFS"[d]).join("")} at ${sc.time}`;
   return (
     <>
-      <div class="section">
-        <h2>Routines &amp; watchers</h2>
-        <p class="help">Ask any bot, e.g. "Every weekday at 7am give me a briefing", or "Check this page every hour and only alert me if the price drops below $200".</p>
-        {list?.length ? (
-          list.map((r) => (
-            <div class="toggle">
-              <span>
-                <strong>{r.title}</strong> · {name(r.botId)}
-                <br />
-                <span class="muted" style={{ fontSize: 13 }}>
-                  {describe(r.schedule)} · next {r.nextRunAt ? new Date(r.nextRunAt).toLocaleString() : "—"}
-                </span>
-              </span>
-              <span class="inline">
-                <input type="checkbox" checked={r.enabled} onChange={run(async () => (await api(`routines/${r.id}`, { method: "PATCH", body: { enabled: !r.enabled } }), reload()))} />
-                <button class="btn secondary small" onClick={run(async () => api(`routines/${r.id}/run`, { body: {} }), "Started")}>
-                  Run now
-                </button>
-                <button class="btn secondary small" onClick={run(async () => (await api(`routines/${r.id}`, { method: "DELETE" }), reload()))}>
-                  ✕
-                </button>
-              </span>
-            </div>
-          ))
-        ) : (
-          <p class="muted">No routines yet.</p>
-        )}
-      </div>
+      <Routines bots={bots} />
       <div class="section">
         <h2>Quiet hours</h2>
         <p class="help">Only approvals and urgent alerts make a sound during quiet hours. Everything else waits in the list below.</p>
@@ -976,6 +946,14 @@ export function Settings({ tab, setTab, bots, onBack }: { tab: string; setTab: (
 }
 
 // ---------------- Bot editor ----------------
+/** Plain words for a permission type key. */
+export function permissionLabel(k: string): string {
+  if (k === "routines:change") return "changing or deleting its routines";
+  const m = k.match(/^apps:(.+):write$/);
+  if (m) return `changing things in ${m[1].split("+").join(", ")}`;
+  if (k === "apps:workbench") return "running code in Composio's workbench";
+  return k.replace(/^composio__/, "apps · ").replace(/_/g, " ");
+}
 export function BotEditor({ bot, onClose }: { bot: Bot | null; onClose: (deleted?: boolean) => void }) {
   const [s] = useLoad<any>("settings");
   const [skills] = useLoad<any[]>("skills");
@@ -1068,6 +1046,29 @@ export function BotEditor({ bot, onClose }: { bot: Bot | null; onClose: (deleted
                 <input type="checkbox" checked={b.skills?.includes(sk.name)} onChange={() => set({ skills: b.skills?.includes(sk.name) ? b.skills.filter((x) => x !== sk.name) : [...(b.skills ?? []), sk.name] })} />
               </label>
             ))}
+          </div>
+        ) : null}
+        {bot ? (
+          <div class="section">
+            <h2>Permissions</h2>
+            <p class="help">
+              When this bot needs your OK, you can <strong>Allow once</strong> (just this time) or <strong>Always allow</strong> that type of access (it won't ask again for that type until you revoke it here).
+            </p>
+            {(b.alwaysAllow ?? []).length ? (
+              (b.alwaysAllow ?? []).map((k) => (
+                <div class="toggle">
+                  <span>Always allowed: {permissionLabel(k)}</span>
+                  <button class="btn secondary small" onClick={() => set({ alwaysAllow: (b.alwaysAllow ?? []).filter((x) => x !== k) })}>
+                    Revoke
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p class="muted" style={{ fontSize: ".85rem" }}>
+                Nothing is always allowed. It asks every time.
+              </p>
+            )}
+            <p class="help">Tap Save at the top after revoking.</p>
           </div>
         ) : null}
         {bot ? (

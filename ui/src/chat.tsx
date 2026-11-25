@@ -64,7 +64,7 @@ export function CardView({ card, onDone }: { card: Card; onDone?: () => void }) 
         </button>
         {card.tool ? (
           <button class="btn secondary small" onClick={() => send({ allow: true, always: true })}>
-            Always allow {card.tool}
+            Always allow {card.toolLabel ?? card.tool}
           </button>
         ) : null}
         <button class="btn danger small" onClick={() => send({ allow: false })}>
