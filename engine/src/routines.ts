@@ -44,7 +44,7 @@ export interface Run {
   routineId: string;
   botId: string;
   key: string;
-  trigger: "schedule" | "manual" | "alert" | "catch-up" | "retry";
+  trigger: "schedule" | "manual" | "alert" | "catch-up" | "retry" | "share";
   scheduledFor?: string;
   queuedAt: string;
   startedAt?: string;

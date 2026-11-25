@@ -18,6 +18,7 @@ import { searchMarketplace } from "../skills.ts";
 import { describeLocationError, getLocation } from "../location.ts";
 import * as calls from "../calls.ts";
 import * as improve from "../improve.ts";
+import * as share from "../share.ts";
 import { listSkills, readSkill, readSkillFile } from "../skills.ts";
 import { callComposio, composioTools } from "../composio.ts";
 import fs from "node:fs";
@@ -208,7 +209,7 @@ const builtins: Tool[] = [
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools()])];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools(), ...shareTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
@@ -266,7 +267,7 @@ const scheduleSchema = {
   },
   window: { type: "object", description: "Only run between {start:'HH:MM', end:'HH:MM', days?:[0-6]}" },
   conditions: str("Plain-language condition checked before acting"),
-  alert: { type: "object", description: "alert: {type?, source?, minPriority?: low|normal|high, contains?, dedupeMinutes?}" },
+  alert: { type: "object", description: "alert: {type? (e.g. \"share\" = something the person shares to MausDroid; source is then the kind, e.g. \"YouTube video\"), source?, minPriority?: low|normal|high, contains?, dedupeMinutes?}" },
   missed_policy: { type: "string", enum: ["run-once", "skip"], description: "If a run is missed: run once late (default) or skip" },
   at: str("once: ISO date-time"),
   minutes: { type: "number", description: "interval: minutes (15 or more)" },
@@ -610,6 +611,25 @@ function callTools(): Tool[] {
         if (c.state === "declined") return "The person declined the call. Send a message instead if it matters.";
         if (c.state === "missed") return "No answer. A missed-call notification was left.";
         return "They answered. The conversation continues by voice; their words will arrive as messages from the call.";
+      },
+    },
+  ];
+}
+
+// ---------------- Shares ----------------
+
+function shareTools(): Tool[] {
+  return [
+    {
+      group: "core",
+      spec: {
+        name: "routine_forward",
+        description: "Send something the person shared (a link, video, photo…) to one of their routines, which runs now with it. Use the share id and routine ids from the share message.",
+        inputSchema: obj({ share_id: str("The share id"), routine_id: str("The routine to send it to"), note: str("One line: why it belongs there") }, ["share_id", "routine_id"]),
+      },
+      run: async (_c, i) => {
+        const r = share.forwardShare(String(i.share_id), String(i.routine_id), i.note ? String(i.note) : "");
+        return r.already ? `"${r.title}" already has it (it runs automatically for shares or was sent it before).` : `Sent to "${r.title}" — run ${r.runId} is ${r.status}.`;
       },
     },
   ];

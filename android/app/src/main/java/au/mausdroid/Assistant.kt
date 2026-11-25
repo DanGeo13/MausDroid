@@ -129,8 +129,26 @@ class FilePickActivity : Activity() {
     companion object {
         var onPicked: ((List<JSONObject>) -> Unit)? = null
     }
+    private var photo: java.io.File? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent.getBooleanExtra("camera", false)) {
+            // The phone's camera app saves the photo where we ask (no camera permission needed).
+            val dir = java.io.File(cacheDir, "camera").apply { mkdirs() }
+            val f = java.io.File(dir, "photo-${System.currentTimeMillis()}.jpg")
+            photo = f
+            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", f)
+            val shoot = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
+                .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                .also { it.clipData = android.content.ClipData.newRawUri("", uri) }
+            try {
+                @Suppress("DEPRECATION") startActivityForResult(shoot, 2)
+            } catch (e: Exception) {
+                onPicked?.invoke(emptyList())
+                finish()
+            }
+            return
+        }
         val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         @Suppress("DEPRECATION") startActivityForResult(pick, 1)
     }
@@ -138,7 +156,11 @@ class FilePickActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         val uris = mutableListOf<android.net.Uri>()
-        if (resultCode == RESULT_OK && data != null) {
+        if (requestCode == 2) {
+            val f = photo
+            if (resultCode == RESULT_OK && f != null && f.length() > 0) uris.add(androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", f))
+            else f?.delete()
+        } else if (resultCode == RESULT_OK && data != null) {
             data.clipData?.let { cd -> for (i in 0 until cd.itemCount) uris.add(cd.getItemAt(i).uri) }
             if (uris.isEmpty()) data.data?.let { uris.add(it) }
         }
@@ -199,7 +221,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
 
     private fun refreshChips() {
         chips.visibility = if (files.isEmpty()) View.GONE else View.VISIBLE
-        chips.text = files.joinToString("   ") { "📎 " + it.optString("name") }
+        chips.text = files.joinToString("   ") { (if (it.optString("mime").startsWith("image/") || it.optString("name").startsWith("photo-")) "📷 " else "📎 ") + it.optString("name") }
     }
 
     private val mic = Button(ctx).apply {
@@ -216,6 +238,15 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         setOnClickListener {
             FilePickActivity.onPicked = { picked -> files.addAll(picked); refreshChips(); statusLine.text = if (picked.isEmpty()) "" else "Added. Tap Talk and say what to do with it." }
             ctx.startActivity(Intent(ctx, FilePickActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+    private val takePhoto = Button(ctx).apply {
+        text = "📷"
+        setTextColor(Color.WHITE)
+        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2F3D")) }
+        setOnClickListener {
+            FilePickActivity.onPicked = { picked -> files.addAll(picked); refreshChips(); statusLine.text = if (picked.isEmpty()) "" else "Photo added. Tap Talk and say what to do with it." }
+            ctx.startActivity(Intent(ctx, FilePickActivity::class.java).putExtra("camera", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
     private val open = Button(ctx).apply {
@@ -253,7 +284,8 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
             addView(LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, px(12), 0, 0)
-                addView(addFile, LinearLayout.LayoutParams(px(56), px(48)).apply { marginEnd = px(8) })
+                addView(addFile, LinearLayout.LayoutParams(px(52), px(48)).apply { marginEnd = px(6) })
+                addView(takePhoto, LinearLayout.LayoutParams(px(52), px(48)).apply { marginEnd = px(6) })
                 addView(mic, LinearLayout.LayoutParams(0, px(48), 1f).apply { marginEnd = px(8) })
                 addView(open, LinearLayout.LayoutParams(0, px(48), 1f))
             })

@@ -18,6 +18,7 @@ import * as skills from "./skills.ts";
 import * as routines from "./routines.ts";
 import * as improve from "./improve.ts";
 import * as callSession from "./call-session.ts";
+import * as share from "./share.ts";
 import * as pairing from "./pairing.ts";
 import { readMemory, writeMemory } from "./memory.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
@@ -193,7 +194,7 @@ route("DELETE", "/api/bots/:id", (_r, [id]) => {
   return json({ ok: true });
 });
 route("GET", "/api/bots/:id/messages", (req, [id]) => json(bots.messages(id, req.query.get("before") ?? undefined)));
-const attachmentsFrom = (ids: unknown): files.Attachment[] => (Array.isArray(ids) ? ids.map((x) => files.getFile(String(x))).filter((x): x is files.Attachment => Boolean(x)) : []);
+const attachmentsFrom = (ids: unknown): files.Attachment[] => (Array.isArray(ids) ? ids.map((x) => files.getFile(String(x && typeof x === "object" ? (x as any).id : x))).filter((x): x is files.Attachment => Boolean(x)) : []);
 route("POST", "/api/bots/:id/messages", (req, [id]) => json(sendToBot(id, String(req.body?.text ?? ""), "you", attachmentsFrom(req.body?.attachments))));
 // Small files as JSON (the website and the assistant use this): { name, mime, b64 }.
 route("POST", "/api/files/json", (req) => {
@@ -472,6 +473,12 @@ const badRequest = (fn: () => unknown) => {
     throw new HttpError(400, errorText(e));
   }
 };
+route("POST", "/api/share", (req) => {
+  const rec = badRequest(() => share.receiveShare({ text: req.body?.text, attachments: attachmentsFrom(req.body?.attachments) })) as share.ShareRecord;
+  const bot = bots.getBot(rec.botId);
+  return json({ ...rec, botName: bot?.name ?? "Maus" });
+});
+route("GET", "/api/shares", () => json(share.listShares()));
 route("GET", "/api/improve", () => json(improve.overview()));
 route("PUT", "/api/improve/settings", (req) => json(badRequest(() => improve.saveImproveSettings(req.body ?? {}))));
 route("POST", "/api/improve/run", () => {

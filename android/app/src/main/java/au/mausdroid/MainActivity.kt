@@ -381,8 +381,29 @@ class MainActivity : Activity() {
             val files = org.json.JSONArray()
             for (u in uris) try { files.put(Uploads.upload(this, u)) } catch (e: Exception) { Diag.log(this, "share upload failed: $e") }
             val payload = org.json.JSONObject().put("attachments", files).put("text", text)
-            runOnUiThread { pendingShare = payload.toString(); deliverShare() }
+            // Straight to Maus, which sorts it into your routines; the old "which bot?" sheet only if that fails.
+            val sent = try { postShare(payload) } catch (e: Exception) { Diag.log(this, "share to Maus failed: $e"); null }
+            runOnUiThread {
+                if (sent != null) {
+                    Toast.makeText(this, "Sent to ${sent.optString("botName", "Maus")} (${sent.optString("kind")}) — it'll sort it into your routines", Toast.LENGTH_LONG).show()
+                    val botId = sent.optString("botId")
+                    if (loaded) openBot(botId) else pendingBot = botId
+                } else { pendingShare = payload.toString(); deliverShare() }
+            }
         }.start()
+    }
+
+    private fun postShare(payload: org.json.JSONObject): org.json.JSONObject? {
+        val c = URL("http://127.0.0.1:${MausApp.ENGINE_PORT}/api/share").openConnection() as HttpURLConnection
+        c.requestMethod = "POST"
+        c.doOutput = true
+        c.connectTimeout = 3000
+        c.readTimeout = 15000
+        c.setRequestProperty("authorization", "Bearer ${MausApp.secret(this, "ui-token")}")
+        c.setRequestProperty("content-type", "application/json")
+        c.outputStream.use { it.write(payload.toString().toByteArray()) }
+        if (c.responseCode != 200) return null
+        return org.json.JSONObject(c.inputStream.bufferedReader().readText())
     }
 
     private var pendingShare: String? = null
