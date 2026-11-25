@@ -49,6 +49,19 @@ class LoginActivity : Activity() {
             addView(web, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         })
         web.loadUrl(url)
+        this.web = web
+    }
+
+    private var web: WebView? = null
+
+    /** Back steps back through the website's pages first, then closes the sign-in screen. */
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        val w = web
+        if (w != null && w.canGoBack()) w.goBack() else {
+            CookieManager.getInstance().flush()
+            @Suppress("DEPRECATION") super.onBackPressed()
+        }
     }
 
     override fun onPause() {

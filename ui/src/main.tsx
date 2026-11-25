@@ -10,7 +10,29 @@ type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit";
 function Home({ poll }: { poll: boolean }) {
   const [bots, setBots] = useState<Bot[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
-  const [view, setView] = useState<View>({ kind: "list" });
+  const [view, setViewState] = useState<View>({ kind: "list" });
+  const depth = useRef(0);
+  /** Opens a screen and records it, so Back returns to the previous one. */
+  const setView = (v: View) => {
+    if (v.kind === "list") {
+      // Going home: unwind instead of stacking more screens.
+      if (depth.current > 0) history.go(-depth.current);
+      else setViewState(v);
+      return;
+    }
+    depth.current += 1;
+    history.pushState({ v, depth: depth.current }, "");
+    setViewState(v);
+  };
+  /** Changes the current screen without adding a Back step (e.g. switching settings tabs). */
+  const replaceView = (v: View) => {
+    history.replaceState({ v, depth: depth.current }, "");
+    setViewState(v);
+  };
+  const goBack = () => {
+    if (depth.current > 0) history.back();
+    else setViewState({ kind: "list" });
+  };
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [onboarding, setOnboarding] = useState(false);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
@@ -65,13 +87,23 @@ function Home({ poll }: { poll: boolean }) {
     if (view.kind === "chat") void loadMsgs(view.botId);
   }, [view.kind === "chat" ? view.botId : null]);
 
-  // Android back button support.
+  // Back (phone navigation bar / gesture, or the browser's Back) moves one screen back.
   useEffect(() => {
-    (window as any).mausdroidBack = () => {
-      if (viewRef.current.kind === "list") return false;
-      setView({ kind: "list" });
-      return true;
+    if (!history.state) history.replaceState({ v: { kind: "list" }, depth: 0 }, "");
+    const onPop = (e: PopStateEvent) => {
+      depth.current = e.state?.depth ?? 0;
+      setViewState(e.state?.v ?? { kind: "list" });
     };
+    window.addEventListener("popstate", onPop);
+    // Called by the Android app; returns false when already on the home screen.
+    (window as any).mausdroidBack = () => {
+      if (depth.current > 0) {
+        history.back();
+        return true;
+      }
+      return false;
+    };
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   const sorted = useMemo(
@@ -127,7 +159,7 @@ function Home({ poll }: { poll: boolean }) {
             busy={Boolean(current.busy)}
             messages={msgs}
             cards={cards.filter((c) => c.botId === current.id)}
-            onBack={() => setView({ kind: "list" })}
+            onBack={goBack}
             onEdit={() => setView({ kind: "edit", botId: current.id })}
             refresh={() => void loadState()}
           />
@@ -136,11 +168,12 @@ function Home({ poll }: { poll: boolean }) {
             bot={view.botId ? bots.find((b) => b.id === view.botId) ?? null : null}
             onClose={(deleted) => {
               void loadState();
-              setView(view.botId && !deleted ? { kind: "chat", botId: view.botId } : { kind: "list" });
+              if (deleted) setView({ kind: "list" });
+              else goBack();
             }}
           />
         ) : view.kind === "settings" ? (
-          <Settings tab={view.tab} setTab={(tab) => setView({ kind: "settings", tab })} bots={bots} onBack={() => (setView({ kind: "list" }), void loadState())} />
+          <Settings tab={view.tab} setTab={(tab) => replaceView({ kind: "settings", tab })} bots={bots} onBack={() => (goBack(), void loadState())} />
         ) : (
           <div class="empty">Choose a bot to chat with.</div>
         )}

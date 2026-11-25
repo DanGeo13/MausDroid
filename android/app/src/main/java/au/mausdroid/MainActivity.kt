@@ -85,11 +85,28 @@ class MainActivity : Activity() {
         intent.getStringExtra("botId")?.let { if (loaded) openBot(it) else pendingBot = it }
     }
 
+    private var lastBackAt = 0L
+
+    /**
+     * Phone Back button / back gesture: go back one screen inside MausDroid.
+     * On the home screen, the first press only shows a hint; a second press
+     * within 2 seconds leaves (the bots keep working in the background).
+     */
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (!loaded) return super.onBackPressed()
+        if (!loaded) return leaveOrHint()
         web.evaluateJavascript("window.mausdroidBack ? window.mausdroidBack() : false") { r ->
-            if (r != "true") moveTaskToBack(true) // keep running; never kill the app on back
+            if (r != "true") leaveOrHint()
+        }
+    }
+
+    private fun leaveOrHint() {
+        val now = System.currentTimeMillis()
+        if (now - lastBackAt < 2000) {
+            moveTaskToBack(true) // never closes MausDroid; it just goes to the background
+        } else {
+            lastBackAt = now
+            android.widget.Toast.makeText(this, "Press back again to leave — your bots keep working", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
