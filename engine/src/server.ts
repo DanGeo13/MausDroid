@@ -30,6 +30,7 @@ import * as files from "./files.ts";
 import * as calendar from "./calendar.ts";
 import * as brief from "./brief.ts";
 import * as audit from "./audit.ts";
+import * as location from "./location.ts";
 
 export type Via = "local" | "tailnet" | "relay";
 export interface Req {
@@ -340,6 +341,15 @@ route("POST", "/api/calendars/events", async (req) => {
   const b = req.body ?? {};
   return json(await calendar.createEvent({ summary: b.summary, start: b.start, durationMinutes: b.durationMinutes, description: b.description, location: b.location, timeZone: b.timeZone }, b.calendar ? { name: b.calendar } : undefined));
 });
+
+// Location: permission state, active requests, recent uses (no coordinates kept)
+route("GET", "/api/location", async () =>
+  json({
+    permission: bridgeAvailable() ? (await bridge("/location/permission").catch(() => ({ permission: "unavailable" }))).permission : "unavailable",
+    active: location.activeLocationRequests(),
+    recent: location.recentLocationUses(),
+  }),
+);
 
 // Weekly audit reports and wiki status
 route("GET", "/api/audits", () => json(audit.listAudits().map(({ scored, ...a }) => ({ ...a, candidates: scored.length }))));

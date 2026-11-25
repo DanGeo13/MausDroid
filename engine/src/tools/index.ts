@@ -15,6 +15,7 @@ import * as calendar from "../calendar.ts";
 import * as brief from "../brief.ts";
 import * as audit from "../audit.ts";
 import { searchMarketplace } from "../skills.ts";
+import { describeLocationError, getLocation } from "../location.ts";
 import { listSkills, readSkill, readSkillFile } from "../skills.ts";
 import { callComposio, composioTools } from "../composio.ts";
 import fs from "node:fs";
@@ -205,7 +206,7 @@ const builtins: Tool[] = [
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools()])];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
@@ -554,6 +555,32 @@ function auditTools(): Tool[] {
         const p1 = ranked.find((x) => x.phase === "phase-1-ready");
         const filed = updated.filings.filter((f) => f.ok && f.verified).length;
         return `${report}\n\n---\nNext: memory_save (scope "bot") three lines; then notify_user titled "Sunday Routine Audit Ready": top Phase 1 = ${p1?.name ?? "none"}, wiki overflow filed = ${filed}.`;
+      },
+    },
+  ];
+}
+
+// ---------------- Location ----------------
+
+function locationTools(): Tool[] {
+  return [
+    {
+      group: "core",
+      spec: {
+        name: "device_location",
+        description: "Get the phone's current location once (latitude, longitude, accuracy in metres, timestamp, provider). Only when needed for the task. The person approves; the app shows that you're using location. Never guess coordinates if this fails.",
+        inputSchema: obj({ reason: str("Why you need it (shown to the person)"), max_age_minutes: { type: "number", description: "How old a known position may be (default 2)" } }, ["reason"]),
+      },
+      alwaysAsk: true,
+      risk: (i) => `Use your location: ${i.reason ?? "no reason given"}`,
+      permission: () => ({ key: "location", label: "using your location" }),
+      run: async (c, i) => {
+        const runId = currentRunTags(c.bot.id).find((t) => t.startsWith("run_"));
+        const rt = runId ? getRoutine(getRun(runId)?.routineId ?? "") : undefined;
+        const requester = `${c.bot.emoji} ${c.bot.name}${rt ? ` (routine “${rt.title}”)` : ""}`;
+        const r = await getLocation(requester, Math.round(Number(i.max_age_minutes ?? 2) * 60_000));
+        const err = describeLocationError(r);
+        return err ? { text: JSON.stringify({ ...r, message: err }), isError: true } : JSON.stringify(r);
       },
     },
   ];

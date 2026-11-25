@@ -79,6 +79,8 @@ class BridgeServer(
                 }
                 "/voice/speak" -> { voice.speak(body.optString("text"), body.optDouble("rate", 1.0).toFloat()); ok() }
                 "/voice/stop" -> { voice.stopSpeaking(); voice.stopListening(); ok() }
+                "/location/get" -> ok(DeviceLocation.get(ctx, body.optLong("maxAgeMs", 120_000), body.optLong("timeoutMs", 20_000)))
+                "/location/permission" -> ok(JSONObject().put("permission", DeviceLocation.permissionState(ctx)))
                 "/device/info" -> ok(DeviceSettings.info(ctx))
                 else -> if (session.uri.startsWith("/device/")) ok(JSONObject().put("opened", DeviceSettings.open(ctx, session.uri.removePrefix("/device/"))))
                 else err(Response.Status.NOT_FOUND, "unknown ${session.uri}")

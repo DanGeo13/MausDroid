@@ -241,6 +241,26 @@ class MainActivity : Activity() {
         requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 9)
     }
 
+    /** Location for bots that need it, asked only when you tap Allow in Settings (never silently). */
+    private fun askLocation() {
+        val p = DeviceLocation.permissionState(this)
+        if (p == "granted") return
+        if (p == "permanently_denied") {
+            DeviceSettings.open(this, "app")
+            Toast.makeText(this, "Location is blocked for MausDroid. Allow it under Permissions → Location.", Toast.LENGTH_LONG).show()
+            return
+        }
+        requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION), 12)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 12) return
+        val granted = grantResults.any { it == android.content.pm.PackageManager.PERMISSION_GRANTED }
+        val canAskAgain = shouldShowRequestPermissionRationale(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        DeviceLocation.recordAnswer(this, if (granted) "granted" else if (canAskAgain) "denied" else "permanently_denied")
+    }
+
     private fun openBot(botId: String) {
         web.evaluateJavascript("window.mausdroidOpen && window.mausdroidOpen(${org.json.JSONObject.quote(botId)})", null)
         pendingBot = null
@@ -256,6 +276,7 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.getBooleanExtra("askMic", false)) askMicrophoneOnce(force = true)
+        if (intent.getBooleanExtra("askLocation", false)) askLocation()
         handleShare(intent)
         val link = intent.getStringExtra("link")?.takeIf { it.isNotBlank() }
         if (link != null) { if (loaded) openLink(link) else pendingLink = link }

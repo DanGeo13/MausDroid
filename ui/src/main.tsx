@@ -52,6 +52,8 @@ function Home({ poll }: { poll: boolean }) {
   const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [query, setQuery] = useState("");
   const [voiceOk, setVoiceOk] = useState(false);
+  // Location indicator: who is using location right now (or just did).
+  const [loc, setLoc] = useState<{ state: "active" | "done"; requester: string; outcome?: string } | null>(null);
   // Files/text shared to MausDroid from another app, waiting for "which bot?".
   const [shared, setShared] = useState<{ attachments: Attachment[]; text?: string } | null>(null);
   const [initial, setInitial] = useState<{ botId: string; text?: string; attachments?: Attachment[] } | null>(null);
@@ -92,6 +94,10 @@ function Home({ poll }: { poll: boolean }) {
         if (e.type === "message" && here) setMsgs((m) => (m.some((x) => x.id === e.message.id) ? m : [...m, e.message]));
         else if (e.type === "message.delta" && here) setMsgs((m) => m.map((x) => (x.id === e.messageId ? { ...x, text: x.text + e.delta } : x)));
         else if (e.type === "message.updated" && here) void loadMsgs(e.botId);
+        if (e.type === "location") {
+          setLoc({ state: e.state, requester: e.requester, outcome: e.outcome });
+          if (e.state === "done") setTimeout(() => setLoc((cur) => (cur?.state === "done" ? null : cur)), 8000);
+        }
         if (e.type === "card") setCards((c) => [...c.filter((x) => x.id !== e.card.id), e.card]);
         if (e.type === "card.settled") setCards((c) => c.filter((x) => x.id !== e.cardId));
         if (e.type === "bot.busy") setBots((b) => b.map((x) => (x.id === e.botId ? { ...x, busy: e.busy } : x)));
@@ -184,8 +190,15 @@ function Home({ poll }: { poll: boolean }) {
     </div>
   ) : null;
 
+  const locBanner = loc ? (
+    <div class={`loc-banner ${loc.state}`} role="status">
+      📍 {loc.state === "active" ? `Using your location — asked by ${loc.requester}` : `Location ${loc.outcome === "ok" ? "used" : `request ended (${loc.outcome})`} by ${loc.requester}`}
+    </div>
+  ) : null;
+
   return (
     <div class={`layout ${view.kind !== "list" ? "in-chat" : ""}`}>
+      {locBanner}
       {shareSheet}
       <div class="sidebar">
         <div class="topbar">

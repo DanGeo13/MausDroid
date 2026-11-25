@@ -22,6 +22,7 @@ object DeviceSettings {
             .put("apk", BuildConfig.VERSION_NAME)
             .put("microphoneAllowed", ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED)
             .put("isDefaultAssistant", isDefaultAssistant(ctx))
+            .put("locationPermission", DeviceLocation.permissionState(ctx))
     }
 
     /** True when MausDroid is chosen as the phone's digital assistant. */
@@ -69,6 +70,12 @@ object DeviceSettings {
             Intent("android.settings.MANAGE_DEFAULT_APPS_SETTINGS"),
             Intent(Settings.ACTION_SETTINGS),
         )
+        "location" -> {
+            // Asks for location from the app screen (with an explanation shown there first).
+            ctx.startActivity(Intent(ctx, MainActivity::class.java).putExtra("askLocation", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            true
+        }
+        "location-settings" -> launch(ctx, Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS), appDetails(ctx))
         "microphone" -> {
             // Asks for the microphone from the app screen.
             ctx.startActivity(Intent(ctx, MainActivity::class.java).putExtra("askMic", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))

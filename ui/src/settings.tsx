@@ -591,6 +591,7 @@ function PhoneTab() {
         </div>
         <p class="help">Tip: also lock MausDroid in Recent apps (pull the card down → lock icon).</p>
       </div>
+      <LocationSection />
       <div class="section">
         <h2>Tailscale (built in)</h2>
         <p class="help">
@@ -656,6 +657,46 @@ function PhoneTab() {
         </div>
       </div>
     </>
+  );
+}
+
+// ---------------- Location ----------------
+function LocationSection() {
+  const [l, reload] = useLoad<any>("location");
+  const state: Record<string, string> = { granted: "allowed", denied: "not allowed", permanently_denied: "blocked in Android settings", not_requested: "not asked yet", unavailable: "unavailable" };
+  return (
+    <div class="section">
+      <h2>Location</h2>
+      <p class="help">
+        Bots can ask for your location for one task at a time (e.g. "leave-now" reminders). You approve each request (or "always allow" for a bot), a 📍 banner shows who asked, and only a single position is taken — no tracking, nothing kept except who asked and when.
+      </p>
+      <div class="toggle">
+        <span>
+          Android permission: <span class={`pill ${l?.permission === "granted" ? "ok" : "warn"}`}>{state[l?.permission] ?? "…"}</span>
+        </span>
+        {l?.permission !== "granted" ? (
+          <button class="btn secondary small" onClick={run(async () => (await api(`system/${l?.permission === "permanently_denied" ? "app" : "location"}`, { body: {} }), setTimeout(reload, 5000)))}>
+            {l?.permission === "permanently_denied" ? "Open app settings" : "Allow"}
+          </button>
+        ) : (
+          <button class="btn secondary small" onClick={run(async () => api("system/app", { body: {} }))}>
+            Change
+          </button>
+        )}
+      </div>
+      {l?.recent?.length ? (
+        <>
+          <p class="help" style={{ marginTop: ".5rem" }}>
+            Recent use:
+          </p>
+          {l.recent.slice(0, 8).map((u: any) => (
+            <div class="muted" style={{ fontSize: ".8rem" }}>
+              {new Date(u.at).toLocaleString()} · {u.requester} · {u.outcome}
+            </div>
+          ))}
+        </>
+      ) : null}
+    </div>
   );
 }
 
