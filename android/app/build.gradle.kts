@@ -19,7 +19,7 @@ fun signing(name: String): String? = System.getenv("MAUSDROID_$name") ?: ksProps
 
 android {
     namespace = "au.mausdroid"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "27.2.12479018"
 
     defaultConfig {

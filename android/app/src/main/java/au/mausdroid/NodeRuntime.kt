@@ -8,6 +8,7 @@ object NodeRuntime {
         System.loadLibrary("mausnode")
     }
 
+    @JvmStatic external fun setLogFile(path: String)
     @JvmStatic external fun setEnv(key: String, value: String)
     @JvmStatic external fun start(args: Array<String>): Int
 }

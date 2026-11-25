@@ -2,6 +2,8 @@ import { useEffect, useState } from "preact/hooks";
 import qrcode from "qrcode-generator";
 import { api } from "./api.ts";
 import type { Bot, Provider } from "./types.ts";
+import { IconBack } from "./icons.tsx";
+import { loadAppearance, saveAppearance, TEXT_SIZES, type Appearance } from "./appearance.ts";
 
 export const toast = (msg: string) => {
   const el = document.createElement("div");
@@ -582,6 +584,64 @@ function WebsiteTab() {
   );
 }
 
+// ---------------- Appearance ----------------
+function AppearanceTab() {
+  const [a, setA] = useState<Appearance>(loadAppearance());
+  const set = (patch: Partial<Appearance>) => {
+    const next = { ...a, ...patch };
+    setA(next);
+    saveAppearance(next);
+  };
+  const nearest = TEXT_SIZES.reduce((best, t) => (Math.abs(t.scale - a.scale) < Math.abs(best.scale - a.scale) ? t : best), TEXT_SIZES[1]);
+  return (
+    <>
+      <div class="section">
+        <h2>Text size</h2>
+        <p class="help">Makes everything bigger or smaller on this device: text, buttons and spacing.</p>
+        <div class="inline" style={{ gap: ".8rem" }}>
+          <span style={{ fontSize: ".8rem" }}>A</span>
+          <input type="range" min="0.8" max="1.6" step="0.05" value={a.scale} onInput={(e) => set({ scale: Number((e.target as HTMLInputElement).value) })} style={{ flex: 1 }} aria-label="Text size" />
+          <span style={{ fontSize: "1.4rem" }}>A</span>
+        </div>
+        <div class="seg" style={{ marginTop: ".7rem", flexWrap: "wrap" }}>
+          {TEXT_SIZES.map((t) => (
+            <button class={nearest.scale === t.scale && Math.abs(a.scale - t.scale) < 0.03 ? "on" : ""} onClick={() => set({ scale: t.scale })}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <p class="help" style={{ marginTop: ".6rem" }}>
+          Now: {Math.round(a.scale * 100)}%
+        </p>
+        <div class="preview-bubble">
+          <div class="msg">
+            <div class="bubble">Here's your morning briefing: 3 new emails, rain at 3pm, and Compass has 1 new notice.</div>
+          </div>
+          <div class="msg mine">
+            <div class="bubble">Thanks! Draft a reply to the first email.</div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <h2>Theme</h2>
+        <div class="seg">
+          {(
+            [
+              ["system", "Match phone"],
+              ["light", "Light"],
+              ["dark", "Dark"],
+            ] as const
+          ).map(([k, label]) => (
+            <button class={a.theme === k ? "on" : ""} onClick={() => set({ theme: k })}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ---------------- Memory ----------------
 function MemoryTab() {
   const [m, reload] = useLoad<any>("memory/about-me");
@@ -611,14 +671,14 @@ function MemoryTab() {
   );
 }
 
-export const SETTINGS_TABS = ["AI", "Connected apps", "Skills", "Routines & alerts", "Phone", "Website & devices", "Memory"] as const;
+export const SETTINGS_TABS = ["AI", "Appearance", "Connected apps", "Skills", "Routines & alerts", "Phone", "Website & devices", "Memory"] as const;
 
 export function Settings({ tab, setTab, bots, onBack }: { tab: string; setTab: (t: string) => void; bots: Bot[]; onBack: () => void }) {
   return (
     <>
       <div class="topbar">
-        <button class="icon-btn" onClick={onBack}>
-          ‹
+        <button class="icon-btn" onClick={onBack} aria-label="Back">
+          <IconBack />
         </button>
         <h1>Settings</h1>
       </div>
@@ -630,7 +690,7 @@ export function Settings({ tab, setTab, bots, onBack }: { tab: string; setTab: (
         ))}
       </div>
       <div class="page">
-        {tab === "AI" ? <AiTab /> : tab === "Connected apps" ? <AppsTab /> : tab === "Skills" ? <SkillsTab /> : tab === "Routines & alerts" ? <RoutinesTab bots={bots} /> : tab === "Phone" ? <PhoneTab /> : tab === "Website & devices" ? <WebsiteTab /> : <MemoryTab />}
+        {tab === "AI" ? <AiTab /> : tab === "Appearance" ? <AppearanceTab /> : tab === "Connected apps" ? <AppsTab /> : tab === "Skills" ? <SkillsTab /> : tab === "Routines & alerts" ? <RoutinesTab bots={bots} /> : tab === "Phone" ? <PhoneTab /> : tab === "Website & devices" ? <WebsiteTab /> : <MemoryTab />}
       </div>
     </>
   );
@@ -651,8 +711,8 @@ export function BotEditor({ bot, onClose }: { bot: Bot | null; onClose: (deleted
   return (
     <>
       <div class="topbar">
-        <button class="icon-btn" onClick={() => onClose()}>
-          ‹
+        <button class="icon-btn" onClick={() => onClose()} aria-label="Back">
+          <IconBack />
         </button>
         <h1>{bot ? `Edit ${bot.name}` : "New bot"}</h1>
         <button class="btn small" onClick={save}>

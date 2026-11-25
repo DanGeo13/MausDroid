@@ -18,7 +18,7 @@ test("website relay: QR pairing + password", async (t) => {
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-"));
   const port = 19000 + Math.floor(Math.random() * 1000);
-  const eng = spawn(process.env.ENGINE_NODE ?? process.execPath, ["dist/engine.cjs"], {
+  const eng = spawn(process.env.ENGINE_NODE ?? process.execPath, [...(process.env.ENGINE_NODE_ARGS ? process.env.ENGINE_NODE_ARGS.split(" ") : []), "dist/engine.cjs"], {
     env: { ...process.env, MAUSDROID_DATA_DIR: dir, MAUSDROID_PORT: String(port), MAUSDROID_TOKEN: "tok", MAUSDROID_UI_DIR: "dist/ui" },
     stdio: "ignore",
   });

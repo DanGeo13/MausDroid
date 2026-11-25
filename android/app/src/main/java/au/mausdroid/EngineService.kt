@@ -22,7 +22,16 @@ import java.io.File
  * use other apps or the screen is off.
  */
 class EngineService : Service(), BridgeServer.Hooks {
-    private lateinit var browser: BackgroundBrowser
+    /** Created on first use (on the main thread), so a WebView problem can't stop the engine starting. */
+    private val browser: BackgroundBrowser by lazy {
+        if (Looper.myLooper() == Looper.getMainLooper()) BackgroundBrowser(this) else {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var b: BackgroundBrowser? = null
+            main.post { b = BackgroundBrowser(this); latch.countDown() }
+            latch.await()
+            b!!
+        }
+    }
     private lateinit var tailscale: TailscaleManager
     private lateinit var updater: Updater
     private var bridge: BridgeServer? = null
@@ -35,13 +44,27 @@ class EngineService : Service(), BridgeServer.Hooks {
 
     override fun onCreate() {
         super.onCreate()
-        startForeground(1, foregroundNotification())
-        browser = BackgroundBrowser(this)
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            Diag.log(this, "CRASH in ${t.name}: ${android.util.Log.getStackTraceString(e)}")
+            previous?.uncaughtException(t, e)
+        }
+        Diag.log(this, "engine service starting")
+        try {
+            startForeground(1, foregroundNotification())
+        } catch (e: Exception) {
+            Diag.log(this, "startForeground failed: $e")
+        }
         tailscale = TailscaleManager(this)
         updater = Updater(this)
         busyLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MausDroid:busy")
         val bridgeToken = MausApp.secret(this, "bridge-token")
-        bridge = BridgeServer(this, bridgeToken, browser, tailscale, updater, this).also { it.start(30_000, true) }
+        try {
+            bridge = BridgeServer(this, bridgeToken, { browser }, tailscale, updater, this).also { it.start(30_000, true) }
+            Diag.log(this, "native bridge listening")
+        } catch (e: Exception) {
+            Diag.log(this, "native bridge failed: ${android.util.Log.getStackTraceString(e)}")
+        }
         startEngine(bridgeToken)
         scheduleHeartbeat(this)
         main.postDelayed(::periodicUpdateCheck, 90_000)
@@ -71,7 +94,9 @@ class EngineService : Service(), BridgeServer.Hooks {
     private fun startEngine(bridgeToken: String) {
         if (started) return
         started = true
-        Thread({
+        // Node needs a large stack; Android's default thread stack is too small for it.
+        Thread(null, {
+          try {
             val dir = updater.engineDirForLaunch()
             val data = File(filesDir, "engine-data").apply { mkdirs() }
             val env = mapOf(
@@ -88,14 +113,22 @@ class EngineService : Service(), BridgeServer.Hooks {
                 "TMPDIR" to cacheDir.absolutePath,
             )
             for ((k, v) in env) NodeRuntime.setEnv(k, v)
-            Log.i(TAG, "starting engine from $dir")
+            NodeRuntime.setLogFile(Diag.engineLog(this).absolutePath)
+            Diag.log(this, "starting engine ${dir.name}")
             val code = NodeRuntime.start(arrayOf("node", File(dir, "engine.cjs").absolutePath))
-            Log.w(TAG, "engine exited with $code; restarting the engine process")
-            restartProcess(this)
-        }, "node-engine").apply { isDaemon = true }.start()
+            Diag.log(this, "engine exited with code $code")
+          } catch (e: Throwable) {
+            Diag.log(this, "engine could not start: ${android.util.Log.getStackTraceString(e)}")
+          }
+            // Restart, but stop after repeated failures so the problem can be seen and reported.
+            if (Diag.crashesRecently(this) <= 3) restartProcess(this)
+            else Diag.log(this, "engine failed 3 times in 5 minutes; not restarting automatically")
+        }, "node-engine", 64L * 1024 * 1024).apply { isDaemon = true }.start()
     }
 
     override fun engineReady(version: String) {
+        Diag.log(this, "engine $version ready")
+        Diag.clearCrashes(this)
         updater.confirmReady(version)
     }
 

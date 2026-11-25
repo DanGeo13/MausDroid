@@ -13,7 +13,7 @@ import org.json.JSONObject
 class BridgeServer(
     private val ctx: Context,
     private val token: String,
-    private val browser: BackgroundBrowser,
+    private val browserProvider: () -> BackgroundBrowser,
     private val tailscale: TailscaleManager,
     private val updater: Updater,
     private val hooks: Hooks,
@@ -24,6 +24,8 @@ class BridgeServer(
         fun setBusy(busy: Boolean)
         fun applyUpdate(): Boolean
     }
+
+    private val browser: BackgroundBrowser get() = browserProvider()
 
     private fun ok(o: Any = JSONObject().put("ok", true)) = newFixedLengthResponse(Response.Status.OK, "application/json", o.toString())
     private fun err(status: Response.Status, msg: String) = newFixedLengthResponse(status, "application/json", JSONObject().put("error", msg).toString())

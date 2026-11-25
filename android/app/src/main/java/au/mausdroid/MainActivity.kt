@@ -11,7 +11,18 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.app.ActivityManager
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -27,10 +38,15 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        EngineService.start(this)
-        window.statusBarColor = Color.parseColor("#0f1115")
+        try {
+            EngineService.start(this)
+        } catch (e: Exception) {
+            Diag.log(this, "could not start engine service: $e")
+        }
+        window.statusBarColor = Color.parseColor("#0B0D12")
+        window.navigationBarColor = Color.parseColor("#0B0D12")
         web = WebView(this)
-        web.setBackgroundColor(Color.parseColor("#0f1115"))
+        web.setBackgroundColor(Color.parseColor("#0B0D12"))
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         web.webChromeClient = WebChromeClient()
@@ -48,29 +64,143 @@ class MainActivity : Activity() {
                 pendingBot?.let { openBot(it) }
             }
         }
-        val splash = TextView(this).apply {
-            text = "🐭 Starting MausDroid…"
+        pendingBot = intent.getStringExtra("botId")
+        showSplash()
+        waitForEngine()
+    }
+
+    private val bg = Color.parseColor("#0B0D12")
+    private var waiting = false
+
+    private fun showSplash() {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(bg)
+            addView(ImageView(context).apply {
+                setImageResource(R.mipmap.ic_launcher)
+                layoutParams = LinearLayout.LayoutParams(dp(96), dp(96))
+            })
+            addView(TextView(context).apply {
+                text = "MausDroid"
+                setTextColor(Color.WHITE)
+                textSize = 24f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, dp(16), 0, dp(4))
+                gravity = Gravity.CENTER
+            })
+            addView(TextView(context).apply {
+                id = android.R.id.text1
+                text = "Starting your bots…"
+                setTextColor(Color.parseColor("#9AA3AF"))
+                textSize = 15f
+                gravity = Gravity.CENTER
+            })
+            addView(ProgressBar(context).apply { setPadding(0, dp(24), 0, 0) })
+        }
+        setContentView(box)
+    }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    private fun engineUp(): Boolean = try {
+        val c = URL("http://127.0.0.1:${MausApp.ENGINE_PORT}/api/whoami").openConnection() as HttpURLConnection
+        c.connectTimeout = 700
+        c.readTimeout = 2000
+        c.responseCode == 200
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun waitForEngine() {
+        if (waiting) return
+        waiting = true
+        Thread {
+            val start = System.currentTimeMillis()
+            var shownHelp = false
+            while (true) {
+                if (engineUp()) {
+                    runOnUiThread { waiting = false; showWeb() }
+                    return@Thread
+                }
+                val secs = (System.currentTimeMillis() - start) / 1000
+                if (secs in 8..24) runOnUiThread { findViewById<TextView>(android.R.id.text1)?.text = "First start takes a little longer…" }
+                if (secs >= 25 && !shownHelp) {
+                    shownHelp = true
+                    runOnUiThread { showDiagnostics() }
+                }
+                Thread.sleep(500)
+            }
+        }.start()
+    }
+
+    private fun showWeb() {
+        if (web.parent == null) setContentView(web)
+        web.loadUrl("http://127.0.0.1:${MausApp.ENGINE_PORT}/?t=${MausApp.secret(this, "ui-token")}")
+    }
+
+    /** Shown when the engine doesn't start: what went wrong, and buttons to retry or send the report. */
+    private fun showDiagnostics() {
+        val report = Diag.report(this)
+        val text = TextView(this).apply {
+            this.text = report
+            setTextColor(Color.parseColor("#D1D5DB"))
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextIsSelectable(true)
+            setPadding(dp(16), dp(8), dp(16), dp(16))
+        }
+        fun btn(label: String, onClick: () -> Unit) = Button(this).apply {
+            this.text = label
+            isAllCaps = false
+            setOnClickListener { onClick() }
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(8), 0, dp(8), dp(8))
+            addView(btn("Try again") { restartEngine() })
+            addView(btn("Copy report") {
+                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("MausDroid report", Diag.report(this@MainActivity)))
+                Toast.makeText(this@MainActivity, "Copied — paste it to Claude", Toast.LENGTH_SHORT).show()
+            })
+            addView(btn("Share report") {
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, Diag.report(this@MainActivity)), "Share report"))
+            })
+        }
+        val title = TextView(this).apply {
+            this.text = "MausDroid is taking too long to start"
             setTextColor(Color.WHITE)
             textSize = 18f
-            gravity = android.view.Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#0f1115"))
+            setPadding(dp(16), dp(48), dp(16), dp(4))
         }
-        setContentView(splash)
-        pendingBot = intent.getStringExtra("botId")
+        val sub = TextView(this).apply {
+            this.text = "It keeps trying in the background and will open by itself. If it doesn't, tap Try again, or Copy report and send it so it can be fixed."
+            setTextColor(Color.parseColor("#9AA3AF"))
+            setPadding(dp(16), 0, dp(16), dp(12))
+        }
+        setContentView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bg)
+            addView(title)
+            addView(sub)
+            addView(buttons)
+            addView(ScrollView(context).apply { addView(text) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        })
+    }
+
+    private fun restartEngine() {
+        Diag.clearCrashes(this)
+        Diag.log(this, "user tapped Try again")
+        val am = getSystemService(ActivityManager::class.java)
+        am.runningAppProcesses?.firstOrNull { it.processName.endsWith(":engine") }?.let { android.os.Process.killProcess(it.pid) }
         Thread {
-            // Wait for the engine (first start unpacks it, which takes a few seconds).
-            for (i in 0 until 240) {
-                try {
-                    val c = URL("http://127.0.0.1:${MausApp.ENGINE_PORT}/api/whoami").openConnection() as HttpURLConnection
-                    c.connectTimeout = 500
-                    if (c.responseCode == 200) break
-                } catch (_: Exception) {
-                }
-                Thread.sleep(250)
-            }
+            Thread.sleep(800)
             runOnUiThread {
-                setContentView(web)
-                web.loadUrl("http://127.0.0.1:${MausApp.ENGINE_PORT}/?t=${MausApp.secret(this, "ui-token")}")
+                EngineService.start(this)
+                showSplash()
+                waiting = false
+                waitForEngine()
             }
         }.start()
     }
@@ -106,7 +236,7 @@ class MainActivity : Activity() {
             moveTaskToBack(true) // never closes MausDroid; it just goes to the background
         } else {
             lastBackAt = now
-            android.widget.Toast.makeText(this, "Press back again to leave — your bots keep working", android.widget.Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Press back again to leave — your bots keep working", Toast.LENGTH_SHORT).show()
         }
     }
 

@@ -9,7 +9,7 @@ screen off), and **ask before anything risky**.
 ## Install on your phone (Poco F8 / any Android 9+, 64-bit)
 
 1. On the phone, download the latest APK:
-   **https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/MausDroid-0.1.1.apk**
+   **https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/MausDroid-0.1.2.apk**
 2. Open it. Android asks to allow installing from your browser/files app → allow → **Install**.
 3. Open **MausDroid** and follow the short tour.
 

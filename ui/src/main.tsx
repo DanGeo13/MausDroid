@@ -4,6 +4,18 @@ import { api, listen, type EngineEvent } from "./api.ts";
 import { Avatar, Chat } from "./chat.tsx";
 import { BotEditor, Settings, toast } from "./settings.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
+import { IconBell, IconGear, IconPlus, IconSearch } from "./icons.tsx";
+import { applyAppearance, loadAppearance } from "./appearance.ts";
+
+applyAppearance(loadAppearance());
+
+function when(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (d.toDateString() === new Date().toDateString()) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (Date.now() - d.getTime() < 6 * 86400_000) return d.toLocaleDateString([], { weekday: "short" });
+  return d.toLocaleDateString([], { day: "numeric", month: "short" });
+}
 
 type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string };
 
@@ -36,6 +48,7 @@ function Home({ poll }: { poll: boolean }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [onboarding, setOnboarding] = useState(false);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
+  const [query, setQuery] = useState("");
   const viewRef = useRef(view);
   viewRef.current = view;
   const refreshTimer = useRef<number | null>(null);
@@ -111,6 +124,7 @@ function Home({ poll }: { poll: boolean }) {
     [bots],
   );
   const current = view.kind === "chat" ? bots.find((b) => b.id === view.botId) : undefined;
+  const shown = sorted.filter((b) => !query.trim() || `${b.name} ${b.persona}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   if (onboarding) return <Onboarding onDone={() => (setOnboarding(false), void api("settings/general", { method: "PUT", body: { onboardingDone: true } }))} />;
 
@@ -118,39 +132,59 @@ function Home({ poll }: { poll: boolean }) {
     <div class={`layout ${view.kind !== "list" ? "in-chat" : ""}`}>
       <div class="sidebar">
         <div class="topbar">
-          <h1>🐭 MausDroid</h1>
-          <button class="icon-btn" title="Alerts" onClick={() => setView({ kind: "settings", tab: "Routines & alerts" })}>
-            🔔{unreadAlerts ? <span class="badge">{unreadAlerts}</span> : null}
+          <h1 class="brand">
+            <img src="icon.svg" alt="" /> MausDroid
+          </h1>
+          <button class="icon-btn" title="Alerts" aria-label="Alerts" onClick={() => setView({ kind: "settings", tab: "Routines & alerts" })}>
+            <IconBell />
+            {unreadAlerts ? <span class="badge">{unreadAlerts > 99 ? "99+" : unreadAlerts}</span> : null}
           </button>
-          <button class="icon-btn" title="New bot" onClick={() => setView({ kind: "edit", botId: null })}>
-            ＋
+          <button class="icon-btn" title="Settings" aria-label="Settings" onClick={() => setView({ kind: "settings", tab: "AI" })}>
+            <IconGear />
           </button>
-          <button class="icon-btn" title="Settings" onClick={() => setView({ kind: "settings", tab: "AI" })}>
-            ⚙︎
-          </button>
+        </div>
+        <div class="search">
+          <IconSearch />
+          <input value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} placeholder="Search bots" />
         </div>
         <div class="list">
           {cards.length ? (
-            <div style={{ padding: "8px 14px", background: "var(--panel2)", fontSize: 13 }}>
-              ✋ {cards.length} waiting for you —{" "}
-              <a href="#" onClick={(e) => (e.preventDefault(), setView({ kind: "chat", botId: cards[0].botId }))}>
-                open
-              </a>
-            </div>
-          ) : null}
-          {sorted.map((b) => (
-            <button class={`row ${current?.id === b.id ? "active" : ""}`} onClick={() => setView({ kind: "chat", botId: b.id })}>
-              <Avatar bot={b} />
-              <div class="meta">
-                <div class="name">
-                  {b.name} {b.pinned ? "📌" : ""} {b.busy ? <span class="dot" /> : null}
-                </div>
-                <div class="preview">{b.last ? `${b.last.role === "user" ? "You: " : ""}${b.last.text.replace(/\s+/g, " ").slice(0, 80)}` : b.persona.slice(0, 80)}</div>
-              </div>
-              {cards.some((c) => c.botId === b.id) ? <span class="badge" style={{ background: "var(--warn)" }}>!</span> : b.unread ? <span class="badge">{b.unread}</span> : null}
+            <button class="banner" onClick={() => setView({ kind: "chat", botId: cards[0].botId })}>
+              ✋ <span style={{ flex: 1 }}>{cards.length === 1 ? "1 bot is waiting for your OK" : `${cards.length} bots are waiting for your OK`}</span> <strong>Open</strong>
             </button>
-          ))}
+          ) : null}
+          {[
+            ["Pinned", shown.filter((b) => b.pinned)],
+            [shown.some((b) => b.pinned) ? "Bots" : "", shown.filter((b) => !b.pinned)],
+          ].map(([label, list]) =>
+            (list as Bot[]).length ? (
+              <>
+                {label ? <div class="list-label">{label as string}</div> : null}
+                {(list as Bot[]).map((b) => (
+                  <button class={`row ${current?.id === b.id ? "active" : ""}`} onClick={() => setView({ kind: "chat", botId: b.id })}>
+                    <Avatar bot={b} live={b.busy} />
+                    <div class="meta">
+                      <div class="top">
+                        <span class="name">{b.name}</span>
+                        <span class="time">{when(b.last?.at ?? b.lastMessageAt)}</span>
+                      </div>
+                      <div class="top">
+                        <span class={`preview ${b.busy ? "working" : ""}`} style={{ flex: 1 }}>
+                          {b.busy ? "working…" : b.last ? `${b.last.role === "user" ? "You: " : ""}${b.last.text.replace(/\s+/g, " ").slice(0, 80)}` : b.persona.slice(0, 80)}
+                        </span>
+                        {cards.some((c) => c.botId === b.id) ? <span class="badge warn">!</span> : b.unread ? <span class="badge">{b.unread}</span> : null}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </>
+            ) : null,
+          )}
+          {!shown.length ? <div class="empty">No bots match “{query}”.</div> : null}
         </div>
+        <button class="fab" aria-label="New bot" title="New bot" onClick={() => setView({ kind: "edit", botId: null })}>
+          <IconPlus />
+        </button>
       </div>
       <div class="main">
         {view.kind === "chat" && current ? (
@@ -175,7 +209,10 @@ function Home({ poll }: { poll: boolean }) {
         ) : view.kind === "settings" ? (
           <Settings tab={view.tab} setTab={(tab) => replaceView({ kind: "settings", tab })} bots={bots} onBack={() => (goBack(), void loadState())} />
         ) : (
-          <div class="empty">Choose a bot to chat with.</div>
+          <div class="empty">
+            <img class="hero-logo" src="icon.svg" alt="" />
+            <p>Choose a bot to chat with.</p>
+          </div>
         )}
       </div>
     </div>
@@ -186,7 +223,7 @@ function Onboarding({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
   const steps = [
     {
-      title: "Welcome to MausDroid 🐭",
+      title: "Welcome to MausDroid",
       body: "Your own team of AI bots, running on this phone. They can research, use your apps, work in a background browser and alert you when something matters — and they ask before anything risky.",
     },
     {
@@ -203,6 +240,12 @@ function Onboarding({ onDone }: { onDone: () => void }) {
   return (
     <div class="center">
       <div class="box">
+        <img class="hero-logo" src="icon.svg" alt="" />
+        <div class="dots">
+          {steps.map((_, i) => (
+            <i class={i === step ? "on" : ""} />
+          ))}
+        </div>
         <h2>{s.title}</h2>
         <p class="muted">{s.body}</p>
         <div class="inline" style={{ justifyContent: "center" }}>
@@ -254,7 +297,8 @@ function RemoteGate() {
   return (
     <div class="center">
       <div class="box">
-        <h2>🐭 MausDroid</h2>
+        <img class="hero-logo" src="icon.svg" alt="" />
+        <h2>MausDroid</h2>
         {stage === "pair" ? (
           <p class="muted">Open MausDroid on your phone → Settings → Website &amp; devices → Show QR code, and scan it with this device.</p>
         ) : (

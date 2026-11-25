@@ -6,3 +6,5 @@ add_library(libnode SHARED IMPORTED)
 set_target_properties(libnode PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libnode.so)
 find_library(log-lib log)
 target_link_libraries(mausnode libnode ${log-lib})
+# Works on phones with 16 KB memory pages (newer Android 15/16 devices).
+target_link_options(mausnode PRIVATE "-Wl,-z,max-page-size=16384")

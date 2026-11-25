@@ -11,6 +11,7 @@
 #include "node.h"
 
 static int pipe_stdout[2];
+static FILE *log_file = nullptr;
 static int pipe_stderr[2];
 
 static void *log_thread(void *arg) {
@@ -22,6 +23,10 @@ static void *log_thread(void *arg) {
         if (buf[n - 1] == '\n') n--;
         buf[n] = 0;
         __android_log_write(prio, "MausEngine", buf);
+        if (log_file) {
+            fprintf(log_file, "%s\n", buf);
+            fflush(log_file);
+        }
     }
     return nullptr;
 }
@@ -38,6 +43,13 @@ static void redirect_output() {
     pthread_create(&t2, nullptr, log_thread, &pipe_stderr[0]);
     pthread_detach(t1);
     pthread_detach(t2);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_au_mausdroid_NodeRuntime_setLogFile(JNIEnv *env, jclass, jstring path) {
+    const char *p = env->GetStringUTFChars(path, nullptr);
+    log_file = fopen(p, "w");
+    env->ReleaseStringUTFChars(path, p);
 }
 
 extern "C" JNIEXPORT void JNICALL

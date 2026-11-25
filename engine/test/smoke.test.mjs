@@ -38,7 +38,7 @@ test("chat, tools and approvals work end to end", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-"));
   const port = 18000 + Math.floor(Math.random() * 1000);
   const token = "testtoken";
-  const eng = spawn(process.env.ENGINE_NODE ?? process.execPath, ["dist/engine.cjs"], {
+  const eng = spawn(process.env.ENGINE_NODE ?? process.execPath, [...(process.env.ENGINE_NODE_ARGS ? process.env.ENGINE_NODE_ARGS.split(" ") : []), "dist/engine.cjs"], {
     env: { ...process.env, MAUSDROID_DATA_DIR: dir, MAUSDROID_PORT: String(port), MAUSDROID_TOKEN: token, MAUSDROID_UI_DIR: "dist/ui", MAUSDROID_TAILNET_PROXY: "127.0.0.1:1" },
     stdio: ["ignore", "pipe", "pipe"],
   });

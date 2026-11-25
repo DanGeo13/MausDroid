@@ -20,6 +20,7 @@
         android:label="MausDroid"
         android:usesCleartextTraffic="true"
         android:extractNativeLibs="true"
+        android:pageSizeCompat="enabled"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         tools:targetApi="28">
 
