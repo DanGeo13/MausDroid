@@ -42,18 +42,9 @@ export function nodeFetch(input: string | URL | { url: string }, init: any = {})
         if (enc === "gzip") stream = res.pipe(zlib.createGunzip());
         else if (enc === "deflate") stream = res.pipe(zlib.createInflate());
         else if (enc === "br") stream = res.pipe(zlib.createBrotliDecompress());
-        const outHeaders = new Headers();
-        for (const [k, v] of Object.entries(res.headers)) {
-          if (v === undefined || k === "content-encoding" || k === "content-length") continue;
-          if (Array.isArray(v)) v.forEach((x) => outHeaders.append(k, x));
-          else outHeaders.set(k, String(v));
-        }
         const noBody = method === "HEAD" || status === 204 || status === 304 || status < 200;
-        const webBody = noBody ? null : (Readable.toWeb(stream) as unknown as ReadableStream);
         if (noBody) res.resume();
-        const r = new Response(webBody, { status: status < 200 ? 200 : status, statusText: res.statusMessage, headers: outHeaders });
-        Object.defineProperty(r, "url", { value: urlStr });
-        resolve(r);
+        resolve(makeResponse(urlStr, status, res.statusMessage ?? "", res.headers, noBody ? null : stream) as unknown as Response);
       });
       req.on("error", reject);
       const signal: AbortSignal | undefined = init.signal;
@@ -67,6 +58,88 @@ export function nodeFetch(input: string | URL | { url: string }, init: any = {})
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     go(url, (init.method ?? "GET").toUpperCase(), init.body);
   });
+}
+
+/** Header lookup like the standard Headers object (case-insensitive get/has/forEach). */
+class SimpleHeaders {
+  private m = new Map<string, string>();
+  constructor(raw: http.IncomingHttpHeaders) {
+    for (const [k, v] of Object.entries(raw)) {
+      if (v === undefined || k === "content-encoding" || k === "content-length") continue;
+      this.m.set(k.toLowerCase(), Array.isArray(v) ? v.join(", ") : String(v));
+    }
+  }
+  get(k: string) {
+    return this.m.get(k.toLowerCase()) ?? null;
+  }
+  has(k: string) {
+    return this.m.has(k.toLowerCase());
+  }
+  forEach(fn: (v: string, k: string) => void) {
+    this.m.forEach(fn);
+  }
+  entries() {
+    return this.m.entries();
+  }
+  [Symbol.iterator]() {
+    return this.m.entries();
+  }
+}
+
+/**
+ * A minimal Response: ok/status/headers/url, text()/json()/arrayBuffer(),
+ * and body.getReader() for streaming. Uses Buffers only (no TextDecoder,
+ * which the phone's Node build may not have).
+ */
+function makeResponse(url: string, status: number, statusText: string, raw: http.IncomingHttpHeaders, stream: Readable | null) {
+  let used = false;
+  const all = async (): Promise<Buffer> => {
+    if (used) throw new TypeError("Body already read");
+    used = true;
+    if (!stream) return Buffer.alloc(0);
+    const chunks: Buffer[] = [];
+    for await (const c of stream) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+    return Buffer.concat(chunks);
+  };
+  const body = stream
+    ? {
+        getReader() {
+          used = true;
+          const it = stream[Symbol.asyncIterator]();
+          return {
+            async read(): Promise<{ done: boolean; value?: Uint8Array }> {
+              const r = await it.next();
+              return r.done ? { done: true } : { done: false, value: new Uint8Array(Buffer.isBuffer(r.value) ? r.value : Buffer.from(r.value)) };
+            },
+            async cancel() {
+              stream.destroy();
+            },
+            releaseLock() {},
+          };
+        },
+        async cancel() {
+          stream.destroy();
+        },
+      }
+    : null;
+  return {
+    url,
+    status,
+    statusText,
+    ok: status >= 200 && status < 300,
+    redirected: false,
+    headers: new SimpleHeaders(raw),
+    body,
+    get bodyUsed() {
+      return used;
+    },
+    text: async () => (await all()).toString("utf8"),
+    json: async () => JSON.parse((await all()).toString("utf8")),
+    arrayBuffer: async () => {
+      const b = await all();
+      return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+    },
+  };
 }
 
 export function installNodeFetch() {

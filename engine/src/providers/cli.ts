@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
+import { StringDecoder } from "node:string_decoder";
 import { config } from "../config.ts";
 import { dataPath } from "../store.ts";
 import { getSecret } from "../secrets.ts";
@@ -100,12 +101,12 @@ async function* runOnComputer(p: ProviderConfig, run: CliRun, signal: AbortSigna
   });
   if (!res.ok || !res.body) throw new Error(`Computer companion: HTTP ${res.status} ${await res.text()}`);
   const reader = res.body.getReader();
-  const dec = new TextDecoder();
+  const dec = new StringDecoder("utf8");
   let buf = "";
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    buf += dec.decode(value, { stream: true });
+    buf += dec.write(Buffer.from(value));
     let i: number;
     while ((i = buf.indexOf("\n")) >= 0) {
       yield buf.slice(0, i);

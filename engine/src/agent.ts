@@ -41,7 +41,7 @@ export function resolveProvider(bot: Bot): ProviderConfig {
 
 export function systemPrompt(bot: Bot, extra = ""): string {
   const s = settings();
-  const when = fmtLong(new Date(), s.timeZone);
+  const when = fmtLong(new Date());
   return [
     bot.persona || `You are ${bot.name}, a helpful assistant.`,
     `\n\nYou are ${bot.name}, one of the person's bots in MausDroid, an agent app running on their Android phone. It is ${when} (${s.timeZone}).`,

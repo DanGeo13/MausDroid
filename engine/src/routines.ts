@@ -2,7 +2,7 @@ import { collection } from "./store.ts";
 import { id, now } from "./util.ts";
 import { settings } from "./settings.ts";
 import { emit } from "./events.ts";
-import { fmtParts } from "./time.ts";
+import { localParts as phoneLocalParts } from "./time.ts";
 
 /**
  * Routines: a bot repeats a task on a schedule ("every weekday at 7:00
@@ -35,13 +35,7 @@ export interface Routine {
 
 const file = collection<Routine[]>("routines", []);
 
-function localParts(d: Date) {
-  const tz = settings().timeZone;
-  const parts = fmtParts(d, tz, { hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short" });
-  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
-  const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday);
-  return { hm: `${p.hour === "24" ? "00" : p.hour}:${p.minute}`, wd, ymd: `${p.year}-${p.month}-${p.day}` };
-}
+const localParts = (d: Date) => phoneLocalParts(d);
 
 /** Next run strictly after `from`, scanning minute by minute for daily/weekly (cheap: at most 8 days). */
 export function nextRun(s: Schedule, from: Date): Date | null {

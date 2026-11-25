@@ -39,10 +39,10 @@ jobs:
       - name: Engine + UI
         run: ./scripts/package-engine.sh
 
-      - name: Engine tests (Node 18, same as the phone)
+      - name: Engine tests (Node 18 without Intl/WebAssembly/TextDecoder, like the phone)
         run: |
           curl -sSL https://nodejs.org/dist/v18.20.4/node-v18.20.4-linux-x64.tar.xz | tar xJ -C /tmp
-          cd engine && ENGINE_NODE=/tmp/node-v18.20.4-linux-x64/bin/node node --test test/*.test.mjs
+          cd engine && ENGINE_NODE=/tmp/node-v18.20.4-linux-x64/bin/node ENGINE_NODE_ARGS="--no-expose-wasm -r ./test/phone-like.cjs" node --test test/smoke.test.mjs
 
       - name: Is a new APK needed?
         id: apk

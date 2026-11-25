@@ -3,7 +3,7 @@ import { emit } from "./events.ts";
 import { collection } from "./store.ts";
 import { id, now } from "./util.ts";
 import { settings } from "./settings.ts";
-import { fmtParts } from "./time.ts";
+import { localParts } from "./time.ts";
 
 export interface Alert {
   id: string;
@@ -21,8 +21,7 @@ const alerts = collection<Alert[]>("alerts", []);
 function inQuietHours(): boolean {
   const q = settings().quietHours;
   if (!q) return false;
-  const p = Object.fromEntries(fmtParts(new Date(), settings().timeZone, { hour: "2-digit", minute: "2-digit", hour12: false }).map((x) => [x.type, x.value]));
-  const t = `${p.hour === "24" ? "00" : p.hour}:${p.minute}`;
+  const t = localParts(new Date()).hm;
   return q.start <= q.end ? t >= q.start && t < q.end : t >= q.start || t < q.end;
 }
 

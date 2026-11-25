@@ -1,5 +1,6 @@
 import { collection } from "./store.ts";
 import { hasSecret } from "./secrets.ts";
+import { deviceTimeZone } from "./time.ts";
 
 export type ProviderKind = "anthropic" | "openai" | "cli-claude" | "cli-codex";
 
@@ -50,7 +51,7 @@ const settingsFile = collection<Settings>("settings", {
   website: { enabled: false },
   tailscale: { enabled: false, hostname: "mausdroid" },
   onboardingDone: false,
-  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Australia/Sydney",
+  timeZone: deviceTimeZone(),
   quietHours: null,
 });
 
