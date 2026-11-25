@@ -910,7 +910,7 @@ function MemoryTab() {
       </div>
       <div class="section">
         <h2>GitHub token (optional)</h2>
-        <p class="help">Raises GitHub's limit for skills searches from 60 to 5,000 an hour. A token with no permissions is enough.</p>
+        <p class="help">Raises GitHub's limit for skills searches from 60 to 5,000 an hour. For the weekly audit's wiki, use a fine-grained token with "Contents: read and write" on the private repo DanGeo13/mausdroid-routine-wiki only. MausDroid never writes to a public repo.</p>
         <div class="inline">
           <input type="password" value={gh} onInput={(e) => setGh(val(e))} placeholder="github_pat_…" />
           <button class="btn secondary" onClick={run(async () => (await api("settings/github", { method: "PUT", body: { token: gh } }), setGh("")), "Saved")}>

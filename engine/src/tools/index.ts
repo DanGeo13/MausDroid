@@ -13,6 +13,8 @@ import { getRun } from "../routines.ts";
 import { requestApproval } from "../approvals.ts";
 import * as calendar from "../calendar.ts";
 import * as brief from "../brief.ts";
+import * as audit from "../audit.ts";
+import { searchMarketplace } from "../skills.ts";
 import { listSkills, readSkill, readSkillFile } from "../skills.ts";
 import { callComposio, composioTools } from "../composio.ts";
 import fs from "node:fs";
@@ -203,7 +205,7 @@ const builtins: Tool[] = [
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools()])];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
@@ -459,6 +461,104 @@ function briefTools(): Tool[] {
   ];
 }
 
+// ---------------- Weekly audit ----------------
+
+/** The routine run this bot is working on (or a stand-in id when used from a chat). */
+function auditRunId(bot: Bot) {
+  return currentRunTags(bot.id).find((t) => t.startsWith("run_")) ?? `chat-${new Date().toISOString().slice(0, 10)}-${bot.id}`;
+}
+
+function auditTools(): Tool[] {
+  return [
+    {
+      group: "web",
+      spec: { name: "skills_market_search", description: "Search GitHub for agent skills (claude-skills / agent-skills repos) installable through MausDroid's Skills marketplace. Returns owner/repo, description, stars.", inputSchema: obj({ query: str("Search words") }) },
+      run: async (_c, i) => JSON.stringify(await searchMarketplace(String(i.query ?? "")), null, 1),
+    },
+    {
+      group: "core",
+      spec: { name: "audit_begin", description: "Start the weekly audit: records the research window (5-minute cutoff) and checks the private wiki.", inputSchema: obj({}) },
+      run: async (c) => {
+        const runId = auditRunId(c.bot);
+        const run = getRun(runId);
+        const start = run?.startedAt ? new Date(run.startedAt) : new Date();
+        const r = run ? getRoutine(run.routineId) : undefined;
+        const cutoff = new Date(start.getTime() + (r?.researchCutoffMinutes ?? 5) * 60_000);
+        const wiki = await audit.checkWiki();
+        audit.upsertAudit(runId, { startedAt: start.toISOString(), researchCutoffAt: cutoff.toISOString(), wiki });
+        return `Audit started. Research tools stop at ${cutoff.toISOString()} (in ${Math.max(0, Math.round((cutoff.getTime() - Date.now()) / 1000))} s). Wiki: ${wiki.detail}`;
+      },
+    },
+    {
+      group: "core",
+      spec: {
+        name: "audit_score",
+        description: "Score audit candidates (/25; safety is a hard gate), remove duplicates (this audit and the wiki), rank them. Call once with all candidates.",
+        inputSchema: obj({ candidates: { type: "array", items: { type: "object" }, description: "Each: name, source_ecosystem, source_url, summary, utility, adoption, scope_fit, setup, privacy (1-5), phase, primitives[], composio[], account_alias, github_repo?, action_type, safety{flag:bool}, alignment{what,why,integrations,implementation,workaround,upgrade_path,privacy}" } }, ["candidates"]),
+      },
+      run: async (c, i) => {
+        const runId = auditRunId(c.bot);
+        const scored = (Array.isArray(i.candidates) ? i.candidates : []).map((x: any) => audit.scoreCandidate({ primitives: [], ...x }));
+        let wikiList: audit.WikiEntry[] = [];
+        let wikiErr = "";
+        try {
+          wikiList = await audit.wikiEntries();
+        } catch (e) {
+          wikiErr = (e as Error).message;
+        }
+        const accepted = scored.filter((x: audit.Scored) => x.accepted);
+        const { kept, duplicates } = audit.dedupe(accepted, wikiList);
+        const all = [...kept, ...scored.filter((x: audit.Scored) => !x.accepted)];
+        audit.upsertAudit(runId, { scored: all, duplicates });
+        const ranked = audit.rank(all);
+        return JSON.stringify({ accepted: ranked.map((x) => ({ rank: x.rank, name: x.name, total: x.total, phase: x.phase, slug: x.slug })), rejected: all.filter((x) => !x.accepted).map((x) => ({ name: x.name, reasons: x.reasons })), duplicates, wikiCheck: wikiErr || "ok", overflowToFile: Math.max(0, ranked.length - 20) }, null, 1);
+      },
+    },
+    {
+      group: "core",
+      spec: { name: "audit_file_overflow", description: "File every accepted candidate ranked 21 or lower in the private wiki (verified by reading back). Refuses if the wiki isn't private.", inputSchema: obj({}) },
+      run: async (c) => {
+        const runId = auditRunId(c.bot);
+        const rec = audit.auditFor(runId);
+        if (!rec) return { text: "Call audit_score first.", isError: true };
+        const overflow = audit.rank(rec.scored).slice(20);
+        if (!overflow.length) return "Nothing ranked 21 or lower: no wiki filing needed.";
+        const wiki = await audit.checkWiki();
+        if (!wiki.ok) {
+          audit.upsertAudit(runId, { wiki });
+          return { text: `Wiki unavailable: ${wiki.detail} (Notion fallback isn't set up.) Nothing filed.`, isError: true };
+        }
+        const date = rec.startedAt.slice(0, 10);
+        const filings = [];
+        for (const x of overflow) filings.push({ ...(await audit.fileEntry(x, date)), phase: x.phase });
+        audit.upsertAudit(runId, { filings, wiki });
+        const ok = filings.filter((f) => f.ok && f.verified).length;
+        return `Filed ${ok} of ${overflow.length} (verified). ${filings.filter((f) => !f.ok || !f.verified).map((f) => `${f.slug}: ${f.detail}`).join("; ")}`;
+      },
+    },
+    {
+      group: "core",
+      spec: {
+        name: "audit_finish",
+        description: "Finish the audit: builds the report from the recorded scores and verified filings (no invented results) and saves it. Then call memory_save and notify_user.",
+        inputSchema: obj({ unavailable_sources: { type: "array", items: { type: "string" } }, notes: str("Short notes") }),
+      },
+      run: async (c, i) => {
+        const runId = auditRunId(c.bot);
+        const rec = audit.auditFor(runId);
+        if (!rec || !rec.scored.length) return { text: "No scored candidates recorded; the audit is incomplete. Tell the person.", isError: true };
+        const updated = audit.upsertAudit(runId, { unavailable: (i.unavailable_sources ?? []).map(String), finishedAt: new Date().toISOString() });
+        const report = audit.buildReport(updated, i.notes ? String(i.notes) : "");
+        audit.upsertAudit(runId, { report });
+        const ranked = audit.rank(updated.scored);
+        const p1 = ranked.find((x) => x.phase === "phase-1-ready");
+        const filed = updated.filings.filter((f) => f.ok && f.verified).length;
+        return `${report}\n\n---\nNext: memory_save (scope "bot") three lines; then notify_user titled "Sunday Routine Audit Ready": top Phase 1 = ${p1?.name ?? "none"}, wiki overflow filed = ${filed}.`;
+      },
+    },
+  ];
+}
+
 // ---------------- Approvals ----------------
 
 const COMPOSIO_READONLY = /SEARCH_TOOLS|GET_TOOL_SCHEMAS|MANAGE_CONNECTIONS/;
@@ -481,7 +581,14 @@ export function permissionFor(tool: Tool, input: any): { key: string; label: str
  * (Allow once / Always allow this type / Deny). Used for every bot and for
  * Claude Code / Codex through the MCP server.
  */
-export async function gate(bot: Bot, tool: Tool, input: any, signal?: AbortSignal): Promise<{ allow: boolean }> {
+export async function gate(bot: Bot, tool: Tool, input: any, signal?: AbortSignal): Promise<{ allow: boolean; reason?: string }> {
+  // Routines with a research cutoff (the weekly audit): research tools stop when it passes.
+  if (audit.RESEARCH_TOOLS.test(tool.spec.name)) {
+    const run = getRun(currentRunTags(bot.id).find((t) => t.startsWith("run_")) ?? "");
+    const r = run ? getRoutine(run.routineId) : undefined;
+    if (run?.startedAt && r?.researchCutoffMinutes && Date.now() > new Date(run.startedAt).getTime() + r.researchCutoffMinutes * 60_000)
+      return { allow: false, reason: `Research cutoff reached (${r.researchCutoffMinutes} min). Stop researching and score, file and report what you have.` };
+  }
   const reason = tool.risk?.(input) ?? null;
   const ask = tool.alwaysAsk || bot.approvalMode === "ask-all" || (bot.approvalMode === "ask-risky" && Boolean(reason));
   if (!ask) return { allow: true };

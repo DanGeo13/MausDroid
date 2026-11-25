@@ -71,7 +71,20 @@ export function execute(r: Routine, key: string, trigger: Run["trigger"], opts: 
   return run;
 }
 
+/** Built-in routines can say a "successful" run didn't actually do its job. */
+const validators = new Map<string, (run: Run) => string | null>();
+export const addRunValidator = (system: string, fn: (run: Run) => string | null) => validators.set(system, fn);
+
 function finish(runId: string, status: Run["status"], text: string) {
+  if (status === "succeeded") {
+    const cur = getRun(runId);
+    const rt = cur ? getRoutine(cur.routineId) : undefined;
+    const problem = rt?.system ? validators.get(rt.system)?.(cur!) : null;
+    if (problem) {
+      status = "failed";
+      text = `${problem}${text ? `\n\nBot said: ${text}` : ""}`;
+    }
+  }
   clearTimeout(timers.get(runId));
   timers.delete(runId);
   const run = patchRun(runId, { status, finishedAt: new Date().toISOString(), ...(status === "succeeded" ? { result: clip(text, 2000) } : { error: clip(text || status, 2000) }) });

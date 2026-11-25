@@ -245,8 +245,8 @@ async function runTool(bot: Bot, tools: Tool[], call: Extract<Block, { type: "to
   {
     const r = await gate(bot, tool, call.input, signal);
     if (!r.allow) {
-      finish("You said no.", true, "denied");
-      return { type: "tool_result", toolUseId: call.id, content: "The person declined this action. Do not retry it; ask what they would like instead.", isError: true };
+      finish(r.reason ?? "You said no.", true, "denied");
+      return { type: "tool_result", toolUseId: call.id, content: r.reason ?? "The person declined this action. Do not retry it; ask what they would like instead.", isError: true };
     }
   }
   try {

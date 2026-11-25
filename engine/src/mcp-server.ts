@@ -73,7 +73,7 @@ export async function handleMcp(botId: string, req: IncomingMessage, res: Server
       if (!tool) return fail(`No tool ${name}`);
       {
         const r = await gate(bot, tool, args ?? {});
-        if (!r.allow) return reply({ content: [{ type: "text", text: "The person declined this action." }], isError: true });
+        if (!r.allow) return reply({ content: [{ type: "text", text: r.reason ?? "The person declined this action." }], isError: true });
       }
       try {
         const out = await tool.run({ bot, signal: AbortSignal.timeout(600_000) }, args ?? {});

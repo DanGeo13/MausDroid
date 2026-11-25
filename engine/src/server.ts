@@ -29,6 +29,7 @@ import * as voice from "./voice.ts";
 import * as files from "./files.ts";
 import * as calendar from "./calendar.ts";
 import * as brief from "./brief.ts";
+import * as audit from "./audit.ts";
 
 export type Via = "local" | "tailnet" | "relay";
 export interface Req {
@@ -339,6 +340,10 @@ route("POST", "/api/calendars/events", async (req) => {
   const b = req.body ?? {};
   return json(await calendar.createEvent({ summary: b.summary, start: b.start, durationMinutes: b.durationMinutes, description: b.description, location: b.location, timeZone: b.timeZone }, b.calendar ? { name: b.calendar } : undefined));
 });
+
+// Weekly audit reports and wiki status
+route("GET", "/api/audits", () => json(audit.listAudits().map(({ scored, ...a }) => ({ ...a, candidates: scored.length }))));
+route("GET", "/api/audits/wiki", async () => json(await audit.checkWiki()));
 
 // Morning Brief: settings, briefings, approvals of proposed events
 route("GET", "/api/brief/settings", () => json(brief.briefSettings()));

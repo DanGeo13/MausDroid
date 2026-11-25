@@ -57,6 +57,8 @@ async function main() {
   await step("bots", () => ensureDefaultBots());
   await step("mcp", () => initMcpServer());
   await step("proxy", () => startEgressProxy(config.port + 3));
+  const { ensureAuditRoutine } = await import("./audit-setup.ts");
+  await step("audit-routine", () => ensureAuditRoutine());
   await step("scheduler", () => startScheduler());
   await step("website", () => startRelayClient());
   const ts = settings().tailscale;
