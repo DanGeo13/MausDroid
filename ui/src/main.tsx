@@ -7,6 +7,7 @@ import type { Bot, Card, Msg } from "./types.ts";
 import { IconBell, IconGear, IconPlus, IconSearch } from "./icons.tsx";
 import { applyAppearance, loadAppearance } from "./appearance.ts";
 import { fileIcon, type Attachment } from "./files.ts";
+import { Briefing } from "./briefing.tsx";
 
 applyAppearance(loadAppearance());
 
@@ -18,7 +19,7 @@ function when(iso?: string) {
   return d.toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
-type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string };
+type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string };
 
 function Home({ poll }: { poll: boolean }) {
   const [bots, setBots] = useState<Bot[]>([]);
@@ -103,10 +104,15 @@ function Home({ poll }: { poll: boolean }) {
     });
     // Notification taps open the right chat: the shell calls window.mausdroidOpen(botId).
     (window as any).mausdroidOpen = (botId: string) => setView({ kind: "chat", botId });
+    // Notification links, e.g. "briefing:<id>" opens that Morning Brief.
+    (window as any).mausdroidLink = (link: string) => {
+      if (link.startsWith("briefing:")) setView({ kind: "briefing", id: link.slice(9) || undefined });
+    };
     // The Android app hands over shared files (already saved) and text.
     (window as any).mausdroidShare = (payload: { attachments: Attachment[]; text?: string }) => setShared(payload);
     const hash = new URLSearchParams(location.hash.slice(1));
     if (hash.get("bot")) setView({ kind: "chat", botId: hash.get("bot")! });
+    if (hash.get("link")) (window as any).mausdroidLink(hash.get("link"));
     // Check now and then (the engine may have updated itself in the background).
     const timer = setInterval(() => void loadState().catch(() => {}), 60_000);
     return () => {
@@ -186,6 +192,9 @@ function Home({ poll }: { poll: boolean }) {
           <h1 class="brand">
             <img src="icon.svg" alt="" /> MausDroid
           </h1>
+          <button class="icon-btn" title="Morning Brief" aria-label="Morning Brief" onClick={() => setView({ kind: "briefing" })}>
+            📰
+          </button>
           <button class="icon-btn" title="Alerts" aria-label="Alerts" onClick={() => setView({ kind: "settings", tab: "Routines & alerts" })}>
             <IconBell />
             {unreadAlerts ? <span class="badge">{unreadAlerts > 99 ? "99+" : unreadAlerts}</span> : null}
@@ -261,6 +270,8 @@ function Home({ poll }: { poll: boolean }) {
               else goBack();
             }}
           />
+        ) : view.kind === "briefing" ? (
+          <Briefing initialId={view.id} onBack={() => setView({ kind: "list" })} />
         ) : view.kind === "settings" ? (
           <Settings tab={view.tab} setTab={(tab) => replaceView({ kind: "settings", tab })} bots={bots} onBack={() => (goBack(), void loadState())} />
         ) : (

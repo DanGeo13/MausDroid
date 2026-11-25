@@ -82,11 +82,14 @@ class MainActivity : Activity() {
 
             override fun onPageFinished(view: WebView, url: String?) {
                 loaded = true
-                pendingBot?.let { openBot(it) }
+                // Links win over plain bot chats (a briefing notification also names its bot).
+                val l = pendingLink
+                if (l != null) view.postDelayed({ openLink(l) }, 400) else pendingBot?.let { openBot(it) }
                 view.postDelayed({ deliverShare() }, 800)
             }
         }
         pendingBot = intent.getStringExtra("botId")
+        pendingLink = intent.getStringExtra("link")?.takeIf { it.isNotBlank() }
         askMicrophoneOnce()
         handleShare(intent)
         showSplash()
@@ -243,11 +246,20 @@ class MainActivity : Activity() {
         pendingBot = null
     }
 
+    /** Notification links such as "briefing:<id>" open that screen. */
+    private var pendingLink: String? = null
+    private fun openLink(link: String) {
+        web.evaluateJavascript("window.mausdroidLink && window.mausdroidLink(${org.json.JSONObject.quote(link)})", null)
+        pendingLink = null
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.getBooleanExtra("askMic", false)) askMicrophoneOnce(force = true)
         handleShare(intent)
-        intent.getStringExtra("botId")?.let { if (loaded) openBot(it) else pendingBot = it }
+        val link = intent.getStringExtra("link")?.takeIf { it.isNotBlank() }
+        if (link != null) { if (loaded) openLink(link) else pendingLink = link }
+        else intent.getStringExtra("botId")?.let { if (loaded) openBot(it) else pendingBot = it }
     }
 
     private var fileCallback: android.webkit.ValueCallback<Array<Uri>>? = null

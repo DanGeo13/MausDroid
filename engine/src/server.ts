@@ -28,6 +28,7 @@ import * as subs from "./subscriptions.ts";
 import * as voice from "./voice.ts";
 import * as files from "./files.ts";
 import * as calendar from "./calendar.ts";
+import * as brief from "./brief.ts";
 
 export type Via = "local" | "tailnet" | "relay";
 export interface Req {
@@ -338,6 +339,31 @@ route("POST", "/api/calendars/events", async (req) => {
   const b = req.body ?? {};
   return json(await calendar.createEvent({ summary: b.summary, start: b.start, durationMinutes: b.durationMinutes, description: b.description, location: b.location, timeZone: b.timeZone }, b.calendar ? { name: b.calendar } : undefined));
 });
+
+// Morning Brief: settings, briefings, approvals of proposed events
+route("GET", "/api/brief/settings", () => json(brief.briefSettings()));
+route("PUT", "/api/brief/settings", (req) => json(brief.saveBriefSettings(req.body ?? {})));
+route("GET", "/api/briefings", () => json(brief.listBriefings()));
+route("GET", "/api/briefings/:id", (_r, [id]) => {
+  const b = brief.getBriefing(id);
+  if (!b) throw new HttpError(404, "No such briefing");
+  return json(b);
+});
+route("POST", "/api/briefings/:id/events/:eid", async (req, [id, eid]) => json(await brief.decideEvent(id, eid, Boolean(req.body?.approve))));
+route("POST", "/api/brief/prepare", async (req) => json(await brief.prepareBrief(req.body?.date)));
+/** The Morning Brief routine (made on first use: weekdays 6:30 am, owned by the pinned bot), run now. */
+function morningBriefRoutine(create: boolean) {
+  const existing = routines.listRoutines().find((r) => r.system === "morning-brief");
+  if (existing || !create) return existing;
+  const bots = listBotsForBrief();
+  const owner = bots.find((b) => b.pinned) ?? bots[0];
+  if (!owner) throw new HttpError(400, "Create a bot first.");
+  return routines.createRoutine({ botId: owner.id, title: "Morning Brief", prompt: brief.MORNING_BRIEF_PROMPT, schedule: { kind: "weekly", days: [1, 2, 3, 4, 5], time: "06:30", timeZone: settings().timeZone?.includes("/") ? settings().timeZone : undefined }, system: "morning-brief", timeoutMinutes: 20 });
+}
+const listBotsForBrief = () => bots.listBots().filter((b) => !b.hidden);
+route("GET", "/api/brief/routine", () => json(morningBriefRoutine(false) ? routines.routineDetails(morningBriefRoutine(false)!) : null));
+route("POST", "/api/brief/routine", () => json(routines.routineDetails(morningBriefRoutine(true)!)));
+route("POST", "/api/brief/refresh", () => json(runRoutineNow(morningBriefRoutine(true)!.id)));
 
 // Connected apps (Composio)
 route("POST", "/api/composio/key", async (req) => (await composio.connectComposio(String(req.body?.key ?? "")), json(publicSettings())));

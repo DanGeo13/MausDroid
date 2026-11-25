@@ -17,6 +17,7 @@ object Notifier {
     fun show(ctx: Context, o: JSONObject) {
         val id = o.optString("id").hashCode()
         val botId = o.optString("botId")
+        val link = o.optString("link")
         val cardId = o.optString("cardId")
         val isCard = cardId.isNotBlank()
         val channel = when {
@@ -25,7 +26,7 @@ object Notifier {
             else -> MausApp.CH_ALERTS
         }
         val open = PendingIntent.getActivity(
-            ctx, id, Intent(ctx, MainActivity::class.java).putExtra("botId", botId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            ctx, id, Intent(ctx, MainActivity::class.java).putExtra("botId", botId).putExtra("link", link).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val b = NotificationCompat.Builder(ctx, channel)

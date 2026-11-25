@@ -12,6 +12,7 @@ import { currentRunTags } from "../agent.ts";
 import { getRun } from "../routines.ts";
 import { requestApproval } from "../approvals.ts";
 import * as calendar from "../calendar.ts";
+import * as brief from "../brief.ts";
 import { listSkills, readSkill, readSkillFile } from "../skills.ts";
 import { callComposio, composioTools } from "../composio.ts";
 import fs from "node:fs";
@@ -202,7 +203,7 @@ const builtins: Tool[] = [
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools()])];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
@@ -414,6 +415,45 @@ function calendarTools(): Tool[] {
           i.calendar ? { name: i.calendar } : undefined,
         );
         return { text: JSON.stringify(r, null, 1), isError: r.status === "failed" };
+      },
+    },
+  ];
+}
+
+// ---------------- Morning Brief ----------------
+
+function briefTools(): Tool[] {
+  return [
+    {
+      group: "core",
+      spec: {
+        name: "morning_brief_prepare",
+        description:
+          "Gather today's Morning Brief facts: school day / term week (from confirmed term dates), today's calendar events, this week's Staff Update (found in Google Drive by title and content, with its link), Thursday sport rows from this week's sport-matrix tab, recent notices, the calendar destination status, the person's brief preferences (with which are confirmed vs assumed), plus warnings and source links. Never substitutes older documents.",
+        inputSchema: obj({ date: str("YYYY-MM-DD (default today)") }),
+      },
+      run: async (_c, i) => JSON.stringify(await brief.prepareBrief(i.date), null, 1),
+    },
+    {
+      group: "core",
+      spec: {
+        name: "morning_brief_publish",
+        description: "Save the finished Morning Brief to the Briefing screen and send the 'Morning Brief ready' notification linking to it. Proposed calendar events wait for the person's approval on that screen.",
+        inputSchema: obj(
+          {
+            date: str("YYYY-MM-DD (default today)"),
+            summary: str("The brief, in plain words (Markdown ok)"),
+            staff_update_summary: str("Key Staff Update items"),
+            notices: { type: "array", items: { type: "string" } },
+            proposed_events: { type: "array", items: { type: "object", properties: { summary: { type: "string" }, start: { type: "string", description: "YYYY-MM-DDTHH:MM" }, duration_minutes: { type: "number" }, reason: { type: "string" } }, required: ["summary", "start"] } },
+            extra_warnings: { type: "array", items: { type: "string" } },
+          },
+          ["summary"],
+        ),
+      },
+      run: async (c, i) => {
+        const b = await brief.publishBrief(i, c.bot.id);
+        return `Published briefing ${b.id} for ${b.date} (${b.warnings.length} warnings, ${b.proposedEvents.length} proposed events). The person was notified.`;
       },
     },
   ];
