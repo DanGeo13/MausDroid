@@ -17,6 +17,7 @@ import * as audit from "../audit.ts";
 import { searchMarketplace } from "../skills.ts";
 import { describeLocationError, getLocation } from "../location.ts";
 import * as calls from "../calls.ts";
+import * as improve from "../improve.ts";
 import { listSkills, readSkill, readSkillFile } from "../skills.ts";
 import { callComposio, composioTools } from "../composio.ts";
 import fs from "node:fs";
@@ -207,12 +208,12 @@ const builtins: Tool[] = [
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools()])];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
   // Only the call bot (Maus) can phone the person.
-  const allowed = list.filter((t) => t.spec.name !== "call_user" || calls.isCallBot(bot.id));
+  const allowed = list.filter((t) => (t.spec.name !== "call_user" || calls.isCallBot(bot.id)) && (!t.spec.name.startsWith("improve_") || improve.isImprover(bot.id)));
   list.length = 0;
   list.push(...allowed);
   if (bot.tools.apps) {
@@ -609,6 +610,63 @@ function callTools(): Tool[] {
         if (c.state === "declined") return "The person declined the call. Send a message instead if it matters.";
         if (c.state === "missed") return "No answer. A missed-call notification was left.";
         return "They answered. The conversation continues by voice; their words will arrive as messages from the call.";
+      },
+    },
+  ];
+}
+
+// ---------------- Self-improvement (Improver only) ----------------
+
+function improveTools(): Tool[] {
+  const runId = (bot: Bot) => currentRunTags(bot.id).find((t) => t.startsWith("run_")) ?? `chat-${new Date().toISOString().slice(0, 10)}-${bot.id}`;
+  return [
+    {
+      group: "core",
+      spec: { name: "improve_evidence", description: "Tonight's evidence: recent errors, failed/missed/timed-out routine runs, all routines (with prompts), skills, start-up problems and earlier suggestions (don't repeat them).", inputSchema: obj({}) },
+      run: async (c) => {
+        improve.beginNight(runId(c.bot));
+        return JSON.stringify(improve.collectEvidence(), null, 1);
+      },
+    },
+    {
+      group: "core",
+      spec: {
+        name: "improve_propose",
+        description: `Record suggestions (at most ${improve.MAX_PER_NIGHT} a night; fewer is better). Nothing changes now: each becomes a card shown at midday that the person approves or declines.`,
+        inputSchema: obj(
+          {
+            suggestions: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  title: str("Short title"),
+                  problem: str("What's wrong or missing, in plain words"),
+                  change: str("Exactly what would change"),
+                  area: { type: "string", enum: ["routine", "skill", "code", "other"] },
+                  risk: { type: "string", enum: ["low", "medium", "high"] },
+                  evidence: str("What showed the problem (errors, run ids)"),
+                  routine_patch: { type: "object", description: "area=routine: {routine_id, title?, prompt?, schedule?, timeout_minutes?, enabled?} with the exact NEW values" },
+                  skill: { type: "object", description: "area=skill: {name, content} where content is the complete new SKILL.md (frontmatter name + description, then instructions)" },
+                },
+                required: ["title", "problem", "change", "area"],
+              },
+            },
+          },
+          ["suggestions"],
+        ),
+      },
+      run: async (c, i) => {
+        const r = improve.addSuggestions(runId(c.bot), i.suggestions);
+        return `Recorded ${r.added.length}: ${r.added.map((p) => p.title).join("; ") || "none"}.${r.refused.length ? ` Not recorded: ${r.refused.map((x) => `${x.title} (${x.reason})`).join("; ")}.` : ""} They'll be shown at ${improve.improveSettings().showTime}.`;
+      },
+    },
+    {
+      group: "core",
+      spec: { name: "improve_finish", description: "End tonight's check with a one-line summary.", inputSchema: obj({ summary: str("One line") }, ["summary"]) },
+      run: async (c, i) => {
+        const n = improve.finishNight(runId(c.bot), String(i.summary ?? ""));
+        return `Done: ${n.count} suggestion(s) recorded.`;
       },
     },
   ];

@@ -175,3 +175,8 @@ input[type="range"] { padding: 0; accent-color: var(--accent); background: trans
 .call-lines p { background: var(--panel); padding: .5rem .8rem; border-radius: .9rem; margin: .35rem 0; }
 .call-lines p.mine { background: var(--accent-soft); }
 .call-btn { width: 100%; max-width: 20rem; padding: 1rem; font-size: 1.1rem; }
+.improve-card { box-shadow: var(--shadow), inset 0 0 0 1.5px var(--accent); }
+.improve-card p { margin: .3rem 0; font-size: .9rem; }
+.improve-card details pre { margin: .2rem 0; }
+.row-detail { padding: .45rem 0; border-bottom: 1px solid var(--panel2); }
+.row-detail summary { cursor: pointer; }

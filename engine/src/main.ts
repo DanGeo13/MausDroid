@@ -59,7 +59,10 @@ async function main() {
   await step("proxy", () => startEgressProxy(config.port + 3));
   const { ensureAuditRoutine } = await import("./audit-setup.ts");
   await step("audit-routine", () => ensureAuditRoutine());
+  const { ensureImprover, startImprover } = await import("./improve.ts");
+  await step("improver", () => ensureImprover());
   await step("scheduler", () => startScheduler());
+  await step("improver-reveal", () => startImprover());
   await step("website", () => startRelayClient());
   const ts = settings().tailscale;
   if (bridgeAvailable() && ts.enabled) await step("tailscale", () => bridge("/tailscale/start", { hostname: ts.hostname, authKey: getSecret("tailscale:authkey") ?? "" }));

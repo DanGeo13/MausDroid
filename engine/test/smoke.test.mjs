@@ -65,7 +65,7 @@ test("chat, tools and approvals work end to end", async () => {
     assert.match(await (await fetch(base + "/")).text(), /MausDroid/);
 
     const st = await call("/api/state");
-    assert.equal(st.data.bots.length, 3);
+    assert.deepEqual(st.data.bots.map((b) => b.name), ["Maus", "Researcher", "Inbox", "Improver"]);
     const bot = st.data.bots[0];
 
     await call("/api/settings/providers/local", "PUT", { enabled: true, baseUrl: modelUrl, defaultModel: "fake" });

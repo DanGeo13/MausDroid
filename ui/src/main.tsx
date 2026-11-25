@@ -8,6 +8,7 @@ import { IconBell, IconGear, IconPlus, IconSearch } from "./icons.tsx";
 import { applyAppearance, loadAppearance } from "./appearance.ts";
 import { fileIcon, type Attachment } from "./files.ts";
 import { Briefing } from "./briefing.tsx";
+import { Improve } from "./improve.tsx";
 import { CallScreen } from "./call.tsx";
 
 applyAppearance(loadAppearance());
@@ -20,7 +21,7 @@ function when(iso?: string) {
   return d.toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
-type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string } | { kind: "call"; callId?: string; botId?: string };
+type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string } | { kind: "improve" } | { kind: "call"; callId?: string; botId?: string };
 
 function Home({ poll }: { poll: boolean }) {
   const [bots, setBots] = useState<Bot[]>([]);
@@ -115,6 +116,7 @@ function Home({ poll }: { poll: boolean }) {
     (window as any).mausdroidLink = (link: string) => {
       if (link.startsWith("briefing:")) setView({ kind: "briefing", id: link.slice(9) || undefined });
       if (link.startsWith("call:")) setView({ kind: "call", callId: link.slice(5) });
+      if (link.startsWith("improve:")) setView({ kind: "improve" });
     };
     // The Android app hands over shared files (already saved) and text.
     (window as any).mausdroidShare = (payload: { attachments: Attachment[]; text?: string }) => setShared(payload);
@@ -210,6 +212,9 @@ function Home({ poll }: { poll: boolean }) {
           <button class="icon-btn" title="Morning Brief" aria-label="Morning Brief" onClick={() => setView({ kind: "briefing" })}>
             📰
           </button>
+          <button class="icon-btn" title="Improvements" aria-label="Improvements" onClick={() => setView({ kind: "improve" })}>
+            🛠️
+          </button>
           <button class="icon-btn" title="Alerts" aria-label="Alerts" onClick={() => setView({ kind: "settings", tab: "Routines & alerts" })}>
             <IconBell />
             {unreadAlerts ? <span class="badge">{unreadAlerts > 99 ? "99+" : unreadAlerts}</span> : null}
@@ -288,6 +293,8 @@ function Home({ poll }: { poll: boolean }) {
           />
         ) : view.kind === "call" ? (
           <CallScreen callId={view.callId} onEnd={() => setView({ kind: "list" })} />
+        ) : view.kind === "improve" ? (
+          <Improve onBack={() => setView({ kind: "list" })} openBot={(id) => setView({ kind: "chat", botId: id })} />
         ) : view.kind === "briefing" ? (
           <Briefing initialId={view.id} onBack={() => setView({ kind: "list" })} />
         ) : view.kind === "settings" ? (

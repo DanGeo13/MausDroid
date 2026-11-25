@@ -16,6 +16,7 @@ import { getSecret } from "./secrets.ts";
 import * as composio from "./composio.ts";
 import * as skills from "./skills.ts";
 import * as routines from "./routines.ts";
+import * as improve from "./improve.ts";
 import * as pairing from "./pairing.ts";
 import { readMemory, writeMemory } from "./memory.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
@@ -463,6 +464,17 @@ const badRequest = (fn: () => unknown) => {
     throw new HttpError(400, errorText(e));
   }
 };
+route("GET", "/api/improve", () => json(improve.overview()));
+route("PUT", "/api/improve/settings", (req) => json(badRequest(() => improve.saveImproveSettings(req.body ?? {}))));
+route("POST", "/api/improve/run", () => {
+  const r = improve.improveRoutine();
+  if (!r) throw new Error("The nightly check routine is missing.");
+  return json(runRoutineNow(r.id));
+});
+route("POST", "/api/improve/reveal", async () => json(await improve.revealDue(new Date(), true)));
+route("POST", "/api/improve/:id/approve", async (_r, [id]) => json(await improve.approve(id)));
+route("POST", "/api/improve/:id/snooze", (_r, [id]) => json(badRequest(() => improve.snooze(id))));
+route("POST", "/api/improve/:id/dismiss", (_r, [id]) => json(badRequest(() => improve.dismiss(id))));
 route("GET", "/api/routines", (req) => json(routines.listRoutines(req.query.get("bot") ?? undefined).map(routines.routineDetails)));
 route("POST", "/api/routines", (req) => json(routines.routineDetails(badRequest(() => routines.createRoutine(req.body)) as routines.Routine)));
 route("PATCH", "/api/routines/:id", (req, [id]) => json(routines.routineDetails(badRequest(() => routines.updateRoutine(id, req.body ?? {})) as routines.Routine)));
