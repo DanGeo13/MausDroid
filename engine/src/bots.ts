@@ -3,6 +3,7 @@ import { collection, dataPath } from "./store.ts";
 import { id, now } from "./util.ts";
 import type { Msg } from "./types.ts";
 import type { Attachment } from "./files.ts";
+import { LATEST_ACCESS_UPDATE } from "./access-updates.ts";
 
 export type ApprovalMode = "ask-risky" | "ask-all" | "auto";
 
@@ -27,6 +28,8 @@ export interface Bot {
   alwaysAllow: string[];
   /** Single tools switched off for this bot (bot editor / Settings → Tools). */
   disabledTools?: string[];
+  /** The last access-rules update this bot was told about (see access-updates.ts). */
+  accessSeen?: string;
 }
 
 export interface ChatMessage {
@@ -73,6 +76,8 @@ export function createBot(input: Partial<Bot>): Bot {
     createdAt: now(),
     unread: 0,
     alwaysAllow: [],
+    // A new bot starts with today's rules: nothing to catch up on.
+    accessSeen: LATEST_ACCESS_UPDATE,
   };
   botsFile.update((b) => void b.push(bot));
   return bot;
