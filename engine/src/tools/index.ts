@@ -20,6 +20,7 @@ import * as calls from "../calls.ts";
 import * as improve from "../improve.ts";
 import * as share from "../share.ts";
 import * as botAdmin from "../bot-admin.ts";
+import * as selfupdate from "../selfupdate.ts";
 import { saveSkill } from "../skills.ts";
 import { listSkills, readSkill, readSkillFile } from "../skills.ts";
 import { callComposio, composioTools } from "../composio.ts";
@@ -813,6 +814,35 @@ function adminTools(): Tool[] {
       admin: true,
       spec: { name: "improve_record", description: "Record a change you just made at the person's request, so it shows in Improvements history (applied).", inputSchema: obj({ title: str("Short title"), change: str("What you changed"), area: { type: "string", enum: ["routine", "skill", "code", "other"] } }, ["title", "change"]) },
       run: async (_c, i) => `Recorded: ${improve.recordApplied(String(i.title), String(i.change), (i.area ?? "other") as any).title}`,
+    },
+    {
+      group: "core",
+      admin: true,
+      spec: {
+        name: "improve_build",
+        description: "Change MausDroid's own program (screens, features, fixes): a Claude Code session in the cloud makes the change from your spec, runs every test, and if they pass it's installed and MausDroid restarts with it (usually 5–20 minutes; the person gets a notification). Write a complete, specific spec.",
+        inputSchema: obj({ title: str("Short title"), spec: str("What to change, in detail: behaviour, screens, edge cases") }, ["title", "spec"]),
+      },
+      run: async (_c, i) => {
+        const p = await improve.requestBuild(String(i.title), String(i.spec));
+        return p.status === "failed" ? `Couldn't start: ${p.result}` : `Building "${p.title}" in the cloud (id ${p.id}). ${p.result}`;
+      },
+    },
+    {
+      group: "core",
+      admin: true,
+      spec: { name: "improve_versions", description: "MausDroid program versions kept on the phone (which is running, which were set aside) and cloud builds in progress.", inputSchema: obj({}) },
+      run: async () => JSON.stringify({ ...selfupdate.engineVersions(), building: improve.listProposals().filter((p) => p.status === "building").map((p) => ({ id: p.id, title: p.title, since: p.build?.startedAt, progress: p.build?.runUrl })) }, null, 1),
+    },
+    {
+      group: "core",
+      admin: true,
+      spec: { name: "improve_rollback", description: "Go back to an earlier MausDroid program version kept on the phone (default: the one before the running version). MausDroid restarts in a few seconds; the version you leave isn't installed again.", inputSchema: obj({ version: str("Version to go back to, e.g. 0.8.2 (optional)") }) },
+      run: async (_c, i) => {
+        const r = selfupdate.rollBack(i.version ? String(i.version) : undefined);
+        improve.recordApplied(`Rolled back ${r.from} → ${r.to}`, `Went back from ${r.from} to ${r.to}.`, "code");
+        return `Going back from ${r.from} to ${r.to}; MausDroid restarts in a few seconds.`;
+      },
     },
     {
       group: "core",

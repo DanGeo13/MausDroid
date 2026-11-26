@@ -13,6 +13,8 @@ import { notifyUser } from "./notify.ts";
 import { onTurnEnd, sendToBot } from "./agent.ts";
 import { addRunValidator } from "./scheduler.ts";
 import { looksSecret, similar } from "./audit.ts";
+import * as selfupdate from "./selfupdate.ts";
+import { bridge, bridgeAvailable } from "./bridge.ts";
 
 /**
  * The Improver: a bot that checks MausDroid once a night (10 minutes at most,
@@ -27,7 +29,7 @@ export const MAX_PER_NIGHT = 5;
 export const IMPROVER_MODEL = "claude-opus-5-5";
 
 export type Area = "routine" | "skill" | "code" | "other";
-export type Status = "waiting" | "shown" | "applying" | "applied" | "failed" | "declined" | "expired";
+export type Status = "waiting" | "shown" | "building" | "applying" | "applied" | "failed" | "declined" | "expired";
 
 export interface Proposal {
   id: string;
@@ -43,6 +45,8 @@ export interface Proposal {
   evidence?: string;
   routinePatch?: { routineId: string; routineTitle: string; before: Record<string, unknown>; after: Record<string, unknown> };
   skill?: { name: string; before: string | null; after: string };
+  /** A program change built in the cloud (Claude Code on GitHub): its pull request when ready. */
+  build?: { prNumber?: number; prUrl?: string; runUrl?: string; startedAt: string; direct: boolean };
   status: Status;
   decidedAt?: string;
   result?: string;
@@ -62,6 +66,8 @@ export interface ImproveSettings {
   nightTime: string;
   showTime: string;
   lastRevealDate?: string;
+  /** Program changes you asked for directly install by themselves once their tests pass (default). */
+  askBeforeInstall?: boolean;
 }
 
 const settingsFile = collection<ImproveSettings>("improve-settings", { enabled: true, botId: null, nightTime: "02:30", showTime: "12:00" });
@@ -97,7 +103,8 @@ export const OLD_IMPROVER_PERSONA =
 export const IMPROVER_PERSONA = `You are Improver, MausDroid's self-improvement bot, with admin rights over MausDroid's set-up.
 - When the person asks you directly for a change, do it now — don't make a suggestion card. You can change any bot (bot_list, bot_edit: instructions, AI and model, tool switches, single tools, skills, approvals of other bots), any routine (routine_admin_list, routine_admin_update), skills (skill_save) and see every tool (tool_list). After changing something, call improve_record so it shows in Improvements history, and say briefly what you changed (bot changes can be undone in Settings → Tools).
 - If they ask to remove or cancel a suggestion, call improve_withdraw.
-- Changes to MausDroid's own program code (new screens, new features) can't be made from the phone. Say so plainly, write a short, clear spec they can give to a developer session, and record it with improve_propose (area "code") so it's tracked.
+- Changes to MausDroid's own program (new screens, features, fixes in its code): call improve_build with a short title and a clear, complete spec. A Claude Code session in the cloud makes the change, runs every test, and — if they pass — it installs by itself; MausDroid restarts with it. Tell them it usually takes 5–20 minutes and they'll get a notification.
+- If something is wrong after an update, or they ask to go back: improve_versions shows the versions kept on the phone, improve_rollback switches back at once (MausDroid restarts).
 - In the nightly check (a routine), only suggest (improve_propose, at most 5); nothing changes until approved.
 Be brief and concrete.`;
 
@@ -148,7 +155,7 @@ export function saveImproveSettings(input: Partial<ImproveSettings>): ImproveSet
   if (input.showTime !== undefined && !HM.test(input.showTime)) throw new Error("Show time must be HH:MM.");
   if (input.botId !== undefined && input.botId !== null && !getBot(input.botId)) throw new Error("No such bot.");
   settingsFile.update((s) => {
-    for (const k of ["enabled", "nightTime", "showTime", "botId"] as const) if (input[k] !== undefined) (s as any)[k] = input[k];
+    for (const k of ["enabled", "nightTime", "showTime", "botId", "askBeforeInstall"] as const) if (input[k] !== undefined) (s as any)[k] = input[k];
   });
   const s = settingsFile.get();
   const r = improveRoutine();
@@ -389,6 +396,7 @@ export async function revealDue(at = new Date(), force = false): Promise<Proposa
 let ticker: NodeJS.Timeout | null = null;
 export function startImprover() {
   listen();
+  if (proposals.get().some((p) => p.status === "building")) watchBuilds();
   if (ticker) return;
   void revealDue().catch(() => {});
   ticker = setInterval(() => void revealDue().catch(() => {}), 60_000);
@@ -423,7 +431,12 @@ export async function approve(pid: string): Promise<Proposal> {
     else saveSkill(p.skill.name, p.skill.after);
     return patch(pid, { ...decided, status: "applied", result: `Skill "${p.skill.name}" ${cur ? "updated" : "added"}.` })!;
   }
-  // Code and other changes: the Improver does the work; its actions still ask as usual.
+  // Program changes are built in the cloud; a finished build is installed (published) on approval.
+  if (p.area === "code") {
+    if (p.build?.prNumber && p.status === "shown") return installBuild(p);
+    return startCodeBuild(p, false);
+  }
+  // Other changes: the Improver does the work; its actions still ask as usual.
   const bot = improverBot();
   if (!bot) return patch(pid, { ...decided, status: "failed", result: "No Improver bot is set." })!;
   const out = patch(pid, { ...decided, status: "applying" })!;
@@ -452,8 +465,95 @@ export function snooze(pid: string): Proposal {
 
 export function dismiss(pid: string): Proposal {
   const p = getProposal(pid);
-  if (!p || !["shown", "waiting"].includes(p.status)) throw new Error("This suggestion is already decided.");
+  if (!p || !["shown", "waiting", "building"].includes(p.status)) throw new Error("This suggestion is already decided.");
+  if (p.build?.prNumber) void selfupdate.closeBuild(p.build.prNumber).catch(() => {});
   return patch(pid, { status: "declined", decidedAt: now() })!;
+}
+
+// ---------------- Program changes built in the cloud ----------------
+
+/** Improver (asked directly) or an approved card: a Claude Code session on GitHub makes the change and runs every test. */
+export async function requestBuild(title: string, request: string): Promise<Proposal> {
+  const p: Proposal = { id: id("imp"), runId: "direct", createdAt: now(), showFrom: localParts(new Date()).ymd, title: clip(title, 120), problem: "Asked for directly.", change: clip(request, 6000), area: "code", risk: "medium", status: "shown" };
+  if (looksSecret(request)) throw new Error("That request looks like it contains a credential — leave secrets out.");
+  proposals.update((l) => void l.push(p));
+  return startCodeBuild(p, true);
+}
+
+async function startCodeBuild(p: Proposal, direct: boolean): Promise<Proposal> {
+  try {
+    await selfupdate.startBuild(p.id, `${p.title}\n\n${p.problem}\n\n${p.change}`);
+  } catch (e) {
+    return patch(p.id, { status: "failed", decidedAt: now(), result: `Couldn't start the cloud build: ${(e as Error).message}` })!;
+  }
+  const out = patch(p.id, { status: "building", decidedAt: now(), build: { startedAt: now(), direct }, result: "Building in the cloud: Claude Code is making the change and running every test (usually 5–20 minutes)." })!;
+  watchBuilds();
+  return out;
+}
+
+async function installBuild(p: Proposal): Promise<Proposal> {
+  try {
+    await selfupdate.mergeBuild(p.build!.prNumber!);
+  } catch (e) {
+    return patch(p.id, { status: "failed", result: `Couldn't install: ${(e as Error).message}` })!;
+  }
+  const out = patch(p.id, { status: "applied", decidedAt: now(), result: "Installed: publishing the update now; MausDroid restarts with it in a few minutes. If anything's wrong, roll back in Improvements." })!;
+  followUpdate(p.title);
+  return out;
+}
+
+let buildTimer: NodeJS.Timeout | null = null;
+/** Checks cloud builds every 2 minutes while any are running. */
+export function watchBuilds() {
+  if (buildTimer) return;
+  buildTimer = setInterval(() => void checkBuilds(), Number(process.env.MAUSDROID_BUILD_POLL_MS ?? 120_000));
+}
+
+export async function checkBuilds() {
+  const building = proposals.get().filter((p) => p.status === "building");
+  if (!building.length && buildTimer) {
+    clearInterval(buildTimer);
+    buildTimer = null;
+    return;
+  }
+  const bot = improverBot();
+  for (const p of building) {
+    let st: selfupdate.BuildState;
+    try {
+      st = await selfupdate.buildState(p.id);
+    } catch {
+      continue; // try again next time
+    }
+    const build = { ...p.build!, prNumber: st.prNumber, prUrl: st.prUrl, runUrl: st.runUrl ?? p.build?.runUrl };
+    if (st.state === "ready") {
+      const auto = p.build?.direct && !settingsFile.get().askBeforeInstall;
+      const ready = patch(p.id, { build, status: "shown", result: "Built and every test passed." })!;
+      if (auto) await installBuild(ready);
+      else void notifyUser({ title: `${bot?.emoji ?? "🛠️"} Improvement ready to install`, body: p.title, botId: bot?.id, type: "improvement", link: "improve:" });
+    } else if (st.state === "failed") {
+      patch(p.id, { build, status: "failed", result: st.detail ?? "The cloud build failed." });
+      void notifyUser({ title: `${bot?.emoji ?? "🛠️"} Improvement couldn't be built`, body: `${p.title} — ${st.detail ?? ""}`.slice(0, 300), botId: bot?.id, type: "improvement", link: "improve:" });
+    } else if (st.state === "merged") patch(p.id, { build, status: "applied", result: "Installed." });
+    else if (st.state === "closed") patch(p.id, { build, status: "declined", result: "The change was closed without installing." });
+    else if (build.runUrl !== p.build?.runUrl) patch(p.id, { build });
+    if (st.state === "building" && Date.now() - new Date(p.build!.startedAt).getTime() > 90 * 60_000) patch(p.id, { build, status: "failed", result: "The cloud build took longer than 90 minutes." });
+  }
+}
+
+/** After installing: fetch the published update as soon as it's out, then restart with it. */
+function followUpdate(title: string) {
+  if (!bridgeAvailable()) return;
+  let tries = 0;
+  const t = setInterval(async () => {
+    if (++tries > 15) return clearInterval(t);
+    const s = await bridge<{ state?: string; available?: string }>("/update/check", {}, 300_000).catch(() => null);
+    if (s?.state === "ready") {
+      clearInterval(t);
+      const bot = improverBot();
+      await notifyUser({ title: `${bot?.emoji ?? "🛠️"} Installing ${s.available}`, body: `${title} — MausDroid restarts for a moment.`, botId: bot?.id, type: "improvement", priority: "low" });
+      await bridge("/update/apply", {}).catch(() => {});
+    }
+  }, Number(process.env.MAUSDROID_UPDATE_POLL_MS ?? 180_000));
 }
 
 let listening = false;
@@ -496,7 +596,9 @@ export function overview() {
     routine: r ? { id: r.id, enabled: r.enabled, nextRunAt: r.nextRunAt ?? null, lastResult: r.lastResult ?? null } : null,
     shown: all.filter((p) => p.status === "shown"),
     waiting: all.filter((p) => p.status === "waiting").length,
-    history: all.filter((p) => !["shown", "waiting"].includes(p.status)).slice(0, 30),
+    history: all.filter((p) => !["shown", "waiting", "building"].includes(p.status)).slice(0, 30),
     lastNight: listNights()[0] ?? null,
+    building: all.filter((p) => p.status === "building"),
+    versions: selfupdate.engineVersions(),
   };
 }

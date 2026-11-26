@@ -20,6 +20,7 @@ import * as improve from "./improve.ts";
 import * as callSession from "./call-session.ts";
 import * as share from "./share.ts";
 import * as botAdmin from "./bot-admin.ts";
+import * as selfupdate from "./selfupdate.ts";
 import * as pairing from "./pairing.ts";
 import { readMemory, writeMemory } from "./memory.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
@@ -502,6 +503,13 @@ route("POST", "/api/improve/run", () => {
   return json(runRoutineNow(r.id));
 });
 route("POST", "/api/improve/reveal", async () => json(await improve.revealDue(new Date(), true)));
+route("POST", "/api/improve/rollback", (req) => json(badRequest(() => {
+  const r = selfupdate.rollBack(req.body?.version ? String(req.body.version) : undefined);
+  improve.recordApplied(`Rolled back ${r.from} → ${r.to}`, `Went back from ${r.from} to ${r.to}.`, "code");
+  return r;
+})));
+route("POST", "/api/improve/build", async (req) => json(await improve.requestBuild(String(req.body?.title ?? "Change"), String(req.body?.spec ?? ""))));
+route("POST", "/api/improve/check-builds", async () => (await improve.checkBuilds(), json(improve.overview())));
 route("POST", "/api/improve/:id/approve", async (_r, [id]) => json(await improve.approve(id)));
 route("POST", "/api/improve/:id/snooze", (_r, [id]) => json(badRequest(() => improve.snooze(id))));
 route("POST", "/api/improve/:id/dismiss", (_r, [id]) => json(badRequest(() => improve.dismiss(id))));

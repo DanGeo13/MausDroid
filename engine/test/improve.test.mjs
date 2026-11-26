@@ -111,16 +111,21 @@ test("improver: setup, max 5, refusals, approve / not now / dismiss, code hand-o
     assert.equal((await e.call(`/api/improve/${byTitle("Shorter").id}/snooze`, "POST")).data.status, "waiting");
     assert.equal((await e.call(`/api/improve/${byTitle("Mute").id}/dismiss`, "POST")).data.status, "declined");
 
-    // Code fix: handed to Improver with the safety rules; finishes as applied.
-    mode = "apply";
+    // Code fix: built in the cloud — without a GitHub token it says exactly what's missing.
     const code = byTitle("Retry web fetch");
-    assert.equal((await e.call(`/api/improve/${code.id}/approve`, "POST")).data.status, "applying");
-    const done = await e.until(async () => (await e.call("/api/improve")).data.history.find((p) => p.id === code.id && p.status !== "applying"), "code fix done", 15000);
+    const built = (await e.call(`/api/improve/${code.id}/approve`, "POST")).data;
+    assert.equal(built.status, "failed");
+    assert.match(built.result, /Couldn't start the cloud build: Save a GitHub token/);
+
+    // Other changes: handed to Improver; finishes as applied.
+    mode = "apply";
+    const other = (await e.call("/api/improve")).data.shown.find((p) => p.title.startsWith("Shorter")) ?? { id: byTitle("Shorter").id };
+    assert.equal((await e.call(`/api/improve/${other.id}/approve`, "POST")).data.status, "applying");
+    const done = await e.until(async () => (await e.call("/api/improve")).data.history.find((p) => p.id === other.id && p.status !== "applying"), "change done", 15000);
     assert.equal(done.status, "applied");
     assert.match(done.result, /improve\/retry-note/);
     const handoff = (await e.call(`/api/bots/${imp.id}/messages`)).data.find((x) => x.role === "user" && /APPROVED/.test(x.text));
-    assert.match(handoff.text, /Never push to main/);
-    assert.match(handoff.text, /Retry web fetch on timeouts/);
+    assert.match(handoff.text, /Shorter morning summary/);
 
     // A night that doesn't record its result is reported as incomplete.
     mode = "lazy";

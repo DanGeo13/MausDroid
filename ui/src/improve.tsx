@@ -13,6 +13,7 @@ const toast = (m: string) => {
 
 const AREA: Record<string, string> = { routine: "🔁 Routine", skill: "🧩 Skill", code: "💻 Code", other: "⚙️ Other" };
 const STATUS: Record<string, [string, string]> = {
+  building: ["Building in the cloud…", "warn"],
   applied: ["Applied", "ok"],
   applying: ["Working on it…", "warn"],
   failed: ["Didn't work", "bad"],
@@ -53,7 +54,7 @@ function SuggestionCard({ p, onDone }: { p: any; onDone: () => void }) {
     setBusy(true);
     try {
       const r = await api(`improve/${p.id}/${what}`, { method: "POST" });
-      toast(what === "approve" ? (r.status === "applied" ? `✅ ${r.result}` : r.status === "applying" ? "Approved — Improver is working on it" : `⚠️ ${r.result}`) : what === "snooze" ? "Moved to tomorrow" : "Dismissed");
+      toast(what === "approve" ? (r.status === "applied" ? `✅ ${r.result}` : r.status === "building" ? "Building in the cloud — you'll get a notification" : r.status === "applying" ? "Approved — Improver is working on it" : `⚠️ ${r.result}`) : what === "snooze" ? "Moved to tomorrow" : "Dismissed");
     } catch (e) {
       toast(`⚠️ ${(e as Error).message}`);
     }
@@ -75,10 +76,18 @@ function SuggestionCard({ p, onDone }: { p: any; onDone: () => void }) {
       </p>
       {p.evidence ? <p class="muted" style={{ fontSize: ".8rem" }}>Evidence: {p.evidence}</p> : null}
       <Change p={p} />
-      {p.area === "code" || p.area === "other" ? <p class="help">Approving hands this to Improver. Anything it needs to do that's risky still asks you first.</p> : null}
+      {p.area === "code" && p.build?.prUrl ? (
+        <p class="help">
+          Built in the cloud and every test passed. <a href={p.build.prUrl} target="_blank" rel="noopener">See the changes</a>. Approve installs it; MausDroid restarts with it in a few minutes, and you can roll back below.
+        </p>
+      ) : p.area === "code" ? (
+        <p class="help">Approving builds it in the cloud (Claude Code makes the change and runs every test), then asks you to install it.</p>
+      ) : p.area === "other" ? (
+        <p class="help">Approving hands this to Improver. Anything it needs to do that's risky still asks you first.</p>
+      ) : null}
       <div class="actions">
         <button class="btn" disabled={busy} onClick={() => act("approve")}>
-          Approve
+          {p.area === "code" && p.build?.prUrl ? "Install" : "Approve"}
         </button>
         <button class="btn secondary" disabled={busy} onClick={() => act("snooze")}>
           Not now
@@ -116,12 +125,55 @@ function Settings({ o, onDone }: { o: any; onDone: () => void }) {
         <label>Show suggestions at</label>
         <input type="time" value={s.showTime} onInput={(e) => setS({ ...s, showTime: (e.target as HTMLInputElement).value })} />
       </div>
+      <label class="inline">
+        <input type="checkbox" checked={!s.askBeforeInstall} onChange={() => setS({ ...s, askBeforeInstall: !s.askBeforeInstall })} /> Program changes I ask Improver for install by themselves once every test passes
+      </label>
       <p class="help">
         Bot: {o.bot ? `${o.bot.emoji} ${o.bot.name} (${o.bot.providerId ?? "default AI"}, ${o.bot.model ?? "default model"})` : "none"} — change its AI and model by editing the bot. At most 5 suggestions a night. Nothing changes without your approval.
       </p>
       <button class="btn" onClick={save}>
         Save
       </button>
+    </div>
+  );
+}
+
+const older = (a: string, b: string) => {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0);
+  return false;
+};
+
+/** Program versions on the phone, with roll back. */
+function Versions({ v, onDone }: { v: any; onDone: () => void }) {
+  if (!v?.versions?.length) return null;
+  const back = async (version: string) => {
+    if (!confirm(`Go back to version ${version}? MausDroid restarts for a moment.`)) return;
+    try {
+      const r = await api("improve/rollback", { body: { version } });
+      toast(`Going back from ${r.from} to ${r.to} — restarting…`);
+    } catch (e) {
+      toast(`⚠️ ${(e as Error).message}`);
+    }
+    onDone();
+  };
+  return (
+    <div class="section">
+      <h2>Versions on this phone</h2>
+      <p class="help">Running {v.running}. If an update causes trouble, go back to an earlier one — that update won't be installed again.</p>
+      {v.versions.map((x: any) => (
+        <div class="toggle">
+          <span>
+            {x.version} {x.running ? <span class="pill ok">running</span> : null} {x.bad ? <span class="pill">set aside</span> : null}
+          </span>
+          {x.running ? null : (
+            <button class="btn secondary small" onClick={() => back(x.version)}>
+              {older(x.version, v.running) ? "Roll back" : "Switch"}
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -186,6 +238,27 @@ export function Improve({ onBack, openBot }: { onBack: () => void; openBot: (id:
               ) : null}
             </div>
             {o.shown.length ? o.shown.map((p: any) => <SuggestionCard p={p} onDone={load} />) : <div class="empty">No suggestions to review right now.</div>}
+            {o.building?.length ? (
+              <div class="section">
+                <h2>Building in the cloud</h2>
+                {o.building.map((p: any) => (
+                  <p>
+                    <span class="pill warn">building</span> {p.title}{" "}
+                    {p.build?.runUrl ? (
+                      <a href={p.build.runUrl} target="_blank" rel="noopener">
+                        progress
+                      </a>
+                    ) : null}
+                    <br />
+                    <span class="muted" style={{ fontSize: ".8rem" }}>Started {when(p.build?.startedAt)} · usually 5–20 minutes · you'll get a notification</span>
+                  </p>
+                ))}
+                <button class="btn secondary small" onClick={async () => (await api("improve/check-builds", { body: {} }).catch(() => {}), load())}>
+                  Check now
+                </button>
+              </div>
+            ) : null}
+            <Versions v={o.versions} onDone={load} />
             {o.history.length ? (
               <div class="section">
                 <h2>Earlier</h2>
