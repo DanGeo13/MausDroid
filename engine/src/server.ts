@@ -510,6 +510,13 @@ route("POST", "/api/improve/rollback", (req) => json(badRequest(() => {
 })));
 route("POST", "/api/improve/build", async (req) => json(await improve.requestBuild(String(req.body?.title ?? "Change"), String(req.body?.spec ?? ""))));
 route("POST", "/api/improve/check-builds", async () => (await improve.checkBuilds(), json(improve.overview())));
+route("POST", "/api/improve/:id/answer", async (req, [id]) => {
+  try {
+    return json(await improve.answerBuild(id, String(req.body?.answers ?? "")));
+  } catch (e) {
+    throw new HttpError(400, (e as Error).message);
+  }
+});
 route("POST", "/api/improve/:id/approve", async (_r, [id]) => json(await improve.approve(id)));
 route("POST", "/api/improve/:id/snooze", (_r, [id]) => json(badRequest(() => improve.snooze(id))));
 route("POST", "/api/improve/:id/dismiss", (_r, [id]) => json(badRequest(() => improve.dismiss(id))));

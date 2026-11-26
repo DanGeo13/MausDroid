@@ -831,6 +831,15 @@ function adminTools(): Tool[] {
     {
       group: "core",
       admin: true,
+      spec: { name: "improve_build_answer", description: "Pass the person's answers to a cloud build's questions; the build carries on with them.", inputSchema: obj({ id: str("The build's improvement id"), answers: str("Their answers, numbered like the questions") }, ["id", "answers"]) },
+      run: async (_c, i) => {
+        const p = await improve.answerBuild(String(i.id), String(i.answers));
+        return `Sent — "${p.title}" is carrying on (attempt ${p.build?.attempt}).`;
+      },
+    },
+    {
+      group: "core",
+      admin: true,
       spec: { name: "improve_versions", description: "MausDroid program versions kept on the phone (which is running, which were set aside) and cloud builds in progress.", inputSchema: obj({}) },
       run: async () => JSON.stringify({ ...selfupdate.engineVersions(), building: improve.listProposals().filter((p) => p.status === "building").map((p) => ({ id: p.id, title: p.title, since: p.build?.startedAt, progress: p.build?.runUrl })) }, null, 1),
     },

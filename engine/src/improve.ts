@@ -11,6 +11,7 @@ import { validateSchedule, type Schedule } from "./schedule.ts";
 import { listSkills, parseFrontmatter, saveSkill } from "./skills.ts";
 import { notifyUser } from "./notify.ts";
 import { onTurnEnd, sendToBot } from "./agent.ts";
+import { addMessage } from "./bots.ts";
 import { addRunValidator } from "./scheduler.ts";
 import { looksSecret, similar } from "./audit.ts";
 import * as selfupdate from "./selfupdate.ts";
@@ -46,7 +47,7 @@ export interface Proposal {
   routinePatch?: { routineId: string; routineTitle: string; before: Record<string, unknown>; after: Record<string, unknown> };
   skill?: { name: string; before: string | null; after: string };
   /** A program change built in the cloud (Claude Code on GitHub): its pull request when ready. */
-  build?: { prNumber?: number; prUrl?: string; runUrl?: string; startedAt: string; direct: boolean };
+  build?: { prNumber?: number; prUrl?: string; runUrl?: string; startedAt: string; direct: boolean; attempt?: number; progress?: string; questions?: string; answers?: string[] };
   status: Status;
   decidedAt?: string;
   result?: string;
@@ -68,6 +69,8 @@ export interface ImproveSettings {
   lastRevealDate?: string;
   /** Program changes you asked for directly install by themselves once their tests pass (default). */
   askBeforeInstall?: boolean;
+  /** Where program changes are built: "github" = Claude Code on GitHub Actions (default); "off" = only record them. */
+  codingPlatform?: "github" | "off";
 }
 
 const settingsFile = collection<ImproveSettings>("improve-settings", { enabled: true, botId: null, nightTime: "02:30", showTime: "12:00" });
@@ -104,6 +107,7 @@ export const IMPROVER_PERSONA = `You are Improver, MausDroid's self-improvement 
 - When the person asks you directly for a change, do it now — don't make a suggestion card. You can change any bot (bot_list, bot_edit: instructions, AI and model, tool switches, single tools, skills, approvals of other bots), any routine (routine_admin_list, routine_admin_update), skills (skill_save) and see every tool (tool_list). After changing something, call improve_record so it shows in Improvements history, and say briefly what you changed (bot changes can be undone in Settings → Tools).
 - If they ask to remove or cancel a suggestion, call improve_withdraw.
 - Changes to MausDroid's own program (new screens, features, fixes in its code): call improve_build with a short title and a clear, complete spec. A Claude Code session in the cloud makes the change, runs every test, and — if they pass — it installs by itself; MausDroid restarts with it. Tell them it usually takes 5–20 minutes and they'll get a notification.
+- While it builds you'll get progress lines; if the developer asks questions, you'll be told — ask the person and pass their answers on with improve_build_answer.
 - If something is wrong after an update, or they ask to go back: improve_versions shows the versions kept on the phone, improve_rollback switches back at once (MausDroid restarts).
 - In the nightly check (a routine), only suggest (improve_propose, at most 5); nothing changes until approved.
 Be brief and concrete.`;
@@ -155,7 +159,7 @@ export function saveImproveSettings(input: Partial<ImproveSettings>): ImproveSet
   if (input.showTime !== undefined && !HM.test(input.showTime)) throw new Error("Show time must be HH:MM.");
   if (input.botId !== undefined && input.botId !== null && !getBot(input.botId)) throw new Error("No such bot.");
   settingsFile.update((s) => {
-    for (const k of ["enabled", "nightTime", "showTime", "botId", "askBeforeInstall"] as const) if (input[k] !== undefined) (s as any)[k] = input[k];
+    for (const k of ["enabled", "nightTime", "showTime", "botId", "askBeforeInstall", "codingPlatform"] as const) if (input[k] !== undefined) (s as any)[k] = input[k];
   });
   const s = settingsFile.get();
   const r = improveRoutine();
@@ -480,13 +484,44 @@ export async function requestBuild(title: string, request: string): Promise<Prop
   return startCodeBuild(p, true);
 }
 
+const requestText = (p: Proposal) => `${p.title}\n\n${p.problem}\n\n${p.change}`;
+
 async function startCodeBuild(p: Proposal, direct: boolean): Promise<Proposal> {
+  if (settingsFile.get().codingPlatform === "off") return patch(p.id, { status: "shown", result: "Building is switched off (Improvements → Settings → Coding platform), so this is kept as a suggestion." })!;
   try {
-    await selfupdate.startBuild(p.id, `${p.title}\n\n${p.problem}\n\n${p.change}`);
+    await selfupdate.startBuild(p.id, requestText(p));
   } catch (e) {
     return patch(p.id, { status: "failed", decidedAt: now(), result: `Couldn't start the cloud build: ${(e as Error).message}` })!;
   }
-  const out = patch(p.id, { status: "building", decidedAt: now(), build: { startedAt: now(), direct }, result: "Building in the cloud: Claude Code is making the change and running every test (usually 5–20 minutes)." })!;
+  const out = patch(p.id, { status: "building", decidedAt: now(), build: { startedAt: now(), direct, attempt: 1, progress: "Starting", answers: [] }, result: "Building in the cloud: Claude Code is making the change and running every test (usually 5–20 minutes)." })!;
+  progressNote(out, "Started in the cloud — I'll keep you posted.");
+  watchBuilds();
+  return out;
+}
+
+/** A short progress line in Improver's chat (no AI turn). */
+function progressNote(p: Proposal, text: string) {
+  const bot = improverBot();
+  if (!bot) return;
+  const m = addMessage(bot.id, { role: "note", text: `🛠️ ${p.title}: ${text}`, status: "done", source: "build" });
+  emit("message", { botId: bot.id, message: m });
+}
+
+/** Your answers to the cloud build's questions: it carries on with them. */
+export async function answerBuild(pid: string, answers: string): Promise<Proposal> {
+  const p = getProposal(pid);
+  if (!p || p.status !== "building" || !p.build?.questions) throw new Error("That build isn't waiting for answers.");
+  if (!answers.trim()) throw new Error("Write your answers first.");
+  if (looksSecret(answers)) throw new Error("Leave passwords and keys out of answers.");
+  const all = [...(p.build.answers ?? []), `Questions:\n${p.build.questions}\n\nAnswers:\n${answers.trim()}`];
+  const attempt = (p.build.attempt ?? 1) + 1;
+  try {
+    await selfupdate.startBuild(p.id, requestText(p), all.join("\n\n---\n\n"), attempt);
+  } catch (e) {
+    throw new Error(`Couldn't send the answers: ${(e as Error).message}`);
+  }
+  const out = patch(pid, { build: { ...p.build, attempt, questions: undefined, answers: all, progress: "Carrying on with your answers", startedAt: now() } })!;
+  progressNote(out, "Got your answers — carrying on.");
   watchBuilds();
   return out;
 }
@@ -520,18 +555,39 @@ export async function checkBuilds() {
   for (const p of building) {
     let st: selfupdate.BuildState;
     try {
-      st = await selfupdate.buildState(p.id);
+      st = await selfupdate.buildState(p.id, p.build?.attempt ?? 1);
     } catch {
       continue; // try again next time
     }
     const build = { ...p.build!, prNumber: st.prNumber, prUrl: st.prUrl, runUrl: st.runUrl ?? p.build?.runUrl };
+    if (st.state === "question") {
+      if (p.build?.questions) continue; // already asked
+      patch(p.id, { build: { ...build, questions: st.questions, progress: "Waiting for your answers" } });
+      progressNote(p, "the developer needs a few answers before carrying on.");
+      void notifyUser({ title: `${bot?.emoji ?? "🛠️"} Question about "${p.title}"`, body: (st.questions ?? "").slice(0, 300), botId: bot?.id, type: "improvement", priority: "high", link: "improve:" });
+      // Improver asks you in its chat, in its own words, and passes your reply on.
+      if (bot)
+        sendToBot(
+          bot.id,
+          `[Cloud build "${p.title}" (id ${p.id}) needs answers before it can carry on. Ask the person these questions briefly in your own words, with the suggested defaults. When they answer, call improve_build_answer with id ${p.id} and their answers.]\n\n${st.questions}`,
+          "build",
+        );
+      continue;
+    }
+    if (st.state === "building" && st.progress && st.progress !== p.build?.progress) {
+      patch(p.id, { build: { ...build, progress: st.progress } });
+      progressNote(p, st.progress);
+      continue;
+    }
     if (st.state === "ready") {
       const auto = p.build?.direct && !settingsFile.get().askBeforeInstall;
-      const ready = patch(p.id, { build, status: "shown", result: "Built and every test passed." })!;
+      const ready = patch(p.id, { build: { ...build, progress: "Ready" }, status: "shown", result: "Built and every test passed." })!;
+      progressNote(p, auto ? "built and every test passed — installing." : "built and every test passed — tap Install in Improvements.");
       if (auto) await installBuild(ready);
       else void notifyUser({ title: `${bot?.emoji ?? "🛠️"} Improvement ready to install`, body: p.title, botId: bot?.id, type: "improvement", link: "improve:" });
     } else if (st.state === "failed") {
       patch(p.id, { build, status: "failed", result: st.detail ?? "The cloud build failed." });
+      progressNote(p, `couldn't be built — ${st.detail ?? "the cloud build failed"}`);
       void notifyUser({ title: `${bot?.emoji ?? "🛠️"} Improvement couldn't be built`, body: `${p.title} — ${st.detail ?? ""}`.slice(0, 300), botId: bot?.id, type: "improvement", link: "improve:" });
     } else if (st.state === "merged") patch(p.id, { build, status: "applied", result: "Installed." });
     else if (st.state === "closed") patch(p.id, { build, status: "declined", result: "The change was closed without installing." });

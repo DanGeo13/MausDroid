@@ -125,6 +125,13 @@ function Settings({ o, onDone }: { o: any; onDone: () => void }) {
         <label>Show suggestions at</label>
         <input type="time" value={s.showTime} onInput={(e) => setS({ ...s, showTime: (e.target as HTMLInputElement).value })} />
       </div>
+      <div class="field">
+        <label>Coding platform for program changes</label>
+        <select value={s.codingPlatform ?? "github"} onChange={(e) => setS({ ...s, codingPlatform: (e.target as HTMLSelectElement).value })}>
+          <option value="github">GitHub + Claude Code (in the cloud, in the background)</option>
+          <option value="off">Off — only keep them as suggestions</option>
+        </select>
+      </div>
       <label class="inline">
         <input type="checkbox" checked={!s.askBeforeInstall} onChange={() => setS({ ...s, askBeforeInstall: !s.askBeforeInstall })} /> Program changes I ask Improver for install by themselves once every test passes
       </label>
@@ -134,6 +141,47 @@ function Settings({ o, onDone }: { o: any; onDone: () => void }) {
       <button class="btn" onClick={save}>
         Save
       </button>
+    </div>
+  );
+}
+
+/** One cloud build: its progress, and any questions with an answer box. */
+function BuildItem({ p, onDone }: { p: any; onDone: () => void }) {
+  const [ans, setAns] = useState("");
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    setBusy(true);
+    try {
+      await api(`improve/${p.id}/answer`, { body: { answers: ans } });
+      toast("Sent — carrying on");
+      setAns("");
+    } catch (e) {
+      toast(`⚠️ ${(e as Error).message}`);
+    }
+    setBusy(false);
+    onDone();
+  };
+  return (
+    <div style={{ padding: ".4rem 0", borderBottom: "1px solid var(--panel2)" }}>
+      <span class={`pill ${p.build?.questions ? "bad" : "warn"}`}>{p.build?.questions ? "needs your answers" : "building"}</span> <b>{p.title}</b>{" "}
+      {p.build?.runUrl ? (
+        <a href={p.build.runUrl} target="_blank" rel="noopener">
+          details
+        </a>
+      ) : null}
+      <div class="muted" style={{ fontSize: ".82rem" }}>
+        {p.build?.progress ?? "Starting"} · started {when(p.build?.startedAt)}
+        {p.build?.attempt > 1 ? ` · round ${p.build.attempt}` : ""}
+      </div>
+      {p.build?.questions ? (
+        <>
+          <pre style={{ whiteSpace: "pre-wrap" }}>{p.build.questions}</pre>
+          <textarea rows={3} value={ans} onInput={(e) => setAns((e.target as HTMLTextAreaElement).value)} placeholder="Your answers (or tell Improver in its chat)" />
+          <button class="btn small" disabled={busy || !ans.trim()} onClick={send}>
+            Send answers
+          </button>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -242,16 +290,7 @@ export function Improve({ onBack, openBot }: { onBack: () => void; openBot: (id:
               <div class="section">
                 <h2>Building in the cloud</h2>
                 {o.building.map((p: any) => (
-                  <p>
-                    <span class="pill warn">building</span> {p.title}{" "}
-                    {p.build?.runUrl ? (
-                      <a href={p.build.runUrl} target="_blank" rel="noopener">
-                        progress
-                      </a>
-                    ) : null}
-                    <br />
-                    <span class="muted" style={{ fontSize: ".8rem" }}>Started {when(p.build?.startedAt)} · usually 5–20 minutes · you'll get a notification</span>
-                  </p>
+                  <BuildItem p={p} onDone={load} />
                 ))}
                 <button class="btn secondary small" onClick={async () => (await api("improve/check-builds", { body: {} }).catch(() => {}), load())}>
                   Check now

@@ -93,21 +93,37 @@ async function ghJson(p: string, init: RequestInit = {}) {
   return j;
 }
 
-/** Starts the cloud Claude Code build for a change. */
-export async function startBuild(id: string, request: string) {
-  await ghJson(`/repos/${CODE_REPO}/actions/workflows/${WORKFLOW}/dispatches`, { method: "POST", body: JSON.stringify({ ref: "main", inputs: { id, request: clip(request, 6000) } }) });
+/** Starts the cloud Claude Code build for a change (again with answers, if it asked questions). */
+export async function startBuild(id: string, request: string, answers = "", attempt = 1) {
+  await ghJson(`/repos/${CODE_REPO}/actions/workflows/${WORKFLOW}/dispatches`, {
+    method: "POST",
+    body: JSON.stringify({ ref: "main", inputs: { id, request: clip(request, 6000), answers: clip(answers, 4000), attempt: String(attempt) } }),
+  });
 }
 
 export interface BuildState {
-  state: "building" | "ready" | "failed" | "merged" | "closed";
+  state: "building" | "question" | "ready" | "failed" | "merged" | "closed";
   prNumber?: number;
   prUrl?: string;
   runUrl?: string;
   detail?: string;
+  /** Plain-words progress of the cloud work ("Running every test"). */
+  progress?: string;
+  questions?: string;
 }
 
-/** Where a build is: still running, a pull request ready to install, or failed. */
-export async function buildState(id: string): Promise<BuildState> {
+const STEP_WORDS: [RegExp, string][] = [
+  [/Claude Code makes the change/, "Claude Code is making the change"],
+  [/Questions for the person/, "Checking whether it needs anything from you"],
+  [/Only the engine/, "Checking only allowed parts changed"],
+  [/Next engine version/, "Numbering the new version"],
+  [/Build and test/, "Running every test (like on your phone)"],
+  [/Open the pull request/, "Getting it ready to install"],
+];
+const stepWords = (name: string) => STEP_WORDS.find(([re]) => re.test(name))?.[1] ?? "Setting up";
+
+/** Where a build is: running (and which step), asking you something, ready to install, or failed. */
+export async function buildState(id: string, attempt = 1): Promise<BuildState> {
   const owner = CODE_REPO.split("/")[0];
   const prs = await ghJson(`/repos/${CODE_REPO}/pulls?state=all&head=${owner}:improve/${id}`);
   const pr = Array.isArray(prs) ? prs[0] : null;
@@ -116,10 +132,26 @@ export async function buildState(id: string): Promise<BuildState> {
     if (pr.state === "closed") return { state: "closed", prNumber: pr.number, prUrl: pr.html_url };
     return { state: "ready", prNumber: pr.number, prUrl: pr.html_url };
   }
+  const q = await gh(`/repos/${CODE_REPO}/contents/.improver/questions-${attempt}.md?ref=${encodeURIComponent(`improve/${id}-questions`)}`);
+  if (q.ok) {
+    const j = (await q.json()) as any;
+    return { state: "question", questions: clip(Buffer.from(String(j.content ?? ""), "base64").toString("utf8").trim(), 3000) };
+  }
   const runs = await ghJson(`/repos/${CODE_REPO}/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=30`);
   const run = (runs.workflow_runs ?? []).find((r: any) => String(r.display_title ?? r.name ?? "").includes(id));
   if (run && run.status === "completed" && run.conclusion !== "success") return { state: "failed", runUrl: run.html_url, detail: `The cloud build ${run.conclusion} (tests failing, no change made, or it ran out of time).` };
-  return { state: "building", runUrl: run?.html_url };
+  let progress = run ? "Waiting for a cloud computer" : "Starting";
+  if (run && run.status === "in_progress") {
+    try {
+      const jobs = await ghJson(`/repos/${CODE_REPO}/actions/runs/${run.id}/jobs`);
+      const steps = (jobs.jobs?.[0]?.steps ?? []) as { name: string; status: string }[];
+      const cur = steps.find((x) => x.status === "in_progress") ?? steps.filter((x) => x.status === "completed").at(-1);
+      if (cur) progress = stepWords(cur.name);
+    } catch {
+      /* progress is optional */
+    }
+  }
+  return { state: "building", runUrl: run?.html_url, progress };
 }
 
 /** Installs a finished build: merges its pull request, which publishes the update. */

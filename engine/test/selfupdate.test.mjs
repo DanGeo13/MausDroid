@@ -11,7 +11,7 @@ import path from "node:path";
 import { fakeModel, startEngine, useModel, wait } from "./_engine.mjs";
 
 async function fakeGitHub() {
-  const st = { dispatches: [], prs: {}, failed: new Set(), merges: [], closed: [], next: 1 };
+  const st = { dispatches: [], prs: {}, failed: new Set(), merges: [], closed: [], next: 1, step: null, questions: {} };
   const server = http.createServer((req, res) => {
     let b = "";
     req.on("data", (d) => (b += d));
@@ -24,7 +24,15 @@ async function fakeGitHub() {
         return send(204);
       }
       if (u.pathname === "/repos/me/app/actions/workflows/improver.yml/runs")
-        return send(200, { workflow_runs: st.dispatches.map((d, i) => ({ display_title: `Improve ${d.inputs.id}`, html_url: `https://github.example/run/${i}`, status: st.failed.has(d.inputs.id) ? "completed" : "in_progress", conclusion: st.failed.has(d.inputs.id) ? "failure" : null })) });
+        return send(200, { workflow_runs: st.dispatches.map((d, i) => ({ id: i + 1, display_title: `Improve ${d.inputs.id}`, html_url: `https://github.example/run/${i}`, status: st.failed.has(d.inputs.id) ? "completed" : "in_progress", conclusion: st.failed.has(d.inputs.id) ? "failure" : null })).reverse() });
+      const jobs = u.pathname.match(/^\/repos\/me\/app\/actions\/runs\/(\d+)\/jobs$/);
+      if (jobs) return send(200, { jobs: [{ steps: st.step ? [{ name: "Check inputs and secret", status: "completed" }, { name: st.step, status: "in_progress" }] : [] }] });
+      const qf = u.pathname.match(/^\/repos\/me\/app\/contents\/\.improver\/questions-(\d+)\.md$/);
+      if (qf) {
+        const id = (u.searchParams.get("ref") ?? "").replace(/^improve\//, "").replace(/-questions$/, "");
+        const q = st.questions[`${id}:${qf[1]}`];
+        return q ? send(200, { content: Buffer.from(q).toString("base64") }) : send(404, { message: "Not Found" });
+      }
       if (u.pathname === "/repos/me/app/pulls" && req.method === "GET") {
         const id = (u.searchParams.get("head") ?? "").split("improve/")[1];
         const pr = st.prs[id];
@@ -117,6 +125,65 @@ test("cloud builds: direct request installs itself; nightly code card builds the
     assert.equal(gh.st.merges.length, 2);
     const alerts = (await e.call("/api/alerts")).data;
     assert.ok(alerts.some((a) => /couldn't be built/.test(a.title)));
+  } finally {
+    await e.stop();
+    m.close();
+    gh.close();
+  }
+});
+
+test("cloud builds: progress lines, a question comes back, answers carry it on; platform off keeps suggestions", async () => {
+  const gh = await fakeGitHub();
+  let script = [];
+  const m = await fakeModel((body) => {
+    const sys = JSON.stringify(body.messages?.[0] ?? "");
+    if (!/self-improvement bot/.test(sys)) return { text: "ok" };
+    return script.shift() ?? { text: "Done." };
+  });
+  const e = await startEngine({ env: { MAUSDROID_GITHUB_API: gh.url, MAUSDROID_CODE_REPO: "me/app", MAUSDROID_BUILD_POLL_MS: "300" } });
+  try {
+    await useModel(e, m.url);
+    await e.call("/api/settings/github", "PUT", { token: "ghp_test" });
+    const imp = (await e.call("/api/state")).data.bots.find((b) => b.name === "Improver");
+    await e.call(`/api/bots/${imp.id}`, "PATCH", { providerId: "local", model: "fake" });
+    const msgs = async () => (await e.call(`/api/bots/${imp.id}/messages`)).data;
+
+    const p = (await e.call("/api/improve/build", "POST", { title: "Dark mode toggle", spec: "Add a dark mode toggle to Appearance." })).data;
+    assert.equal(p.status, "building");
+    assert.ok((await msgs()).some((x) => x.role === "note" && /Dark mode toggle: Started in the cloud/.test(x.text)));
+
+    // Progress in plain words, in Improver's chat (no AI turn needed).
+    gh.st.step = "Claude Code makes the change";
+    await e.until(async () => (await msgs()).some((x) => x.role === "note" && /Claude Code is making the change/.test(x.text)), "progress line");
+    gh.st.step = "Build and test like the phone (Node 18, no Intl/WebAssembly/TextDecoder)";
+    await e.until(async () => (await msgs()).some((x) => x.role === "note" && /Running every test/.test(x.text)), "tests progress");
+
+    // The developer asks something: Improver is told, you're notified; the card shows it.
+    script = [{ text: "Quick question from the developer: should dark mode follow the phone's setting by default? (suggested: yes)" }];
+    gh.st.questions[`${p.id}:1`] = "1. Should dark mode follow the phone setting by default? (suggested: yes)";
+    await e.until(async () => (await e.call("/api/improve")).data.building[0]?.build?.questions, "question picked up");
+    await e.until(async () => (await msgs()).some((x) => x.role === "assistant" && /Quick question/.test(x.text)), "Improver asks in chat");
+    assert.ok((await e.call("/api/alerts")).data.some((a) => /Question about "Dark mode toggle"/.test(a.title) && a.priority === "high"));
+
+    // You answer in Improver's chat; it passes the answer on and the build carries on.
+    script = [{ tool: "improve_build_answer", args: { id: p.id, answers: "1. Yes, follow the phone." } }, { text: "Passed on — it's carrying on." }];
+    await e.call(`/api/bots/${imp.id}/messages`, "POST", { text: "yes follow the phone" });
+    await e.until(async () => gh.st.dispatches.length === 2, "build continued");
+    const again = gh.st.dispatches[1].inputs;
+    assert.equal(again.id, p.id);
+    assert.equal(again.attempt, "2");
+    assert.match(again.answers, /follow the phone setting[\s\S]*Yes, follow the phone/);
+    assert.equal((await e.call(`/api/improve/${p.id}/answer`, "POST", { answers: "again" })).status, 400, "not waiting any more");
+
+    gh.finish(p.id);
+    await e.until(async () => gh.st.merges.length === 1, "installed", 15000);
+    assert.ok((await msgs()).some((x) => x.role === "note" && /built and every test passed — installing/.test(x.text)));
+
+    // Platform off: program changes are only kept as suggestions.
+    await e.call("/api/improve/settings", "PUT", { codingPlatform: "off" });
+    const kept = (await e.call("/api/improve/build", "POST", { title: "Something", spec: "x" })).data;
+    assert.equal(kept.status, "shown");
+    assert.equal(gh.st.dispatches.length, 2);
   } finally {
     await e.stop();
     m.close();
