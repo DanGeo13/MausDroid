@@ -57,7 +57,15 @@ interface Tool {
 const obj = (props: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties: props, required });
 const str = (description: string) => ({ type: "string", description });
 
-const WRITE_WORDS = /(SEND|CREATE|DELETE|REMOVE|UPDATE|POST|REPLY|INSERT|ADD|MOVE|PATCH|PUT|UPLOAD|SHARE|INVITE|PAY|PURCHASE|BUY|ARCHIVE|TRASH|MODIFY|SET_|EXECUTE|RUN|SUBMIT|ACCEPT|DECLINE|CANCEL|TRANSFER|FORWARD)/i;
+/**
+ * Does an action name change things? Whole words only (GMAIL_SEND_EMAIL yes;
+ * GET_POSTS, ADDRESS, INPUT, FETCH_EMAILS no), so reading never asks.
+ */
+const WRITE_TOKENS = new Set(["SEND", "CREATE", "DELETE", "REMOVE", "UPDATE", "POST", "REPLY", "INSERT", "ADD", "MOVE", "PATCH", "PUT", "UPLOAD", "SHARE", "INVITE", "PAY", "PURCHASE", "BUY", "ARCHIVE", "TRASH", "MODIFY", "SET", "EXECUTE", "RUN", "SUBMIT", "ACCEPT", "DECLINE", "CANCEL", "TRANSFER", "FORWARD", "EDIT", "WRITE", "APPROVE", "PUBLISH", "COMMENT", "BOOK", "ORDER", "REFUND", "CHARGE", "MERGE", "CLOSE", "STAR", "LIKE", "FOLLOW", "MARK", "EMPTY", "REVOKE", "RENAME", "DRAFT"]);
+export function isWriteAction(name: string): boolean {
+  return String(name).toUpperCase().split(/[^A-Z0-9]+/).some((w) => WRITE_TOKENS.has(w));
+}
+const WRITE_WORDS = { test: (s: string) => isWriteAction(s) };
 
 function browserNeeded() {
   if (!bridgeAvailable()) throw new Error("The background browser needs the Android app.");

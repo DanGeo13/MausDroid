@@ -40,11 +40,29 @@ export interface CliEvent {
 
 const engineFor = (sub: SubId): CliRun["engine"] => (sub === "chatgpt" ? "codex" : "claude");
 
+/** Tools Claude Code may use without asking: all of MausDroid's (it gates them itself) and its own read-only ones. */
+export const CLI_ALLOWED_TOOLS = ["mcp__mausdroid", "Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "TodoWrite", "NotebookRead"];
+const CLI_READ_ONLY = new Set(CLI_ALLOWED_TOOLS.filter((t) => t !== "mcp__mausdroid"));
+
+/**
+ * When Claude Code asks permission for a tool anyway: MausDroid's tools and
+ * read-only tools are allowed (MausDroid's own gate still checks its tools);
+ * anything else (running commands, editing files) asks the person once.
+ */
+export function cliPermission(toolName: string): "allow" | "ask" {
+  const t = String(toolName);
+  if (t.startsWith("mcp__mausdroid__")) return "allow";
+  if (CLI_READ_ONLY.has(t)) return "allow";
+  return "ask";
+}
+
 export function cliArgs(run: CliRun): string[] {
   if (run.engine === "claude") {
     const mcp = JSON.stringify({ mcpServers: { mausdroid: { type: "http", url: run.mcpUrl, headers: { authorization: `Bearer ${run.mcpToken}` } } } });
     const args = ["-p", run.prompt, "--output-format", "stream-json", "--verbose", "--mcp-config", mcp,
-      "--permission-prompt-tool", "mcp__mausdroid__approval_prompt", "--append-system-prompt", run.systemPrompt, "--include-partial-messages"];
+      "--permission-prompt-tool", "mcp__mausdroid__approval_prompt", "--append-system-prompt", run.systemPrompt, "--include-partial-messages",
+      // MausDroid's own tools are allowed here: MausDroid's single approval layer decides (reading never asks; sending, buying, posting or deleting does).
+      "--allowedTools", ...CLI_ALLOWED_TOOLS];
     if (run.model && run.model !== "default") args.push("--model", run.model);
     if (run.resume) args.push("--resume", run.resume);
     return args;
