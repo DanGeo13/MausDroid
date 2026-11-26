@@ -11,7 +11,7 @@ import path from "node:path";
 import { fakeModel, startEngine, useModel, wait } from "./_engine.mjs";
 
 async function fakeGitHub() {
-  const st = { dispatches: [], prs: {}, failed: new Set(), merges: [], closed: [], next: 1, step: null, questions: {} };
+  const st = { dispatches: [], prs: {}, failed: new Set(), merges: [], closed: [], next: 1, step: null, questions: {}, succeeded: new Set(), branches: new Set(), opened: [] };
   const server = http.createServer((req, res) => {
     let b = "";
     req.on("data", (d) => (b += d));
@@ -24,7 +24,7 @@ async function fakeGitHub() {
         return send(204);
       }
       if (u.pathname === "/repos/me/app/actions/workflows/improver.yml/runs")
-        return send(200, { workflow_runs: st.dispatches.map((d, i) => ({ id: i + 1, display_title: `Improve ${d.inputs.id}`, html_url: `https://github.example/run/${i}`, status: st.failed.has(d.inputs.id) ? "completed" : "in_progress", conclusion: st.failed.has(d.inputs.id) ? "failure" : null })).reverse() });
+        return send(200, { workflow_runs: st.dispatches.map((d, i) => ({ id: i + 1, display_title: `Improve ${d.inputs.id}`, html_url: `https://github.example/run/${i}`, status: st.failed.has(d.inputs.id) || st.succeeded.has(d.inputs.id) ? "completed" : "in_progress", conclusion: st.failed.has(d.inputs.id) ? "failure" : st.succeeded.has(d.inputs.id) ? "success" : null })).reverse() });
       const jobs = u.pathname.match(/^\/repos\/me\/app\/actions\/runs\/(\d+)\/jobs$/);
       if (jobs) return send(200, { jobs: [{ steps: st.step ? [{ name: "Check inputs and secret", status: "completed" }, { name: st.step, status: "in_progress" }] : [] }] });
       const qf = u.pathname.match(/^\/repos\/me\/app\/contents\/\.improver\/questions-(\d+)\.md$/);
@@ -32,6 +32,15 @@ async function fakeGitHub() {
         const id = (u.searchParams.get("ref") ?? "").replace(/^improve\//, "").replace(/-questions$/, "");
         const q = st.questions[`${id}:${qf[1]}`];
         return q ? send(200, { content: Buffer.from(q).toString("base64") }) : send(404, { message: "Not Found" });
+      }
+      const br = u.pathname.match(/^\/repos\/me\/app\/branches\/(.+)$/);
+      if (br) return st.branches.has(decodeURIComponent(br[1])) ? send(200, { name: decodeURIComponent(br[1]) }) : send(404, { message: "Branch not found" });
+      if (u.pathname === "/repos/me/app/pulls" && req.method === "POST") {
+        const j = JSON.parse(b);
+        const id = j.head.replace(/^improve\//, "");
+        st.opened.push(j);
+        st.prs[id] = { number: st.next++, html_url: `https://github.example/pr/${id}`, state: "open", merged_at: null };
+        return send(201, st.prs[id]);
       }
       if (u.pathname === "/repos/me/app/pulls" && req.method === "GET") {
         const id = (u.searchParams.get("head") ?? "").split("improve/")[1];
@@ -116,14 +125,26 @@ test("cloud builds: direct request installs itself; nightly code card builds the
     assert.equal((await e.call(`/api/improve/${ready.id}/approve`, "POST")).data.status, "applied");
     assert.equal(gh.st.merges.length, 2);
 
+    // 2b. GitHub didn't let the run open the pull request: the branch is there, so the phone opens it, then installs.
+    script = [{ tool: "improve_build", args: { title: "Bigger buttons", spec: "Make buttons bigger." } }, { text: "ok" }];
+    await e.call(`/api/bots/${imp.id}/messages`, "POST", { text: "bigger buttons" });
+    await e.until(async () => gh.st.dispatches.length === 3, "build for 2b");
+    const id2b = gh.st.dispatches[2].inputs.id;
+    gh.st.branches.add(`improve/${id2b}`);
+    gh.st.succeeded.add(id2b);
+    await e.until(async () => gh.st.merges.length === 3, "opened by the phone and installed", 15000);
+    assert.equal(gh.st.opened[0].head, `improve/${id2b}`);
+    assert.equal(gh.st.opened[0].base, "main");
+    assert.match(gh.st.opened[0].title, /Improver: Bigger buttons/);
+
     // 3. A failed build is reported, nothing installed.
     script = [{ tool: "improve_build", args: { title: "Break things", spec: "x" } }, { text: "ok" }];
     await e.call(`/api/bots/${imp.id}/messages`, "POST", { text: "do a risky change" });
-    await e.until(async () => gh.st.dispatches.length === 3, "third build");
-    gh.st.failed.add(gh.st.dispatches[2].inputs.id);
-    const failed = await e.until(async () => (await e.call("/api/improve")).data.history.find((p) => p.id === gh.st.dispatches[2].inputs.id && p.status === "failed"), "failure noticed", 15000);
+    await e.until(async () => gh.st.dispatches.length === 4, "fourth build");
+    gh.st.failed.add(gh.st.dispatches[3].inputs.id);
+    const failed = await e.until(async () => (await e.call("/api/improve")).data.history.find((p) => p.id === gh.st.dispatches[3].inputs.id && p.status === "failed"), "failure noticed", 15000);
     assert.match(failed.result, /cloud build failure/);
-    assert.equal(gh.st.merges.length, 2);
+    assert.equal(gh.st.merges.length, 3);
     const alerts = (await e.call("/api/alerts")).data;
     assert.ok(alerts.some((a) => /couldn't be built/.test(a.title)));
   } finally {

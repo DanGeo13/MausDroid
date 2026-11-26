@@ -569,7 +569,7 @@ export async function checkBuilds() {
   for (const p of building) {
     let st: selfupdate.BuildState;
     try {
-      st = await selfupdate.buildState(p.id, p.build?.attempt ?? 1);
+      st = await selfupdate.buildState(p.id, p.build?.attempt ?? 1, p.title);
     } catch {
       continue; // try again next time
     }

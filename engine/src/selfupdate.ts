@@ -128,7 +128,7 @@ const STEP_WORDS: [RegExp, string][] = [
 const stepWords = (name: string) => STEP_WORDS.find(([re]) => re.test(name))?.[1] ?? "Setting up";
 
 /** Where a build is: running (and which step), asking you something, ready to install, or failed. */
-export async function buildState(id: string, attempt = 1): Promise<BuildState> {
+export async function buildState(id: string, attempt = 1, title = ""): Promise<BuildState> {
   const owner = CODE_REPO.split("/")[0];
   const prs = await ghJson(`/repos/${CODE_REPO}/pulls?state=all&head=${owner}:improve/${id}`);
   const pr = Array.isArray(prs) ? prs[0] : null;
@@ -144,6 +144,15 @@ export async function buildState(id: string, attempt = 1): Promise<BuildState> {
   }
   const runs = await ghJson(`/repos/${CODE_REPO}/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=30`);
   const run = (runs.workflow_runs ?? []).find((r: any) => String(r.display_title ?? r.name ?? "").includes(id));
+  // The build finished and saved its branch, but GitHub doesn't let its own runs open pull requests
+  // (a repository setting, off by default): the phone opens it with your token instead.
+  if (run && run.status === "completed" && run.conclusion === "success") {
+    const br = await gh(`/repos/${CODE_REPO}/branches/${encodeURIComponent(`improve/${id}`)}`);
+    if (br.ok) {
+      const created = await ghJson(`/repos/${CODE_REPO}/pulls`, { method: "POST", body: JSON.stringify({ title: `Improver: ${clip(title || id, 70)}`, head: `improve/${id}`, base: "main", body: `Built by the cloud coding agent from a request made through MausDroid's Improver (${id}). All tests passed.` }) });
+      return { state: "ready", prNumber: created.number, prUrl: created.html_url };
+    }
+  }
   if (run && run.status === "completed" && run.conclusion !== "success") return { state: "failed", runUrl: run.html_url, detail: `The cloud build ${run.conclusion} (tests failing, no change made, or it ran out of time).` };
   let progress = run ? "Waiting for a cloud computer" : "Starting";
   if (run && run.status === "in_progress") {

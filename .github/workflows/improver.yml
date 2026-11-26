@@ -179,4 +179,5 @@ jobs:
           git push -qf origin "improve/$ID"
           git push -q origin --delete "improve/$ID-questions" 2>/dev/null || true
           printf 'Built by Claude Code from a request made through MausDroid'"'"'s Improver (%s). All tests passed.\n\n<details><summary>Request</summary>\n\n%s\n\n</details>\n' "$ID" "$REQUEST" > /tmp/body.md
-          gh pr create --base main --head "improve/$ID" --title "Improver: $TITLE" --body-file /tmp/body.md
+          # GitHub may not let its own runs open pull requests (a repository setting); MausDroid then opens it from the phone.
+          gh pr create --base main --head "improve/$ID" --title "Improver: $TITLE" --body-file /tmp/body.md || echo "::notice::Branch improve/$ID is ready; MausDroid opens the pull request."
