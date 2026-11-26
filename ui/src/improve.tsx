@@ -101,7 +101,7 @@ function SuggestionCard({ p, onDone }: { p: any; onDone: () => void }) {
 }
 
 /** Adds a key to GitHub from a file on the phone (encrypted on the phone first). */
-function FileSecret({ name, accept, onDone }: { name: string; accept: string; onDone: () => void }) {
+function FileSecret({ name, onDone }: { name: string; onDone: () => void }) {
   const pick = async (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     (e.target as HTMLInputElement).value = "";
@@ -117,7 +117,8 @@ function FileSecret({ name, accept, onDone }: { name: string; accept: string; on
   return (
     <label class="btn secondary small" style={{ display: "inline-block" }}>
       Add from file
-      <input type="file" accept={accept} hidden onChange={pick} />
+      {/* Any file can be picked (the key may have been saved as .pem, .txt or with no extension); the contents are checked after. */}
+      <input type="file" hidden onChange={pick} />
     </label>
   );
 }
@@ -191,7 +192,7 @@ function CloudSetup() {
       <Row ok={has("MAUSDROID_UPDATE_KEY_PEM")}>Update signing key (lets GitHub publish updates)</Row>
       {has("MAUSDROID_UPDATE_KEY_PEM") === false ? (
         <p class="help">
-          Pick the file <b>update-signing-key.pem</b>: <FileSecret name="MAUSDROID_UPDATE_KEY_PEM" accept=".pem,text/plain,application/x-pem-file,*/*" onDone={load} />
+          Pick the file <b>update-signing-key.pem</b>: <FileSecret name="MAUSDROID_UPDATE_KEY_PEM" onDone={load} />
         </p>
       ) : null}
       <Row ok={has("CODEX_AUTH_JSON") || has("OPENAI_API_KEY")}>Codex key (only if you choose GitHub + Codex)</Row>
