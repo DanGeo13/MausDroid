@@ -18,6 +18,10 @@ export const ACCESS_UPDATES: { id: string; note: string }[] = [
     id: "2026-11-26-codex-tool-access",
     note: "Codex now sends MausDroid tool calls to the app for approval under this bot's current settings, including in existing chats. If an earlier Codex tool call said 'approval policy is never', try the MausDroid tool again.",
   },
+  {
+    id: "codex-connected-app-routing",
+    note: "For Codex, use the mausdroid MCP server for the phone browser and connected apps. The phone applies this bot's current approval setting on every call. Try the current tools if an earlier turn reported an approval failure.",
+  },
 ];
 export const LATEST_ACCESS_UPDATE = ACCESS_UPDATES[ACCESS_UPDATES.length - 1].id;
 

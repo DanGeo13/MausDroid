@@ -7,6 +7,12 @@ import fs from "node:fs";
 
 const v = JSON.parse(fs.readFileSync("version.json", "utf8"));
 const keyPem = process.env.MAUSDROID_UPDATE_KEY_PEM ?? fs.readFileSync(process.env.MAUSDROID_UPDATE_KEY, "utf8");
+const signingKey = crypto.createPrivateKey(keyPem);
+const signingPublicKey = crypto.createPublicKey(signingKey).export({ format: "der", type: "spki" });
+const trustedPublicKey = Buffer.from(fs.readFileSync("updates-public-key.txt", "utf8").trim(), "base64");
+if (!signingPublicKey.equals(trustedPublicKey)) {
+  throw new Error("The update signing key does not match the key trusted by installed MausDroid apps.");
+}
 const raw = "https://raw.githubusercontent.com/DanGeo13/MausDroid/updates";
 const sha = (f) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
 const zip = `dist/updates/engine-${v.engine}.zip`;
@@ -30,6 +36,6 @@ if (!apk && process.env.KEEP_APK_FROM && fs.existsSync(process.env.KEEP_APK_FROM
   }
 }
 const text = JSON.stringify(payload);
-const signature = crypto.sign("sha256", Buffer.from(text), crypto.createPrivateKey(keyPem)).toString("base64");
+const signature = crypto.sign("sha256", Buffer.from(text), signingKey).toString("base64");
 fs.writeFileSync("dist/updates/update.json", JSON.stringify({ payload: text, signature }, null, 1));
 console.log("update.json written for engine", v.engine, apk ? `and apk ${v.apk}` : "");

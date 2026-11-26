@@ -38,6 +38,7 @@ function args(run) {
     return ["gemini", a];
   }
   const a = ["exec", ...(run.resume ? ["resume", run.resume] : []), "--json", "--skip-git-repo-check",
+    "--disable", "apps",
     "-c", `mcp_servers.mausdroid.url=${JSON.stringify(run.mcpUrl)}`,
     "-c", 'mcp_servers.mausdroid.bearer_token_env_var="MAUSDROID_MCP_TOKEN"',
     // The phone checks the bot's permissions, including while resuming an existing session.

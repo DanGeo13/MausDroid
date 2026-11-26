@@ -83,6 +83,7 @@ test("Codex delegates MausDroid approvals on fresh and resumed conversations", a
   for (const resume of [undefined, "existing-thread"]) {
     const args = cliArgs({ ...run, resume });
     if (resume) assert.deepEqual(args.slice(0, 3), ["exec", "resume", resume]);
+    assert.deepEqual(args.slice(args.indexOf("--disable"), args.indexOf("--disable") + 2), ["--disable", "apps"]);
     assert.ok(args.includes('mcp_servers.mausdroid.default_tools_approval_mode="approve"'));
     assert.equal(args.at(-1), resume ? run.prompt : `${run.systemPrompt}\n\n${run.prompt}`);
   }
@@ -92,6 +93,60 @@ test("Codex delegates MausDroid approvals on fresh and resumed conversations", a
   assert.deepEqual(parse("item.completed", { status: "failed", error: { message: "Permission denied" } }), [
     { kind: "tool_result", toolId: item.id, isError: true, text: "Permission denied" },
   ]);
+});
+
+test("a resumed Codex bot gets its current settings after an in-place edit", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { createServer } = await import("node:http");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { startEngine } = await import("./_engine.mjs");
+  const runs = [];
+  const companion = createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    runs.push(JSON.parse(body));
+    res.writeHead(200, { "content-type": "application/x-ndjson" });
+    res.end([
+      { type: "thread.started", thread_id: "existing-thread" },
+      { type: "item.completed", item: { type: "agent_message", text: "checked" } },
+      { type: "turn.completed" },
+    ].map(JSON.stringify).join("\n"));
+  });
+  await new Promise((resolve) => companion.listen(0, "127.0.0.1", resolve));
+  const dir = mkdtempSync(join(tmpdir(), "md-legacy-bot-"));
+  writeFileSync(join(dir, "bots.json"), JSON.stringify([{
+    id: "bot_legacy", name: "Maus", persona: "", skills: [], unread: 0, providerId: "chatgpt",
+    cliSession: "existing-thread", tools: { browser: false },
+  }]));
+  const e = await startEngine({ dir });
+  try {
+    await e.call("/api/settings/providers/chatgpt", "PUT", {
+      enabled: true, runOn: "computer", computerUrl: `http://127.0.0.1:${companion.address().port}`,
+    });
+    const bot = (await e.call("/api/state")).data.bots[0];
+    assert.equal(bot.id, "bot_legacy");
+    assert.equal(bot.approvalMode, "ask-risky");
+    assert.deepEqual(bot.alwaysAllow, []);
+    assert.deepEqual(bot.tools, { web: true, browser: false, apps: true, phone: false });
+    const route = `/api/bots/${bot.id}`;
+    await e.call(route, "PATCH", { approvalMode: "ask-all" });
+    await e.call(`${route}/messages`, "POST", { text: "Read the performer email" });
+    const replies = async () => (await e.call(`${route}/messages`)).data.filter((msg) => msg.role === "assistant");
+    await e.until(async () => (await replies()).length === 1, "first Codex reply");
+    assert.match(runs[0].prompt, /asks for approval for tool actions, including reads/);
+
+    await e.call(route, "PATCH", { approvalMode: "ask-risky" });
+    await e.call(`${route}/messages`, "POST", { text: "Retry the existing email request" });
+    await e.until(async () => (await replies()).length === 2, "second Codex reply");
+    assert.deepEqual(runs.map((run) => run.resume), ["existing-thread", "existing-thread"]);
+    assert.match(runs[1].prompt, /Use the mausdroid MCP server/);
+    assert.match(runs[1].prompt, /Reading emails, calendars, files and web pages runs directly/);
+    assert.match(runs[1].prompt, /Retry the existing email request/);
+  } finally {
+    await e.stop();
+    companion.close();
+  }
 });
 
 test("MCP checks updated bot permissions on the same bot URL before performing Gmail actions", async () => {

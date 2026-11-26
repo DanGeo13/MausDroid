@@ -50,6 +50,7 @@ jobs:
           WANT=$(node -p 'require("./version.json").apk')
           HAVE=$(curl -sf https://raw.githubusercontent.com/${{ github.repository }}/updates/update.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(JSON.parse(s).payload).apk?.versionName??"")}catch{console.log("")}})' || true)
           echo "want=$WANT have=$HAVE"
+          if [[ "$HAVE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "previous=$HAVE" >> "$GITHUB_OUTPUT"; fi
           if [ "$WANT" != "$HAVE" ]; then echo "build=true" >> "$GITHUB_OUTPUT"; fi
 
       - name: Build APK
@@ -59,14 +60,31 @@ jobs:
           MAUSDROID_KEYSTORE_PASSWORD: ${{ secrets.MAUSDROID_KEYSTORE_PASSWORD }}
           MAUSDROID_KEY_PASSWORD: ${{ secrets.MAUSDROID_KEYSTORE_PASSWORD }}
           MAUSDROID_KEY_ALIAS: mausdroid
+          PREVIOUS_APK_VERSION: ${{ steps.apk.outputs.previous }}
         run: |
+          if [ -z "$KS_B64" ] || [ -z "$MAUSDROID_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Restore MAUSDROID_KEYSTORE_B64 and MAUSDROID_KEYSTORE_PASSWORD to sign an in-place APK update (see docs/RELEASING.md)"
+            exit 1
+          fi
           echo "$KS_B64" | base64 -d > /tmp/release.jks
           export MAUSDROID_KEYSTORE_FILE=/tmp/release.jks
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           ./scripts/fetch-native.sh
           cd android && ./gradlew assembleRelease --no-daemon
           cp app/build/outputs/apk/release/app-release.apk ../dist/MausDroid.apk
+          apksigner="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          new_certs=$("$apksigner" verify --print-certs ../dist/MausDroid.apk)
+          if [ -n "$PREVIOUS_APK_VERSION" ]; then
+            curl -fsSL --retry 3 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/updates/MausDroid-$PREVIOUS_APK_VERSION.apk" -o /tmp/previous.apk
+            old_certs=$("$apksigner" verify --print-certs /tmp/previous.apk)
+            cert_sha() { awk '/^Signer #[0-9]+ certificate SHA-256 digest:/ { print $NF }' | sort; }
+            previous_sha=$(cert_sha <<< "$old_certs")
+            if [ -z "$previous_sha" ] || [ "$previous_sha" != "$(cert_sha <<< "$new_certs")" ]; then
+              echo "::error::The APK signer differs from the currently published APK. Restore the original Android signing keystore."
+              exit 1
+            fi
+          fi
 
       - name: Sign update manifest
         env:

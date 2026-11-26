@@ -44,6 +44,8 @@ export interface ChatMessage {
 }
 
 const botsFile = collection<Bot[]>("bots", []);
+const DEFAULT_TOOLS: Bot["tools"] = { web: true, browser: true, apps: true, phone: false };
+const toolGroups = Object.keys(DEFAULT_TOOLS) as (keyof Bot["tools"])[];
 
 export const DEFAULT_BOTS: Partial<Bot>[] = [
   { name: "Maus", emoji: "🐭", color: "#1084fe", persona: "You are Maus, the user's main personal assistant. You are warm, brief and practical. You plan, delegate to tools, and check in before anything risky." },
@@ -69,7 +71,7 @@ export function createBot(input: Partial<Bot>): Bot {
     providerId: input.providerId ?? null,
     model: input.model ?? null,
     approvalMode: input.approvalMode ?? "ask-risky",
-    tools: { web: true, browser: true, apps: true, phone: false, ...(input.tools ?? {}) },
+    tools: { ...DEFAULT_TOOLS, ...input.tools },
     skills: input.skills ?? [],
     pinned: input.pinned ?? false,
     hidden: false,
@@ -102,8 +104,17 @@ export function deleteBot(botId: string) {
 }
 
 export function ensureDefaultBots() {
-  if (botsFile.get().length) return;
-  DEFAULT_BOTS.forEach((b, i) => createBot({ ...b, pinned: i === 0 }));
+  if (!botsFile.get().length) {
+    DEFAULT_BOTS.forEach((b, i) => createBot({ ...b, pinned: i === 0 }));
+    return;
+  }
+  const legacyBots = botsFile.get().filter((bot) =>
+    bot.approvalMode == null || bot.alwaysAllow == null || toolGroups.some((group) => bot.tools?.[group] == null));
+  for (const bot of legacyBots) {
+    const tools = { ...DEFAULT_TOOLS };
+    for (const group of toolGroups) tools[group] = bot.tools?.[group] ?? DEFAULT_TOOLS[group];
+    updateBot(bot.id, { approvalMode: bot.approvalMode ?? "ask-risky", alwaysAllow: bot.alwaysAllow ?? [], tools });
+  }
 }
 
 // Chat display messages and the model's history are kept per bot.

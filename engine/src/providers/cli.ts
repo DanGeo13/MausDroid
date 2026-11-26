@@ -76,6 +76,8 @@ export function cliArgs(run: CliRun): string[] {
     return args;
   }
   const args = ["exec", ...(run.resume ? ["resume", run.resume] : []), "--json", "--skip-git-repo-check",
+    // Connected apps for MausDroid bots must go through the phone's approval layer.
+    "--disable", "apps",
     "-c", `mcp_servers.mausdroid.url=${JSON.stringify(run.mcpUrl)}`,
     "-c", 'mcp_servers.mausdroid.bearer_token_env_var="MAUSDROID_MCP_TOKEN"',
     // MausDroid checks the bot's current permissions on each call. Codex exec can't show approval prompts.

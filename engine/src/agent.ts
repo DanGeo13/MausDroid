@@ -80,6 +80,14 @@ export function resolveProvider(bot: Bot): ProviderConfig {
   return p;
 }
 
+function approvalContext(bot: Bot): string {
+  if (bot.approvalMode === "ask-all") return "This bot asks for approval for tool actions, including reads.";
+  if (bot.approvalMode === "auto") return "This bot lets ordinary tool actions run automatically. Some tools always ask for approval.";
+  return "Reading emails, calendars, files and web pages runs directly. Actions such as sending, buying, posting, deleting or changing things ask for approval.";
+}
+
+const cliToolContext = "Use the mausdroid MCP server for the phone browser and connected apps such as Gmail, Calendar and Drive. Call the tool directly. MausDroid applies the bot's current approval settings and shows any approval card.";
+
 export function systemPrompt(bot: Bot, extra = ""): string {
   const s = settings();
   const when = fmtLong(new Date());
@@ -87,8 +95,8 @@ export function systemPrompt(bot: Bot, extra = ""): string {
     bot.persona || `You are ${bot.name}, a helpful assistant.`,
     `\n\nYou are ${bot.name}, one of the person's bots in MausDroid, an agent app running on their Android phone. It is ${when} (${s.timeZone}).`,
     "Work step by step with your tools. Prefer the quickest reliable tool (web_fetch before the browser; connected apps before the browser).",
-    "Anything that sends, buys, posts, deletes or changes things for the person is paused for their approval automatically; just call the tool.",
-    "Reading never needs approval — emails, calendars, files, messages you can see, web pages: just look, don't ask first. If the app you need isn't connected, start connecting it (connected apps: manage connections) and give the person the sign-in link; never ask them to copy and paste what you could read yourself. Earlier messages in a chat can be out of date (apps get connected, access changes): try the tool again before saying something can't be reached, and if it really can't, say exactly which source you tried and what's missing.",
+    approvalContext(bot),
+    "If the app you need isn't connected, start connecting it (connected apps: manage connections) and give the person the sign-in link; never ask them to copy and paste what you could read yourself. Earlier messages in a chat can be out of date (apps get connected, access changes): try the tool again before saying something can't be reached, and if it really can't, say exactly which source you tried and what's missing.",
     "Never type passwords, card numbers or one-time codes yourself: if a site needs a login use browser_ask_login.",
     "For Facebook, Messenger and WhatsApp never drive the person's account in the browser (it can get them banned); draft text for them to send instead.",
     "Reply in plain, friendly language. Keep answers short unless asked for detail.",
@@ -283,12 +291,14 @@ async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: Abo
   const mcpBase = onPhone || !settings().tailscale.enabled ? `http://127.0.0.1:${config.port}` : `http://${settings().tailscale.hostname}`;
   const run = {
     attachments,
-    prompt: text,
+    prompt: p.subId === "chatgpt" && bot.cliSession
+      ? `[Current MausDroid tool access: ${cliToolContext} ${approvalContext(bot)} Use the current tools even if older turns reported an approval failure.]\n\n${text}`
+      : text,
     model: bot.model ?? p.defaultModel,
     resume: bot.cliSession,
     mcpUrl: `${mcpBase}/mcp/${bot.id}`,
     mcpToken: mcpTokenFor(bot.id),
-    systemPrompt: systemPrompt(bot, "\n\nMausDroid's tools (browser on the phone, connected apps, alerts, memory, routines, skills) are available through the mausdroid MCP server."),
+    systemPrompt: systemPrompt(bot, cliToolContext),
   };
   let current: ReturnType<typeof addMessage> | null = null;
   let streaming: ReturnType<typeof addMessage> | null = null;
@@ -343,6 +353,7 @@ async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: Abo
       if (!run.resume || produced || signal.aborted || !STALE_SESSION.test(errorText(e))) throw e;
       updateBot(bot.id, { cliSession: undefined });
       run.resume = undefined;
+      run.prompt = text;
       const note = addMessage(bot.id, { role: "note", text: "Started a fresh conversation — the earlier one couldn't be continued.", status: "done" });
       emit("message", { botId: bot.id, message: note });
       await pass();
