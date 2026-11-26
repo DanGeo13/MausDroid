@@ -1224,12 +1224,89 @@ function AppearanceTab() {
 }
 
 // ---------------- Memory ----------------
+/** Your playbook: documents with your rules for how the assistant works with you (kept only on this phone). */
+function Playbook() {
+  const [d, reload] = useLoad<any>("playbook");
+  const [view, setView] = useState<{ id: string; text: string } | null>(null);
+  if (!d) return null;
+  const pick = async (e: Event) => {
+    const files = [...((e.target as HTMLInputElement).files ?? [])];
+    (e.target as HTMLInputElement).value = "";
+    for (const f of files) {
+      try {
+        const b64 = btoa(Array.from(new Uint8Array(await f.arrayBuffer()), (c) => String.fromCharCode(c)).join(""));
+        const doc = await api("playbook/import", { body: { name: f.name, b64 } });
+        toast(`Imported ${doc.name} (${doc.mode === "always" ? "always followed" : "for reference"})`);
+      } catch (err) {
+        toast(`⚠️ ${f.name}: ${(err as Error).message}`);
+      }
+    }
+    reload();
+  };
+  return (
+    <div class="section">
+      <h2>Playbook</h2>
+      <p class="help">
+        Your rules for how your assistant works with you — e.g. guides written with a previous assistant. Kept only on this phone. <b>Always follow</b> documents are part of the assistant's instructions; <b>Reference</b> ones (long guides) are looked up when needed. When you correct the assistant, it adds the rule here with a change-log line. Nothing else (bots, memory, routines) is changed.
+      </p>
+      {d.docs.length ? (
+        d.docs.map((doc: any) => (
+          <div style={{ padding: ".45rem 0", borderBottom: "1px solid var(--panel2)" }}>
+            <b>{doc.name}</b>{" "}
+            <span class="muted" style={{ fontSize: ".8rem" }}>
+              {Math.round(doc.chars / 100) / 10}k characters · imported {new Date(doc.importedAt).toLocaleDateString()}
+            </span>
+            <div class="seg" style={{ marginTop: ".3rem" }}>
+              <button class={doc.mode === "always" ? "on" : ""} onClick={run(async () => (await api(`playbook/${doc.id}`, { method: "PATCH", body: { mode: "always" } }), reload()))}>
+                Always follow
+              </button>
+              <button class={doc.mode === "reference" ? "on" : ""} onClick={run(async () => (await api(`playbook/${doc.id}`, { method: "PATCH", body: { mode: "reference" } }), reload()))}>
+                Reference
+              </button>
+              <button onClick={async () => setView(view?.id === doc.id ? null : { id: doc.id, text: (await api(`playbook/${doc.id}/text`)).text })}>{view?.id === doc.id ? "Hide" : "View"}</button>
+              <button
+                onClick={run(async () => {
+                  if (!confirm(`Remove ${doc.name} from the playbook? (The original file on your phone isn't touched.)`)) return;
+                  await api(`playbook/${doc.id}`, { method: "DELETE" });
+                  reload();
+                })}
+              >
+                Remove
+              </button>
+            </div>
+            {view && view.id === doc.id ? <pre style={{ whiteSpace: "pre-wrap", maxHeight: "22rem", overflow: "auto" }}>{view.text}</pre> : null}
+          </div>
+        ))
+      ) : (
+        <p class="muted">No playbook yet.</p>
+      )}
+      <div class="inline" style={{ marginTop: ".6rem", flexWrap: "wrap", gap: ".5rem" }}>
+        <label class="btn small" style={{ display: "inline-block" }}>
+          Import documents
+          <input type="file" multiple hidden onChange={pick} />
+        </label>
+        <button class="btn secondary small" disabled={!d.docs.length} onClick={run(async () => api("playbook/review", { body: {} }), "Improver is reviewing it — see its chat")}>
+          Review with Improver
+        </button>
+      </div>
+      <div class="field" style={{ marginTop: ".6rem" }}>
+        <label>Who follows it</label>
+        <select value={d.appliesTo} onChange={(e) => run(async () => (await api("playbook/settings", { method: "PUT", body: { appliesTo: val(e) } }), reload()))()}>
+          <option value="main">The main assistant (Maus) and Improver</option>
+          <option value="all">Every bot</option>
+        </select>
+      </div>
+    </div>
+  );
+}
+
 function MemoryTab() {
   const [m, reload] = useLoad<any>("memory/about-me");
   const [text, setText] = useState<string | null>(null);
   const [gh, setGh] = useState("");
   return (
     <>
+      <Playbook />
       <div class="section">
         <h2>What your bots know about you</h2>
         <p class="help">Shared by all bots. Bots add to it when you tell them something worth remembering. Edit freely.</p>

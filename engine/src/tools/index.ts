@@ -20,6 +20,7 @@ import * as calls from "../calls.ts";
 import * as improve from "../improve.ts";
 import * as share from "../share.ts";
 import * as phoneNotes from "../phone-notifications.ts";
+import * as playbook from "../playbook.ts";
 import * as botAdmin from "../bot-admin.ts";
 import * as selfupdate from "../selfupdate.ts";
 import { saveSkill } from "../skills.ts";
@@ -217,6 +218,7 @@ const ONLY_IMPROVER = /^(improve_|routine_admin_|skill_save$|tool_list$)/;
 const ONLY_MAUS_OR_IMPROVER = /^bot_(list|edit)$/;
 function mayHave(bot: Bot, name: string) {
   if (name === "call_user") return calls.isCallBot(bot.id);
+  if (name.startsWith("playbook_")) return playbook.appliesTo(bot);
   if (ONLY_IMPROVER.test(name)) return improve.isImprover(bot.id);
   if (ONLY_MAUS_OR_IMPROVER.test(name)) return improve.isImprover(bot.id) || calls.callBot()?.id === bot.id;
   return true;
@@ -655,6 +657,26 @@ function callTools(): Tool[] {
 
 function shareTools(): Tool[] {
   return [
+    {
+      group: "core",
+      spec: { name: "playbook_read", description: "Open the person's playbook documents (their rules for how you work with them). Give an id to read one reference document in full; no id lists them.", inputSchema: obj({ id: str("Document id (optional)") }) },
+      run: async (_c, i) => {
+        const st = playbook.playbookState();
+        if (!i.id) return JSON.stringify(st.docs.map((d) => ({ id: d.id, name: d.name, mode: d.mode, chars: d.chars })), null, 1);
+        const d = st.docs.find((x) => x.id === String(i.id));
+        if (!d) throw new Error("No playbook document with that id.");
+        return playbook.readDoc(d.id).slice(0, 60_000);
+      },
+    },
+    {
+      group: "core",
+      spec: { name: "playbook_add", description: "Add a correction or new standing rule the person just gave you to their playbook, under the right section (e.g. Conversation, Verify first, Calendar, Email, Messaging, Approvals), with a change-log line. Use the person's own words; no secrets (passwords, codes, card or account numbers).", inputSchema: obj({ section: str("Section heading, e.g. Calendar"), rule: str("The rule, one plain sentence") }, ["section", "rule"]) },
+      run: async (c, i) => {
+        if (audit.looksSecret(String(i.rule))) throw new Error("That looks like it contains a code or account number — leave it out of the playbook.");
+        const r = playbook.addRule(String(i.section), String(i.rule), c.bot.name);
+        return `Added to "${r.doc}" under ${i.section}.`;
+      },
+    },
     {
       group: "core",
       spec: {

@@ -23,6 +23,7 @@ import * as botAdmin from "./bot-admin.ts";
 import * as selfupdate from "./selfupdate.ts";
 import * as cloudKeys from "./cloud-keys.ts";
 import * as phoneNotes from "./phone-notifications.ts";
+import * as playbook from "./playbook.ts";
 import * as pairing from "./pairing.ts";
 import { readMemory, writeMemory } from "./memory.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
@@ -535,6 +536,26 @@ route("POST", "/api/notifications/allow", async () => json(await bridge("/notifi
 route("PUT", "/api/notifications/watch", async (req) => json(await bridge("/notifications/watch", { packages: (req.body?.packages ?? []).map(String) })));
 route("POST", "/api/notifications/rescan", async () => json(await bridge("/notifications/rescan", {})));
 route("POST", "/api/notifications/review", () => json(reviewMuse()));
+// Your playbook (kept only on this phone).
+route("GET", "/api/playbook", () => json({ ...playbook.playbookState(), mainBotId: playbook.getMainBotId() }));
+route("GET", "/api/playbook/:id/text", (_r, [id]) => json({ text: playbook.readDoc(id) }));
+route("POST", "/api/playbook/import", (req) => {
+  try {
+    return json(playbook.importDoc(String(req.body?.name ?? "playbook.md"), Buffer.from(String(req.body?.b64 ?? ""), "base64")));
+  } catch (e) {
+    throw new HttpError(400, (e as Error).message);
+  }
+});
+route("PATCH", "/api/playbook/:id", (req, [id]) => (playbook.updateDoc(id, { mode: req.body?.mode }), json(playbook.playbookState())));
+route("DELETE", "/api/playbook/:id", (_r, [id]) => (playbook.removeDoc(id), json(playbook.playbookState())));
+route("PUT", "/api/playbook/settings", (req) => (playbook.setAppliesTo(req.body?.appliesTo), json(playbook.playbookState())));
+route("POST", "/api/playbook/review", () => {
+  const bot = improve.improverBot();
+  if (!bot) throw new HttpError(400, "No Improver bot.");
+  if (!playbook.playbookState().docs.length) throw new HttpError(400, "Import your playbook first.");
+  sendToBot(bot.id, playbook.REVIEW_PROMPT, "playbook");
+  return json({ botId: bot.id });
+});
 route("POST", "/api/share", (req) => {
   const rec = badRequest(() => share.receiveShare({ text: req.body?.text, attachments: attachmentsFrom(req.body?.attachments) })) as share.ShareRecord;
   const bot = bots.getBot(rec.botId);

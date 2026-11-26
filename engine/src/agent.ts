@@ -7,6 +7,7 @@ import { openaiTurn } from "./providers/openai.ts";
 import { runCli } from "./providers/cli.ts";
 import { isSignedIn } from "./subscriptions.ts";
 import { describeSkills, gate, memoryContext, toolsFor, type Tool } from "./tools/index.ts";
+import { playbookContext } from "./playbook.ts";
 import { clip, errorText } from "./util.ts";
 import { config } from "./config.ts";
 import { fmtLong } from "./time.ts";
@@ -91,6 +92,7 @@ export function systemPrompt(bot: Bot, extra = ""): string {
     "Reply in plain, friendly language. Keep answers short unless asked for detail.",
     describeSkills(bot.skills),
     memoryContext(bot.id),
+    playbookContext(bot),
     extra,
   ].join(" ");
 }
