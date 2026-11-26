@@ -83,6 +83,7 @@ test("cloud builds: direct request installs itself; nightly code card builds the
     await e.until(async () => gh.st.dispatches.length === 1, "build started");
     const d = gh.st.dispatches[0];
     assert.equal(d.ref, "main");
+    assert.equal(d.inputs.platform, "claude", "GitHub + Claude Code is the default platform");
     assert.match(d.inputs.id, /^imp_[a-z0-9]+$/);
     assert.match(d.inputs.request, /Settings → Tools lists every tool/);
     let o = (await e.call("/api/improve")).data;
@@ -148,13 +149,16 @@ test("cloud builds: progress lines, a question comes back, answers carry it on; 
     await e.call(`/api/bots/${imp.id}`, "PATCH", { providerId: "local", model: "fake" });
     const msgs = async () => (await e.call(`/api/bots/${imp.id}/messages`)).data;
 
+    // GitHub + Codex chosen as the coding platform.
+    await e.call("/api/improve/settings", "PUT", { codingPlatform: "github-codex" });
     const p = (await e.call("/api/improve/build", "POST", { title: "Dark mode toggle", spec: "Add a dark mode toggle to Appearance." })).data;
     assert.equal(p.status, "building");
-    assert.ok((await msgs()).some((x) => x.role === "note" && /Dark mode toggle: Started in the cloud/.test(x.text)));
+    assert.equal(gh.st.dispatches[0].inputs.platform, "codex");
+    assert.ok((await msgs()).some((x) => x.role === "note" && /Dark mode toggle: Started in the cloud with Codex on GitHub/.test(x.text)));
 
     // Progress in plain words, in Improver's chat (no AI turn needed).
-    gh.st.step = "Claude Code makes the change";
-    await e.until(async () => (await msgs()).some((x) => x.role === "note" && /Claude Code is making the change/.test(x.text)), "progress line");
+    gh.st.step = "Codex makes the change";
+    await e.until(async () => (await msgs()).some((x) => x.role === "note" && /Codex is making the change/.test(x.text)), "progress line");
     gh.st.step = "Build and test like the phone (Node 18, no Intl/WebAssembly/TextDecoder)";
     await e.until(async () => (await msgs()).some((x) => x.role === "note" && /Running every test/.test(x.text)), "tests progress");
 
@@ -172,6 +176,7 @@ test("cloud builds: progress lines, a question comes back, answers carry it on; 
     const again = gh.st.dispatches[1].inputs;
     assert.equal(again.id, p.id);
     assert.equal(again.attempt, "2");
+    assert.equal(again.platform, "codex", "the same platform carries on");
     assert.match(again.answers, /follow the phone setting[\s\S]*Yes, follow the phone/);
     assert.equal((await e.call(`/api/improve/${p.id}/answer`, "POST", { answers: "again" })).status, 400, "not waiting any more");
 

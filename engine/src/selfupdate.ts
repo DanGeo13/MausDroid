@@ -94,10 +94,13 @@ async function ghJson(p: string, init: RequestInit = {}) {
 }
 
 /** Starts the cloud Claude Code build for a change (again with answers, if it asked questions). */
-export async function startBuild(id: string, request: string, answers = "", attempt = 1) {
+export type Agent = "claude" | "codex";
+export const AGENT_NAMES: Record<Agent, string> = { claude: "Claude Code", codex: "Codex" };
+
+export async function startBuild(id: string, request: string, answers = "", attempt = 1, agent: Agent = "claude") {
   await ghJson(`/repos/${CODE_REPO}/actions/workflows/${WORKFLOW}/dispatches`, {
     method: "POST",
-    body: JSON.stringify({ ref: "main", inputs: { id, request: clip(request, 6000), answers: clip(answers, 4000), attempt: String(attempt) } }),
+    body: JSON.stringify({ ref: "main", inputs: { id, request: clip(request, 6000), answers: clip(answers, 4000), attempt: String(attempt), platform: agent } }),
   });
 }
 
@@ -114,6 +117,8 @@ export interface BuildState {
 
 const STEP_WORDS: [RegExp, string][] = [
   [/Claude Code makes the change/, "Claude Code is making the change"],
+  [/Codex makes the change/, "Codex is making the change"],
+  [/Write the instructions/, "Writing up the job"],
   [/Questions for the person/, "Checking whether it needs anything from you"],
   [/Only the engine/, "Checking only allowed parts changed"],
   [/Next engine version/, "Numbering the new version"],

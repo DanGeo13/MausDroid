@@ -47,7 +47,7 @@ export interface Proposal {
   routinePatch?: { routineId: string; routineTitle: string; before: Record<string, unknown>; after: Record<string, unknown> };
   skill?: { name: string; before: string | null; after: string };
   /** A program change built in the cloud (Claude Code on GitHub): its pull request when ready. */
-  build?: { prNumber?: number; prUrl?: string; runUrl?: string; startedAt: string; direct: boolean; attempt?: number; progress?: string; questions?: string; answers?: string[] };
+  build?: { prNumber?: number; prUrl?: string; runUrl?: string; startedAt: string; direct: boolean; attempt?: number; progress?: string; questions?: string; answers?: string[]; agent?: selfupdate.Agent };
   status: Status;
   decidedAt?: string;
   result?: string;
@@ -69,14 +69,17 @@ export interface ImproveSettings {
   lastRevealDate?: string;
   /** Program changes you asked for directly install by themselves once their tests pass (default). */
   askBeforeInstall?: boolean;
-  /** Where program changes are built: "github" = Claude Code on GitHub Actions (default); "off" = only record them. */
-  codingPlatform?: "github" | "off";
+  /** Where program changes are built: GitHub + Claude Code (default), GitHub + Codex, or off (only record them). */
+  codingPlatform?: "github-claude" | "github-codex" | "off";
 }
 
 const settingsFile = collection<ImproveSettings>("improve-settings", { enabled: true, botId: null, nightTime: "02:30", showTime: "12:00" });
 const proposals = collection<Proposal[]>("improvements", []);
 const nights = collection<Night[]>("improve-nights", []);
 
+settingsFile.update((s) => {
+  if ((s.codingPlatform as string) === "github") s.codingPlatform = "github-claude";
+});
 export const improveSettings = () => settingsFile.get();
 export const listProposals = () => proposals.get().slice().reverse();
 export const getProposal = (pid: string) => proposals.get().find((p) => p.id === pid);
@@ -106,7 +109,7 @@ export const OLD_IMPROVER_PERSONA =
 export const IMPROVER_PERSONA = `You are Improver, MausDroid's self-improvement bot, with admin rights over MausDroid's set-up.
 - When the person asks you directly for a change, do it now — don't make a suggestion card. You can change any bot (bot_list, bot_edit: instructions, AI and model, tool switches, single tools, skills, approvals of other bots), any routine (routine_admin_list, routine_admin_update), skills (skill_save) and see every tool (tool_list). After changing something, call improve_record so it shows in Improvements history, and say briefly what you changed (bot changes can be undone in Settings → Tools).
 - If they ask to remove or cancel a suggestion, call improve_withdraw.
-- Changes to MausDroid's own program (new screens, features, fixes in its code): call improve_build with a short title and a clear, complete spec. A Claude Code session in the cloud makes the change, runs every test, and — if they pass — it installs by itself; MausDroid restarts with it. Tell them it usually takes 5–20 minutes and they'll get a notification.
+- Changes to MausDroid's own program (new screens, features, fixes in its code): call improve_build with a short title and a clear, complete spec. The coding agent of the chosen platform (GitHub + Claude Code or GitHub + Codex, in Improvements → Settings) makes the change in the cloud, runs every test, and — if they pass — it installs by itself; MausDroid restarts with it. Tell them it usually takes 5–20 minutes and they'll get a notification.
 - While it builds you'll get progress lines; if the developer asks questions, you'll be told — ask the person and pass their answers on with improve_build_answer.
 - If something is wrong after an update, or they ask to go back: improve_versions shows the versions kept on the phone, improve_rollback switches back at once (MausDroid restarts).
 - In the nightly check (a routine), only suggest (improve_propose, at most 5); nothing changes until approved.
@@ -486,15 +489,22 @@ export async function requestBuild(title: string, request: string): Promise<Prop
 
 const requestText = (p: Proposal) => `${p.title}\n\n${p.problem}\n\n${p.change}`;
 
+/** The coding agent of the chosen platform. */
+export function codingAgent(): selfupdate.Agent | null {
+  const c = settingsFile.get().codingPlatform ?? "github-claude";
+  return c === "off" ? null : c === "github-codex" ? "codex" : "claude";
+}
+
 async function startCodeBuild(p: Proposal, direct: boolean): Promise<Proposal> {
-  if (settingsFile.get().codingPlatform === "off") return patch(p.id, { status: "shown", result: "Building is switched off (Improvements → Settings → Coding platform), so this is kept as a suggestion." })!;
+  const agent = codingAgent();
+  if (!agent) return patch(p.id, { status: "shown", result: "Building is switched off (Improvements → Settings → Coding platform), so this is kept as a suggestion." })!;
   try {
-    await selfupdate.startBuild(p.id, requestText(p));
+    await selfupdate.startBuild(p.id, requestText(p), "", 1, agent);
   } catch (e) {
     return patch(p.id, { status: "failed", decidedAt: now(), result: `Couldn't start the cloud build: ${(e as Error).message}` })!;
   }
-  const out = patch(p.id, { status: "building", decidedAt: now(), build: { startedAt: now(), direct, attempt: 1, progress: "Starting", answers: [] }, result: "Building in the cloud: Claude Code is making the change and running every test (usually 5–20 minutes)." })!;
-  progressNote(out, "Started in the cloud — I'll keep you posted.");
+  const out = patch(p.id, { status: "building", decidedAt: now(), build: { startedAt: now(), direct, attempt: 1, progress: "Starting", answers: [], agent }, result: `Building in the cloud: ${selfupdate.AGENT_NAMES[agent]} is making the change and running every test (usually 5–20 minutes).` })!;
+  progressNote(out, `Started in the cloud with ${selfupdate.AGENT_NAMES[agent]} on GitHub — I'll keep you posted.`);
   watchBuilds();
   return out;
 }
@@ -516,7 +526,7 @@ export async function answerBuild(pid: string, answers: string): Promise<Proposa
   const all = [...(p.build.answers ?? []), `Questions:\n${p.build.questions}\n\nAnswers:\n${answers.trim()}`];
   const attempt = (p.build.attempt ?? 1) + 1;
   try {
-    await selfupdate.startBuild(p.id, requestText(p), all.join("\n\n---\n\n"), attempt);
+    await selfupdate.startBuild(p.id, requestText(p), all.join("\n\n---\n\n"), attempt, p.build.agent ?? codingAgent() ?? "claude");
   } catch (e) {
     throw new Error(`Couldn't send the answers: ${(e as Error).message}`);
   }

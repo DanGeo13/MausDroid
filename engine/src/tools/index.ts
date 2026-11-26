@@ -820,7 +820,7 @@ function adminTools(): Tool[] {
       admin: true,
       spec: {
         name: "improve_build",
-        description: "Change MausDroid's own program (screens, features, fixes): a Claude Code session in the cloud makes the change from your spec, runs every test, and if they pass it's installed and MausDroid restarts with it (usually 5–20 minutes; the person gets a notification). Write a complete, specific spec.",
+        description: "Change MausDroid's own program (screens, features, fixes): the chosen coding platform (GitHub + Claude Code or GitHub + Codex) makes the change in the cloud from your spec, runs every test, and if they pass it's installed and MausDroid restarts with it (usually 5–20 minutes; the person gets a notification). Write a complete, specific spec.",
         inputSchema: obj({ title: str("Short title"), spec: str("What to change, in detail: behaviour, screens, edge cases") }, ["title", "spec"]),
       },
       run: async (_c, i) => {

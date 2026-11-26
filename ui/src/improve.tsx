@@ -127,10 +127,12 @@ function Settings({ o, onDone }: { o: any; onDone: () => void }) {
       </div>
       <div class="field">
         <label>Coding platform for program changes</label>
-        <select value={s.codingPlatform ?? "github"} onChange={(e) => setS({ ...s, codingPlatform: (e.target as HTMLSelectElement).value })}>
-          <option value="github">GitHub + Claude Code (in the cloud, in the background)</option>
+        <select value={s.codingPlatform ?? "github-claude"} onChange={(e) => setS({ ...s, codingPlatform: (e.target as HTMLSelectElement).value })}>
+          <option value="github-claude">GitHub + Claude Code (your Claude subscription)</option>
+          <option value="github-codex">GitHub + Codex (your ChatGPT subscription or an OpenAI key)</option>
           <option value="off">Off — only keep them as suggestions</option>
         </select>
+        <p class="help">Changes are built in the cloud, in the background; you get progress updates and any questions. Each platform needs its key added on GitHub once (see the MausDroid repo: .github/workflows/improver.yml).</p>
       </div>
       <label class="inline">
         <input type="checkbox" checked={!s.askBeforeInstall} onChange={() => setS({ ...s, askBeforeInstall: !s.askBeforeInstall })} /> Program changes I ask Improver for install by themselves once every test passes
