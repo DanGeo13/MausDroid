@@ -1,3 +1,4 @@
+// Cloud build set-up check.
 // End-to-end check of the built engine with a fake OpenAI-compatible model:
 // chat → tool call → approval card → result → final answer, plus auth.
 import { test } from "node:test";
