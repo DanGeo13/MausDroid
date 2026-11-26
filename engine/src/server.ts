@@ -22,6 +22,7 @@ import * as share from "./share.ts";
 import * as botAdmin from "./bot-admin.ts";
 import * as selfupdate from "./selfupdate.ts";
 import * as cloudKeys from "./cloud-keys.ts";
+import * as phoneNotes from "./phone-notifications.ts";
 import * as pairing from "./pairing.ts";
 import { readMemory, writeMemory } from "./memory.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
@@ -499,6 +500,41 @@ route("POST", "/api/tools/:name/bots", (req, [name]) => {
 });
 route("GET", "/api/bot-changes", () => json(botAdmin.listBotChanges()));
 route("POST", "/api/bot-changes/:id/undo", (_r, [id]) => json(badRequest(() => botAdmin.undoBotChange(id))));
+// Notifications read from apps you choose (e.g. Meta's Muse), read-only.
+let firstReviewTimer: NodeJS.Timeout | null = null;
+function reviewMuse(): { botId: string; reviewed: number } {
+  const items = phoneNotes.recent({ app: "muse", limit: 150 });
+  if (!items.length) throw new HttpError(400, "No Muse notifications have been read yet. Allow notification access, then tap Read pending notifications.");
+  const bot = improve.improverBot();
+  if (!bot) throw new HttpError(400, "No Improver bot.");
+  phoneNotes.markFirstReview();
+  sendToBot(bot.id, phoneNotes.REVIEW_PROMPT(items), "notifications");
+  return { botId: bot.id, reviewed: items.length };
+}
+route("POST", "/api/notifications/incoming", (req) => {
+  const r = phoneNotes.addIncoming(req.body?.items ?? []);
+  // The first Muse notifications read (those still pending): Improver reviews them once, a minute later.
+  if (r.added && !phoneNotes.firstReviewDone() && !firstReviewTimer && phoneNotes.recent({ app: "muse", limit: 1 }).length)
+    firstReviewTimer = setTimeout(() => {
+      firstReviewTimer = null;
+      if (!phoneNotes.firstReviewDone()) {
+        try {
+          reviewMuse();
+        } catch {
+          /* tried again next time */
+        }
+      }
+    }, Number(process.env.MAUSDROID_FIRST_REVIEW_MS ?? 60_000));
+  return json(r);
+});
+route("GET", "/api/notifications/phone", async (req) => {
+  const native = bridgeAvailable() ? await bridge("/notifications/status", {}).catch(() => null) : null;
+  return json({ native, counts: phoneNotes.counts(), recent: phoneNotes.recent({ app: req.query.get("app") ?? undefined, limit: 50 }) });
+});
+route("POST", "/api/notifications/allow", async () => json(await bridge("/notifications/open-settings", {})));
+route("PUT", "/api/notifications/watch", async (req) => json(await bridge("/notifications/watch", { packages: (req.body?.packages ?? []).map(String) })));
+route("POST", "/api/notifications/rescan", async () => json(await bridge("/notifications/rescan", {})));
+route("POST", "/api/notifications/review", () => json(reviewMuse()));
 route("POST", "/api/share", (req) => {
   const rec = badRequest(() => share.receiveShare({ text: req.body?.text, attachments: attachmentsFrom(req.body?.attachments) })) as share.ShareRecord;
   const bot = bots.getBot(rec.botId);

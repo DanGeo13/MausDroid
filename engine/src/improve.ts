@@ -15,6 +15,7 @@ import { addMessage } from "./bots.ts";
 import { addRunValidator } from "./scheduler.ts";
 import { looksSecret, similar } from "./audit.ts";
 import * as selfupdate from "./selfupdate.ts";
+import { assistantExamples } from "./phone-notifications.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
 
 /**
@@ -118,6 +119,7 @@ Be brief and concrete.`;
 export const IMPROVE_PROMPT = `Nightly self-check. You have 10 minutes at most; research tools stop after 5, so be quick and don't be exhaustive.
 1. Call improve_evidence to see recent errors, routine runs, routines, skills and earlier suggestions.
 2. Pick the few changes that would help most right now: errors, failing / missed / timed-out routines and the prompts or schedules causing them, skills that are missing, broken or unclear, and — only if clearly worthwhile — small code fixes to MausDroid. A quick web_search or skills_market_search is fine if it helps find a fix.
+   assistantExamples (if any) are recent notifications from Meta's Muse assistant: they show what a good assistant anticipates for the person. If MausDroid doesn't anticipate a need Muse does, a new or better routine is a good suggestion.
 3. Call improve_propose ONCE with at most ${MAX_PER_NIGHT} suggestions (fewer is better; none if nothing is worth changing). Don't repeat earlier suggestions. For a routine fix include routine_patch with the exact new values; for a skill fix include the complete new SKILL.md. Never include passwords, tokens, card numbers or other credentials.
 4. Call improve_finish with a one-line summary.
 Don't notify the person: the suggestions are shown at midday as cards, and nothing changes until they approve.`;
@@ -229,7 +231,7 @@ export function collectEvidence() {
     engine = { version: config.version };
   }
   const earlier = proposals.get().filter((p) => since(p.createdAt, 24 * 21)).map((p) => ({ id: p.id, title: p.title, status: p.status }));
-  return { now: new Date().toISOString(), engine, routineProblems: problems, routines, skills, botErrors: botErrors.slice(-25), earlierSuggestions: earlier };
+  return { now: new Date().toISOString(), engine, routineProblems: problems, routines, skills, botErrors: botErrors.slice(-25), earlierSuggestions: earlier, assistantExamples: assistantExamples(7) };
 }
 
 // ---------------- Night records ----------------

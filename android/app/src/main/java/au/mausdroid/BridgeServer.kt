@@ -113,6 +113,23 @@ class BridgeServer(
                 "/location/get" -> ok(DeviceLocation.get(ctx, body.optLong("maxAgeMs", 120_000), body.optLong("timeoutMs", 20_000)))
                 "/location/permission" -> ok(JSONObject().put("permission", DeviceLocation.permissionState(ctx)))
                 "/device/info" -> ok(DeviceSettings.info(ctx))
+                "/notifications/status" -> {
+                    val w = NotificationWatcher.readWatch(ctx)
+                    ok(JSONObject().put("access", NotificationWatcher.hasAccess(ctx)).put("packages", w.optJSONArray("packages") ?: org.json.JSONArray()).put("seen", w.optJSONObject("seen") ?: JSONObject()))
+                }
+                "/notifications/open-settings" -> {
+                    ctx.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    ok()
+                }
+                "/notifications/watch" -> {
+                    synchronized(NotificationWatcher::class.java) {
+                        val w = NotificationWatcher.readWatch(ctx)
+                        w.put("packages", body.optJSONArray("packages") ?: org.json.JSONArray())
+                        NotificationWatcher.writeWatch(ctx, w)
+                    }
+                    ok()
+                }
+                "/notifications/rescan" -> ok(JSONObject().put("asked", NotificationWatcher.rescan(ctx)))
                 else -> if (session.uri.startsWith("/device/")) ok(JSONObject().put("opened", DeviceSettings.open(ctx, session.uri.removePrefix("/device/"))))
                 else err(Response.Status.NOT_FOUND, "unknown ${session.uri}")
             }

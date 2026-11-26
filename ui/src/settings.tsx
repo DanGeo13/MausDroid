@@ -678,6 +678,76 @@ function RoutinesTab({ bots }: { bots: Bot[] }) {
 }
 
 // ---------------- Phone: Tailscale, updates, background ----------------
+/** Notification reading: apps you choose (e.g. Meta's Muse), read-only. */
+function NotificationReading() {
+  const [d, reload] = useLoad<any>("notifications/phone");
+  if (!d) return null;
+  const n = d.native;
+  const chosen: string[] = n?.packages ?? [];
+  const seen: Record<string, string> = n?.seen ?? {};
+  const museGuess = Object.entries(seen).filter(([pkg, label]) => /muse/i.test(`${label} ${pkg}`)).map(([pkg]) => pkg);
+  const isOn = (pkg: string) => (chosen.length ? chosen.includes(pkg) : museGuess.includes(pkg));
+  const toggle = (pkg: string) => run(async () => (await api("notifications/watch", { method: "PUT", body: { packages: isOn(pkg) ? (chosen.length ? chosen : museGuess).filter((p) => p !== pkg) : [...(chosen.length ? chosen : museGuess), pkg] } }), reload()))();
+  const total = Object.values(d.counts ?? {}).reduce((a: number, b: any) => a + Number(b), 0);
+  return (
+    <div class="section">
+      <h2>Notification reading</h2>
+      <p class="help">
+        MausDroid reads notifications from the apps you choose — by default Meta's <b>Muse</b> — so it can learn what a good assistant anticipates, start routines, and let bots look at them. Read-only: it never acts in those apps. Android only lets apps read notifications still in your notification shade and new ones; dismissed ones can't be read by any app.
+      </p>
+      {!n ? (
+        <p class="help">Notification reading needs the Android app.</p>
+      ) : (
+        <>
+          <div class="toggle">
+            <span>Access {n.access ? <span class="pill ok">allowed</span> : <span class="pill warn">not allowed yet</span>}</span>
+            {!n.access ? (
+              <button class="btn small" onClick={run(async () => api("notifications/allow", { body: {} }))}>
+                Allow
+              </button>
+            ) : (
+              <button class="btn secondary small" onClick={run(async () => (await api("notifications/rescan", { body: {} }), setTimeout(reload, 2500)), "Reading what's in your notifications…")}>
+                Read pending notifications
+              </button>
+            )}
+          </div>
+          {!n.access ? <p class="help">Tap Allow, find <b>MausDroid (notifications you choose)</b> in the list and switch it on, then come back.</p> : null}
+          <p class="help" style={{ marginTop: ".5rem" }}>Apps to read {chosen.length ? "" : "(none chosen: any app called Muse)"}:</p>
+          <div class="seg" style={{ flexWrap: "wrap" }}>
+            {Object.entries(seen)
+              .sort((a, b) => a[1].localeCompare(b[1]))
+              .map(([pkg, label]) => (
+                <button class={isOn(pkg) ? "on" : ""} onClick={() => toggle(pkg)} title={pkg}>
+                  {label}
+                </button>
+              ))}
+          </div>
+          {!Object.keys(seen).length && n.access ? <p class="help">Apps appear here as they send notifications.</p> : null}
+          <p class="help">
+            Read so far: {total || "none"}
+            {Object.entries(d.counts ?? {}).length ? ` (${Object.entries(d.counts).map(([a, c]) => `${a}: ${c}`).join(", ")})` : ""}.
+          </p>
+          <button class="btn secondary small" disabled={!Object.keys(d.counts ?? {}).some((a) => /muse/i.test(a))} onClick={run(async () => api("notifications/review", { body: {} }), "Improver is reviewing them — see its chat")}>
+            Review Muse notifications with Improver
+          </button>
+          {d.recent?.length ? (
+            <details style={{ marginTop: ".5rem" }}>
+              <summary class="muted">Latest notifications read</summary>
+              {d.recent.slice(0, 15).map((x: any) => (
+                <p style={{ fontSize: ".85rem" }}>
+                  <b>{x.app}</b> · {new Date(x.postedAt).toLocaleString()} {x.pending ? "(pending)" : ""}
+                  <br />
+                  {x.title} — {x.text.slice(0, 200)}
+                </p>
+              ))}
+            </details>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 function PhoneTab() {
   const [s, reloadS] = useLoad<any>("settings");
   const [ts, reloadTs] = useLoad<any>("tailscale");
@@ -692,6 +762,7 @@ function PhoneTab() {
   if (!s) return <p class="muted">Loading…</p>;
   return (
     <>
+      <NotificationReading />
       <div class="section">
         <h2>Keep working in the background</h2>
         <p class="help">So bots keep running while you use other apps or the screen is off. On Xiaomi/POCO (HyperOS) all three matter.</p>

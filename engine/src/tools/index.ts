@@ -19,6 +19,7 @@ import { describeLocationError, getLocation } from "../location.ts";
 import * as calls from "../calls.ts";
 import * as improve from "../improve.ts";
 import * as share from "../share.ts";
+import * as phoneNotes from "../phone-notifications.ts";
 import * as botAdmin from "../bot-admin.ts";
 import * as selfupdate from "../selfupdate.ts";
 import { saveSkill } from "../skills.ts";
@@ -654,6 +655,15 @@ function callTools(): Tool[] {
 
 function shareTools(): Tool[] {
   return [
+    {
+      group: "core",
+      spec: {
+        name: "phone_notifications",
+        description: "Read notifications MausDroid has captured from the apps the person chose (e.g. Meta's Muse) — newest first. Read-only: MausDroid never acts in those apps.",
+        inputSchema: obj({ app: str("App name to filter by, e.g. Muse"), since_hours: { type: "number", description: "Only the last N hours" }, limit: { type: "number" } }),
+      },
+      run: async (_c, i) => JSON.stringify(phoneNotes.recent({ app: i.app ? String(i.app) : undefined, sinceHours: Number(i.since_hours) || undefined, limit: Math.min(200, Number(i.limit) || 50) }).map(({ id, key, pkg, ...n }) => n), null, 1),
+    },
     {
       group: "core",
       spec: {
