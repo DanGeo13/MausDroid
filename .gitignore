@@ -16,3 +16,4 @@ android/app/src/main/assets/engine-version.txt
 .mausdroid-data/
 relay/.wrangler/
 *.apk
+android/.kotlin/
