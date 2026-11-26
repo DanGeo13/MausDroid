@@ -8,6 +8,7 @@ import { getSecret } from "./secrets.ts";
 import { findClaudeKey, install, programCommand, programEnv, workDir } from "./subscriptions.ts";
 import { CODE_REPO } from "./selfupdate.ts";
 import { terminalText } from "./util.ts";
+import { dataPath } from "./store.ts";
 export { terminalText };
 
 /**
@@ -230,6 +231,81 @@ export async function addSecret(name: string, value: string) {
       throw new Error("That isn't a Codex auth.json file.");
     }
   }
+  if (name === "OPENAI_API_KEY" && !/^sk-[A-Za-z0-9_-]{20,}$/.test(v)) throw new Error("That doesn't look like an OpenAI API key (they start with sk-).");
   if (!v) throw new Error("Empty.");
   await saveRepoSecret(name, `${v}\n`);
+}
+
+// ---------------- Connect: a ChatGPT (Codex) login for cloud builds ----------------
+
+let codexState: ConnectState = { stage: "idle" };
+let codexChild: ChildProcess | null = null;
+export const codexConnectState = () => codexState;
+const setCodex = (p: Partial<ConnectState>) => {
+  codexState = { ...codexState, ...p };
+  emit("improve.changed", {});
+};
+
+/** A separate Codex login just for cloud builds (the phone's own ChatGPT sign-in isn't touched). */
+export const codexCloudHome = () => path.dirname(dataPath("subs", "codex-cloud", ".keep"));
+
+/** Signs in to ChatGPT with the official Codex program (its own folder), then saves the login to GitHub as CODEX_AUTH_JSON. */
+export async function startCodexConnect(openUrl: (url: string) => Promise<void>) {
+  if (!getSecret("github")) throw new Error("Save a GitHub token first (Settings → Memory → GitHub token).");
+  codexChild?.kill();
+  setCodex({ stage: "signing-in", message: "Opening the ChatGPT sign-in page…", loginUrl: undefined, needsCode: false });
+  try {
+    await install("chatgpt");
+  } catch (e) {
+    return setCodex({ stage: "error", message: `The Codex program couldn't be set up on this phone: ${(e as Error).message}` });
+  }
+  const home = codexCloudHome();
+  fs.mkdirSync(home, { recursive: true });
+  fs.rmSync(path.join(home, "auth.json"), { force: true });
+  const [cmd, args] = programCommand("chatgpt", ["login"]);
+  const c = spawn(cmd, args, { cwd: workDir(), env: { ...programEnv("chatgpt"), CODEX_HOME: home } });
+  codexChild = c;
+  let log = "";
+  let opened = false;
+  const giveUp = setTimeout(() => {
+    if (codexState.stage !== "signing-in") return;
+    c.kill();
+    setCodex({ stage: "error", message: `The ChatGPT sign-in didn't finish within 5 minutes${lastLines(log) ? ` (Codex said: “${lastLines(log)}”)` : ""}. Tap Connect with ChatGPT to try again.`, loginUrl: undefined });
+  }, Number(process.env.MAUSDROID_CODEX_CONNECT_MS ?? 300_000));
+  const onData = (d: Buffer) => {
+    log = (log + terminalText(d.toString("utf8"))).slice(-8000);
+    const url = log.match(/https:\/\/auth\.openai\.com\/[^\s"'<>]+/)?.[0];
+    if (url && !opened) {
+      opened = true;
+      setCodex({ loginUrl: url, message: "Sign in on the ChatGPT page that opened. MausDroid finishes by itself when you're done." });
+      void openUrl(url).catch(() => {});
+    }
+  };
+  c.stdout?.on("data", onData);
+  c.stderr?.on("data", onData);
+  c.on("error", (e) => setCodex({ stage: "error", message: `The Codex program couldn't start on this phone (${e.message}).` }));
+  c.on("close", (code) => {
+    clearTimeout(giveUp);
+    if (codexChild === c) codexChild = null;
+    if (codexState.stage !== "signing-in") return;
+    const auth = path.join(home, "auth.json");
+    if (code === 0 && fs.existsSync(auth)) {
+      setCodex({ stage: "saving", message: "Saving the ChatGPT login to GitHub…", loginUrl: undefined });
+      void saveRepoSecret("CODEX_AUTH_JSON", fs.readFileSync(auth, "utf8"))
+        .then(() => setCodex({ stage: "done", message: "Connected ✓ — cloud builds can use Codex with your ChatGPT subscription." }))
+        .catch((e) => setCodex({ stage: "error", message: (e as Error).message }));
+    } else setCodex({ stage: "error", message: `The ChatGPT sign-in didn't finish${lastLines(log) ? ` (Codex said: “${lastLines(log)}”)` : ` (exit ${code})`}. Tap Connect with ChatGPT to try again.`, loginUrl: undefined });
+  });
+}
+
+export function cancelCodexConnect() {
+  codexChild?.kill();
+  codexChild = null;
+  setCodex({ stage: "idle", message: undefined, loginUrl: undefined });
+}
+
+/** Before a Codex cloud build: send the newest copy of the cloud login (if there is one). */
+export async function refreshCodexSecret() {
+  const auth = path.join(codexCloudHome(), "auth.json");
+  if (fs.existsSync(auth)) await saveRepoSecret("CODEX_AUTH_JSON", fs.readFileSync(auth, "utf8")).catch(() => {});
 }

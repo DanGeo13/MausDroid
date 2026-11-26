@@ -133,3 +133,53 @@ test("terminal screens are read as text: link whole, key never glued to the next
   const done = "\x1b[2GYour\x1b[7GOAuth\x1b[13Gtoken:\x1b[20Gsk-ant-oat01-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345\x1b[66GStore\x1b[72Gthis\r\r\n";
   assert.equal(s.findClaudeKey(u.terminalText(done)), "sk-ant-oat01-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345");
 });
+
+test("Connect with ChatGPT: a separate Codex login saved to GitHub; API key option", async () => {
+  const repoKey = nacl.box.keyPair();
+  const st = { secrets: {} };
+  const gh = http.createServer((req, res) => {
+    let b = "";
+    req.on("data", (d) => (b += d));
+    req.on("end", () => {
+      const send = (s, o) => (res.writeHead(s, { "content-type": "application/json" }), res.end(JSON.stringify(o ?? {})));
+      const u = new URL(req.url, "http://x").pathname;
+      if (u === "/repos/me/app/actions/secrets/public-key") return send(200, { key_id: "k1", key: Buffer.from(repoKey.publicKey).toString("base64") });
+      if (u === "/repos/me/app/actions/secrets" && req.method === "GET") return send(200, { secrets: Object.keys(st.secrets).map((name) => ({ name })) });
+      const m = u.match(/^\/repos\/me\/app\/actions\/secrets\/([A-Z_]+)$/);
+      if (m && req.method === "PUT") return (st.secrets[m[1]] = JSON.parse(b)), send(201, {});
+      send(404, {});
+    });
+  });
+  await new Promise((r) => gh.listen(0, "127.0.0.1", r));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-codex-"));
+  const bin = path.join(dir, "subs", "bin");
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(path.join(dir, "subs", "lib"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "subs", "lib", "ld-musl-aarch64.so.1"), "");
+  fs.writeFileSync(path.join(dir, "subs", "lib", "libstdc++.so.6"), "");
+  // Stand-in Codex: `login` prints the OpenAI page, then (after sign-in) saves auth.json in CODEX_HOME.
+  fs.writeFileSync(path.join(bin, "codex"), `#!/bin/sh
+if [ "$1" = "login" ]; then echo "Starting local login server on http://localhost:1455."; echo "If your browser did not open, navigate to this URL to authenticate:"; echo ""; echo "https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_x&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback"; sleep 1; mkdir -p "$CODEX_HOME"; printf '{"tokens":{"id_token":"cloud-login"}}' > "$CODEX_HOME/auth.json"; echo "Successfully logged in"; exit 0; fi
+exit 0
+`, { mode: 0o755 });
+  const e = await startEngine({ dir, env: { MAUSDROID_GITHUB_API: `http://127.0.0.1:${gh.address().port}`, MAUSDROID_CODE_REPO: "me/app" } });
+  try {
+    await e.call("/api/settings/github", "PUT", { token: "ghp_test" });
+    await e.call("/api/improve/cloud/codex/connect", "POST");
+    const d = await e.until(async () => ((await e.call("/api/improve/cloud")).data.codex.stage === "done" ? (await e.call("/api/improve/cloud")).data : null), "codex connected");
+    assert.match(d.codex.message, /Connected/);
+    assert.equal(openSealed(st.secrets.CODEX_AUTH_JSON.encrypted_value, repoKey), '{"tokens":{"id_token":"cloud-login"}}');
+    assert.equal(d.checklist.secrets.CODEX_AUTH_JSON, true);
+    // A separate login: the phone's own ChatGPT folder wasn't touched.
+    const own = fs.readdirSync(path.join(dir, "subs"), { recursive: true }).filter((f) => String(f).endsWith("auth.json"));
+    assert.deepEqual(own.map(String), [path.join("codex-cloud", "auth.json")]);
+
+    // API key instead: checked first.
+    assert.equal((await e.call("/api/improve/cloud/secret", "POST", { name: "OPENAI_API_KEY", value: "hello" })).status, 400);
+    assert.equal((await e.call("/api/improve/cloud/secret", "POST", { name: "OPENAI_API_KEY", value: "sk-proj-abcdefghijklmnopqrstuvwxyz123456" })).status, 200);
+    assert.equal(openSealed(st.secrets.OPENAI_API_KEY.encrypted_value, repoKey), "sk-proj-abcdefghijklmnopqrstuvwxyz123456\n");
+  } finally {
+    await e.stop();
+    gh.close();
+  }
+});

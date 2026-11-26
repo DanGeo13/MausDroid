@@ -127,16 +127,18 @@ function FileSecret({ name, onDone }: { name: string; onDone: () => void }) {
 function CloudSetup() {
   const [d, setD] = useState<any | null>(null);
   const [code, setCode] = useState("");
+  const [apiKey, setApiKey] = useState("");
   const load = () => api("improve/cloud").then(setD).catch((e) => setD({ error: (e as Error).message }));
   useEffect(() => {
     void load();
   }, []);
   const busy = d?.connect?.stage === "signing-in" || d?.connect?.stage === "saving";
+  const codexBusy = d?.codex?.stage === "signing-in" || d?.codex?.stage === "saving";
   useEffect(() => {
-    if (!busy) return;
+    if (!busy && !codexBusy) return;
     const t = setInterval(load, 2000);
     return () => clearInterval(t);
-  }, [busy]);
+  }, [busy, codexBusy]);
   if (!d) return <p class="muted">Checking cloud build set-up…</p>;
   if (d.error) return <p class="help">⚠️ {d.error}</p>;
   const c = d.checklist;
@@ -195,7 +197,47 @@ function CloudSetup() {
           Pick the file <b>update-signing-key.pem</b>: <FileSecret name="MAUSDROID_UPDATE_KEY_PEM" onDone={load} />
         </p>
       ) : null}
-      <Row ok={has("CODEX_AUTH_JSON") || has("OPENAI_API_KEY")}>Codex key (only if you choose GitHub + Codex)</Row>
+      <Row ok={has("CODEX_AUTH_JSON") || has("OPENAI_API_KEY")}>
+        Codex key (only if you choose GitHub + Codex){" "}
+        {d.codex?.stage !== "signing-in" && d.codex?.stage !== "saving" ? (
+          <button class="btn small" disabled={!c.githubToken} onClick={() => act("improve/cloud/codex/connect")}>
+            {has("CODEX_AUTH_JSON") ? "Reconnect ChatGPT" : "Connect with ChatGPT"}
+          </button>
+        ) : null}
+      </Row>
+      {d.codex?.stage && d.codex.stage !== "idle" && d.codex.message ? <p class="help">{d.codex.message}</p> : null}
+      {d.codex?.loginUrl && d.codex.stage === "signing-in" ? (
+        <p class="help">
+          <a href={d.codex.loginUrl} target="_blank" rel="noopener">
+            Open the ChatGPT sign-in page
+          </a>{" "}
+          <button class="btn secondary small" onClick={() => act("improve/cloud/codex/cancel")}>
+            Cancel
+          </button>
+        </p>
+      ) : null}
+      <details class="help">
+        <summary>Or use an OpenAI API key (doesn't expire like a ChatGPT login; billed by OpenAI per use)</summary>
+        <div class="inline" style={{ marginTop: ".4rem" }}>
+          <input type="password" value={apiKey} onInput={(e) => setApiKey((e.target as HTMLInputElement).value)} placeholder="sk-…" autocomplete="off" />
+          <button
+            class="btn small"
+            disabled={!apiKey.trim()}
+            onClick={async () => {
+              try {
+                await api("improve/cloud/secret", { body: { name: "OPENAI_API_KEY", value: apiKey } });
+                toast("Saved to GitHub ✓");
+                setApiKey("");
+              } catch (e) {
+                toast(`⚠️ ${(e as Error).message}`);
+              }
+              load();
+            }}
+          >
+            Save
+          </button>
+        </div>
+      </details>
       <button class="btn secondary small" onClick={load}>
         Check again
       </button>

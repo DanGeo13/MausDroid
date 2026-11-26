@@ -16,6 +16,7 @@ import { addRunValidator } from "./scheduler.ts";
 import { looksSecret, similar } from "./audit.ts";
 import * as selfupdate from "./selfupdate.ts";
 import { assistantExamples } from "./phone-notifications.ts";
+import { refreshCodexSecret } from "./cloud-keys.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
 
 /**
@@ -501,6 +502,7 @@ async function startCodeBuild(p: Proposal, direct: boolean): Promise<Proposal> {
   const agent = codingAgent();
   if (!agent) return patch(p.id, { status: "shown", result: "Building is switched off (Improvements → Settings → Coding platform), so this is kept as a suggestion." })!;
   try {
+    if (agent === "codex") await refreshCodexSecret();
     await selfupdate.startBuild(p.id, requestText(p), "", 1, agent);
   } catch (e) {
     return patch(p.id, { status: "failed", decidedAt: now(), result: `Couldn't start the cloud build: ${(e as Error).message}` })!;

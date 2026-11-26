@@ -550,7 +550,16 @@ route("POST", "/api/improve/run", () => {
 });
 route("POST", "/api/improve/reveal", async () => json(await improve.revealDue(new Date(), true)));
 // Setting up cloud builds from the phone.
-route("GET", "/api/improve/cloud", async () => json({ checklist: await cloudKeys.checklist(), connect: cloudKeys.connectState() }));
+route("GET", "/api/improve/cloud", async () => json({ checklist: await cloudKeys.checklist(), connect: cloudKeys.connectState(), codex: cloudKeys.codexConnectState() }));
+route("POST", "/api/improve/cloud/codex/connect", async (req) => {
+  const opener = async (url: string) => {
+    if (req.via === "local" && bridgeAvailable()) await bridge("/open-url", { url });
+  };
+  if (!getSecret("github")) throw new HttpError(400, "Save a GitHub token first (Settings → Memory → GitHub token).");
+  void cloudKeys.startCodexConnect(opener).catch(() => {});
+  return json(cloudKeys.codexConnectState());
+});
+route("POST", "/api/improve/cloud/codex/cancel", () => (cloudKeys.cancelCodexConnect(), json(cloudKeys.codexConnectState())));
 route("POST", "/api/improve/cloud/connect", async (req) => {
   const opener = async (url: string) => {
     if (req.via === "local" && bridgeAvailable()) await bridge("/open-url", { url });
