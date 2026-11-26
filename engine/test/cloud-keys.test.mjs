@@ -120,3 +120,16 @@ test("Claude keys are read whole, even when wrapped, without the next words", as
   assert.equal(s.findClaudeKey("Your token is sk-ant-oat01-abcdefghijklmnopqrstuvwxyz (keep it)\nNEXTLINE"), "sk-ant-oat01-abcdefghijklmnopqrstuvwxyz");
   assert.equal(s.findClaudeKey("no key here"), null);
 });
+
+test("terminal screens are read as text: link whole, key never glued to the next word", async () => {
+  const { load } = await import("./_load.mjs");
+  const u = await load("src/util.ts");
+  const s = await load("src/subscriptions.ts");
+  const screen =
+    "\x1b[2GBrowser\x1b[10Gdidn't\x1b[17Gopen?\r\r\n\x1b]8;id=x;https://claude.ai/oauth/authorize?Abc123_-XyZ456def789GHI\x07\x1b[38;5;246mhttps://claude.ai/oauth/authorize?Abc123_-XyZ456def789GHI\x1b[39m\x1b]8;;\x07\r\r\n\x1b[2GPaste\x1b[8Gcode\x1b[13Ghere\r\r\n";
+  const t = u.terminalText(screen);
+  assert.match(t, /https:\/\/claude\.ai\/oauth\/authorize\?Abc123_-XyZ456def789GHI(\s|$)/);
+  assert.match(t, /Paste code here/);
+  const done = "\x1b[2GYour\x1b[7GOAuth\x1b[13Gtoken:\x1b[20Gsk-ant-oat01-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345\x1b[66GStore\x1b[72Gthis\r\r\n";
+  assert.equal(s.findClaudeKey(u.terminalText(done)), "sk-ant-oat01-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345");
+});

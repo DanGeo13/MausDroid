@@ -33,3 +33,15 @@ export function htmlToText(html: string): string {
     .replace(/\n\s*\n\s*/g, "\n\n")
     .trim();
 }
+
+/**
+ * Terminal output to plain text. The screen places words with "move to
+ * column N" codes instead of spaces, so cursor moves become spaces (a key
+ * must never get the next word glued on); colours and links are dropped.
+ */
+export const terminalText = (s: string) =>
+  s
+    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[[0-9;]*[GCHfd]/g, " ")
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\r/g, "");

@@ -1,10 +1,14 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import nacl from "tweetnacl";
 import { blake2b } from "blakejs";
 import { emit } from "./events.ts";
 import { getSecret } from "./secrets.ts";
 import { findClaudeKey, install, programCommand, programEnv, workDir } from "./subscriptions.ts";
 import { CODE_REPO } from "./selfupdate.ts";
+import { terminalText } from "./util.ts";
+export { terminalText };
 
 /**
  * Setting up cloud builds from the phone (nothing to install on a computer):
@@ -78,13 +82,15 @@ export interface ConnectState {
 }
 let state: ConnectState = { stage: "idle" };
 let child: ChildProcess | null = null;
+let inTerminal = false;
+let noLinkTimer: NodeJS.Timeout | null = null;
 let watchdog: NodeJS.Timeout | null = null;
 export const connectState = () => state;
 const set = (p: Partial<ConnectState>) => {
   state = { ...state, ...p };
   emit("improve.changed", {});
 };
-const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, "");
+const stripAnsi = terminalText;
 
 export async function startConnect(openUrl: (url: string) => Promise<void>) {
   if (!getSecret("github")) throw new Error("Save a GitHub token first (Settings → Memory → GitHub token).");
@@ -96,7 +102,26 @@ export async function startConnect(openUrl: (url: string) => Promise<void>) {
     return set({ stage: "error", message: `The Claude program couldn't be set up on this phone: ${(e as Error).message}` });
   }
   const [cmd, args] = programCommand("claude", ["setup-token"]);
-  const c = spawn(cmd, args, { cwd: workDir(), env: programEnv("claude") });
+  // `claude setup-token` only shows its sign-in link in a terminal: run it inside MausDroid's terminal helper.
+  const helper = process.env.MAUSDROID_NATIVE_DIR ? path.join(process.env.MAUSDROID_NATIVE_DIR, "libtsbridge.so") : process.env.MAUSDROID_PTY_HELPER;
+  inTerminal = Boolean(helper && fs.existsSync(helper));
+  const c = inTerminal ? spawn(helper!, ["pty", cmd, ...args], { cwd: workDir(), env: { ...programEnv("claude"), TERM: "xterm-256color" } }) : spawn(cmd, args, { cwd: workDir(), env: programEnv("claude") });
+  // A fresh Claude install shows welcome screens (theme, notes) first: press Enter until the link appears.
+  if (inTerminal) {
+    let nudges = 0;
+    const nudge = setInterval(() => {
+      if (state.stage !== "signing-in" || state.loginUrl || child !== c || ++nudges > 8) return clearInterval(nudge);
+      c.stdin?.write("\r");
+    }, Number(process.env.MAUSDROID_CONNECT_NUDGE_MS ?? 3000));
+  }
+  // Never wait silently: if no link shows up, say what the program printed.
+  if (noLinkTimer) clearTimeout(noLinkTimer);
+  noLinkTimer = setTimeout(() => {
+    if (state.stage !== "signing-in" || state.loginUrl) return;
+    const said = log.split("\n").map((l) => l.trim()).filter((l) => /[A-Za-z]{3}/.test(l)).slice(-4).join(" · ");
+    c.kill();
+    set({ stage: "error", message: `Claude's program didn't show a sign-in link${said ? ` (it said: ${said.slice(0, 300)})` : " (it printed nothing)"}. Tap Connect to try again, and send this message to your developer session if it keeps happening.` });
+  }, Number(process.env.MAUSDROID_CONNECT_LINK_MS ?? 25_000));
   child = c;
   let log = "";
   let opened = false;
@@ -138,7 +163,8 @@ export async function startConnect(openUrl: (url: string) => Promise<void>) {
 
 export function connectCode(code: string) {
   if (!child?.stdin) throw new Error("Nothing is waiting for a code. Tap Connect again.");
-  child.stdin.write(`${code.trim()}\n`);
+  // A terminal expects Enter as "\r"; a plain pipe a newline.
+  child.stdin.write(`${code.trim()}${inTerminal ? "\r" : "\n"}`);
   set({ message: "Checking the code…", needsCode: false });
   if (watchdog) clearTimeout(watchdog);
   watchdog = setTimeout(() => {
