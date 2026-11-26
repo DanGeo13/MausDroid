@@ -1,6 +1,8 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
+import { CopyButton } from "./copybutton.tsx";
+import { markdownToPlain } from "./copy.ts";
 import { IconBack } from "./icons.tsx";
 
 /** The full Morning Brief (notifications just link here). */
@@ -243,6 +245,7 @@ export function Briefing({ initialId, onBack }: { initialId?: string; onBack: ()
               </div>
               <div style={{ marginTop: ".6rem" }}>
                 <Markdown text={b.summary} />
+                <CopyButton text={markdownToPlain(b.summary ?? "")} />
               </div>
             </div>
             {b.warnings.length ? (
@@ -282,6 +285,7 @@ export function Briefing({ initialId, onBack }: { initialId?: string; onBack: ()
                     </span>
                   </p>
                   {b.staffUpdate.summary ? <Markdown text={b.staffUpdate.summary} /> : null}
+                  <CopyButton text={markdownToPlain(b.staffUpdate.summary ?? "")} />
                 </>
               ) : (
                 <p class="muted">This week's Staff Update wasn't found.</p>

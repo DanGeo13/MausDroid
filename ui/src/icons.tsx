@@ -16,3 +16,5 @@ export const IconMic = I("M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM1
 export const IconClip = I("M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5");
 export const IconCamera = I("M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z");
 export const IconX = I("M18 6L6 18M6 6l12 12");
+export const IconCopy = I("M9 9h11v11H9zM5 15H4V4h11v1");
+export const IconCheck = I("M20 6L9 17l-5-5");

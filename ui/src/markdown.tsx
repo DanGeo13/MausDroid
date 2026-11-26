@@ -1,3 +1,4 @@
+import { copyWithFeedback } from "./copy.ts";
 // Small, safe Markdown renderer: everything is escaped first, then a few
 // patterns become formatting. Bot replies never inject raw HTML.
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -16,7 +17,7 @@ export function renderMarkdown(md: string): string {
   const parts = md.split(/```/);
   parts.forEach((part, i) => {
     if (i % 2 === 1) {
-      out.push(`<pre><code>${esc(part.replace(/^[a-z0-9+-]*\n/i, ""))}</code></pre>`);
+      out.push(`<pre><button type="button" class="code-copy" aria-label="Copy code" title="Copy code">Copy</button><code>${esc(part.replace(/^[a-z0-9+-]*\n/i, ""))}</code></pre>`);
       return;
     }
     const lines = part.split("\n");
@@ -62,5 +63,15 @@ export function renderMarkdown(md: string): string {
 }
 
 export function Markdown({ text }: { text: string }) {
-  return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />;
+  // The "Copy" button on a code block copies only that code.
+  const onClick = async (e: MouseEvent) => {
+    const btn = (e.target as HTMLElement | null)?.closest?.(".code-copy") as HTMLElement | null;
+    if (!btn) return;
+    const code = btn.parentElement?.querySelector("code")?.textContent ?? "";
+    if (await copyWithFeedback(code)) {
+      btn.textContent = "✓ Copied";
+      setTimeout(() => (btn.textContent = "Copy"), 1500);
+    }
+  };
+  return <div onClick={onClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />;
 }

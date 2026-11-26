@@ -4,6 +4,8 @@ import { Markdown } from "./markdown.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
 import { IconBack, IconCamera, IconClip, IconEdit, IconMic, IconSend, IconStop, IconX } from "./icons.tsx";
 import { fileIcon, fileSize, uploadFile, type Attachment } from "./files.ts";
+import { CopyButton, CopyMenu } from "./copybutton.tsx";
+import { cardCopyText, messageCopyText } from "./copy.ts";
 
 /** Bot picture: emoji on its colour. `size` in rem so it follows the text-size setting. */
 /**
@@ -61,7 +63,10 @@ export function CardView({ card, onDone }: { card: Card; onDone?: () => void }) 
   if (card.kind === "question")
     return (
       <div class="card">
-        <h3>❓ {card.title}</h3>
+        <div class="card-head">
+          <h3>❓ {card.title}</h3>
+          <CopyButton text={cardCopyText(card)} />
+        </div>
         {card.options?.length ? (
           <div class="actions">
             {card.options.map((o) => (
@@ -81,7 +86,10 @@ export function CardView({ card, onDone }: { card: Card; onDone?: () => void }) 
     );
   return (
     <div class="card">
-      <h3>✋ Needs your OK: {card.title}</h3>
+      <div class="card-head">
+        <h3>✋ Needs your OK: {card.title}</h3>
+        <CopyButton text={cardCopyText(card)} />
+      </div>
       {card.detail ? <pre>{card.detail}</pre> : null}
       <div class="actions">
         <button class="btn small" onClick={() => send({ allow: true })}>
@@ -106,17 +114,20 @@ function ToolLine({ m }: { m: Msg }) {
   const icon = t.status === "running" ? "⏳" : t.status === "denied" ? "🚫" : t.isError ? "⚠️" : "✓";
   const nice = t.name.replace(/^composio__COMPOSIO_/, "apps · ").replace(/^composio__/, "apps · ").replace(/_/g, " ").toLowerCase();
   return (
-    <button class={`tool ${open ? "open" : ""}`} onClick={() => setOpen(!open)}>
-      <span>
-        {icon} {nice}
-      </span>
-      {open ? (
-        <pre>
-          {JSON.stringify(t.input, null, 1)}
-          {t.result ? `\n\n→ ${t.result}` : ""}
-        </pre>
-      ) : null}
-    </button>
+    <div class="tool-row">
+      <button class={`tool ${open ? "open" : ""}`} onClick={() => setOpen(!open)}>
+        <span>
+          {icon} {nice}
+        </span>
+        {open ? (
+          <pre>
+            {JSON.stringify(t.input, null, 1)}
+            {t.result ? `\n\n→ ${t.result}` : ""}
+          </pre>
+        ) : null}
+      </button>
+      <CopyButton text={messageCopyText(m)} />
+    </div>
   );
 }
 
@@ -270,15 +281,18 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
           if (m.role === "note")
             return [
               sep,
-              <div class="note" key={m.id}>
-                {m.text}
-              </div>,
+              <CopyMenu class="note-row" key={m.id} text={messageCopyText(m)}>
+                <div class="note">{m.text}</div>
+                <CopyButton text={messageCopyText(m)} />
+              </CopyMenu>,
             ];
           if (m.role === "assistant" && !m.text && m.status !== "streaming") return sep;
           if (m.role === "assistant" && !m.text) return sep;
+          // Copy is offered once a reply has finished streaming.
+          const copyable = m.role === "assistant" && m.status === "streaming" ? "" : messageCopyText(m);
           return [
             sep,
-            <div class={`msg ${m.role === "user" ? "mine" : ""}`} key={m.id}>
+            <CopyMenu class={`msg ${m.role === "user" ? "mine" : ""}`} key={m.id} text={copyable} mine={m.role === "user"}>
               <div class={`bubble ${m.status === "error" ? "error" : ""}`}>
                 {m.source && m.source !== "you" ? <div class="source">⏰ {m.source}</div> : null}
                 {m.attachments?.length ? (
@@ -297,8 +311,11 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
                   </div>
                 ) : null}
               </div>
-              <div class="stamp">{time(m.at)}</div>
-            </div>,
+              <div class="stamp-row">
+                <span class="stamp">{time(m.at)}</span>
+                <CopyButton text={copyable} />
+              </div>
+            </CopyMenu>,
           ];
         })}
         {busy && !(messages[messages.length - 1]?.status === "streaming" && messages[messages.length - 1]?.text) ? (

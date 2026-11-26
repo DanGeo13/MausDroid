@@ -182,3 +182,24 @@ input[type="range"] { padding: 0; accent-color: var(--accent); background: trans
 .row-detail summary { cursor: pointer; }
 .tool-row { padding: .55rem 0; border-bottom: 1px solid var(--panel2); }
 .tool-row .seg button { font-size: .78rem; }
+
+/* Copy buttons: always visible (no hover on a phone), 44 px tall. */
+.bubble { -webkit-user-select: text; user-select: text; }
+.copy-host { position: relative; }
+.stamp-row { display: flex; align-items: center; gap: .2rem; }
+.msg.mine .stamp-row { flex-direction: row-reverse; }
+.copy-btn { border: 0; background: transparent; color: var(--muted); width: 2.75rem; height: 2.75rem; min-width: 32px; min-height: 32px; border-radius: 50%; display: inline-grid; place-items: center; flex: none; padding: 0; }
+.copy-btn svg { width: 1.15rem; height: 1.15rem; }
+.copy-btn:active { background: var(--accent-soft); }
+.copy-btn.done { color: var(--ok); }
+.tool-row, .note-row, .card-head { display: flex; align-items: center; gap: .2rem; }
+.tool-row { align-self: flex-start; max-width: 100%; }
+.note-row { align-self: center; }
+.card-head { justify-content: space-between; } .card-head h3 { margin: 0; }
+.bubble pre { position: relative; }
+.code-copy { position: sticky; float: right; top: 0; margin: 0 0 .3rem .5rem; min-height: 32px; min-width: 32px; padding: .25rem .7rem; border: 0; border-radius: .6rem; background: var(--panel2); color: var(--text); font-size: .78rem; font-weight: 600; }
+.menu-backdrop { position: fixed; inset: 0; z-index: 40; }
+.copy-menu { position: absolute; top: 50%; left: 1rem; z-index: 41; background: var(--raised); color: var(--text); border-radius: .8rem; box-shadow: 0 8px 24px rgba(0,0,0,.3), inset 0 0 0 1px var(--line); overflow: hidden; }
+.copy-menu.mine { left: auto; right: 1rem; }
+.copy-menu button { border: 0; background: transparent; color: inherit; display: flex; align-items: center; gap: .5rem; padding: .8rem 1.2rem; min-height: 2.75rem; font-size: 1rem; }
+.copy-menu svg { width: 1.1rem; height: 1.1rem; }
