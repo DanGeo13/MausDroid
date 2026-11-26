@@ -37,7 +37,7 @@ function args(run) {
     if (run.model && run.model !== "default") a.push("-m", run.model);
     return ["gemini", a];
   }
-  const base = ["exec", "--json", "--skip-git-repo-check", "-c", `mcp_servers.mausdroid.url="${run.mcpUrl}"`, "-c", `mcp_servers.mausdroid.bearer_token="${run.mcpToken}"`];
+  const base = ["exec", "--json", "--skip-git-repo-check", "-c", `mcp_servers.mausdroid.url="${run.mcpUrl}"`, "-c", `mcp_servers.mausdroid.bearer_token_env_var="MAUSDROID_MCP_TOKEN"`];
   if (run.model && run.model !== "default") base.push("-m", run.model);
   for (const img of run.images ?? []) base.push("-i", img);
   return ["codex", run.resume ? ["exec", "resume", run.resume, ...base.slice(1), run.prompt] : [...base, `${run.systemPrompt}\n\n${run.prompt}`]];
@@ -70,7 +70,7 @@ http
       }
       for (const img of run.images ?? []) if (!path.resolve(WORK, img).startsWith(path.resolve(WORK) + path.sep)) return res.writeHead(400).end("bad image path");
       const [cmd, a] = args(run);
-      const child = spawn(cmd, a, { cwd: WORK, shell: process.platform === "win32", stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(cmd, a, { cwd: WORK, shell: process.platform === "win32", env: { ...process.env, MAUSDROID_MCP_TOKEN: String(run.mcpToken ?? "") }, stdio: ["ignore", "pipe", "pipe"] });
       res.writeHead(200, { "content-type": "application/x-ndjson" });
       child.stdout.pipe(res, { end: false });
       let err = "";

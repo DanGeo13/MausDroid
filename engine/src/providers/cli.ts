@@ -51,7 +51,8 @@ export function cliArgs(run: CliRun): string[] {
   }
   {
     const base = ["exec", "--json", "--skip-git-repo-check", "-c", `mcp_servers.mausdroid.url="${run.mcpUrl}"`,
-      "-c", `mcp_servers.mausdroid.bearer_token="${run.mcpToken}"`];
+      // Newer Codex takes the key from an environment variable (MAUSDROID_MCP_TOKEN, set when it starts), not the command line.
+      "-c", `mcp_servers.mausdroid.bearer_token_env_var="MAUSDROID_MCP_TOKEN"`];
     if (run.model && run.model !== "default") base.push("-m", run.model);
     for (const img of run.images ?? []) base.push("-i", img);
     return run.resume ? ["exec", "resume", run.resume, ...base.slice(1), run.prompt] : [...base, `${run.systemPrompt}\n\n${run.prompt}`];
@@ -129,7 +130,7 @@ async function* runOnComputer(p: ProviderConfig, run: CliRun, signal: AbortSigna
 
 async function* runOnPhone(sub: SubId, run: CliRun, signal: AbortSignal): AsyncGenerator<string> {
   const [cmd, args] = programCommand(sub, cliArgs(run));
-  const child = spawn(cmd, args, { cwd: workDir(), env: programEnv(sub), stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(cmd, args, { cwd: workDir(), env: { ...programEnv(sub), MAUSDROID_MCP_TOKEN: run.mcpToken }, stdio: ["ignore", "pipe", "pipe"] });
   signal.addEventListener("abort", () => child.kill("SIGTERM"), { once: true });
   let stderr = "";
   child.stderr.on("data", (d) => (stderr = (stderr + d).slice(-4000)));
