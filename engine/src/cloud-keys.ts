@@ -83,6 +83,19 @@ export interface ConnectState {
 let state: ConnectState = { stage: "idle" };
 let child: ChildProcess | null = null;
 let inTerminal = false;
+/** What Claude's program printed after the code was sent (to spot its answer). */
+let afterCode = "";
+let codeSent = false;
+let lastLog = "";
+const hideKeys = (t: string) => t.replace(/sk-ant-[0-9A-Za-z_-]{6,}/g, "sk-ant-…(hidden)");
+const lastLines = (t: string, n = 5) =>
+  hideKeys(t)
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /[A-Za-z]{3}/.test(l) && !/^[╭╰│─\s]+$/.test(l))
+    .slice(-n)
+    .join(" · ")
+    .slice(0, 400);
 let noLinkTimer: NodeJS.Timeout | null = null;
 let watchdog: NodeJS.Timeout | null = null;
 export const connectState = () => state;
@@ -126,8 +139,13 @@ export async function startConnect(openUrl: (url: string) => Promise<void>) {
   let log = "";
   let opened = false;
   let saved = false;
+  afterCode = "";
+  codeSent = false;
   const onData = (d: Buffer) => {
-    log = (log + stripAnsi(d.toString("utf8"))).slice(-8000);
+    const text = stripAnsi(d.toString("utf8"));
+    log = (log + text).slice(-8000);
+    lastLog = log;
+    if (codeSent) afterCode = (afterCode + text).slice(-8000);
     const compact = log.replace(/\n(?=\S)/g, (m, off) => (/[A-Za-z0-9%&=._~:/?#-]$/.test(log.slice(0, off)) ? "" : m));
     const tok = findClaudeKey(log);
     if (tok && !saved) {
@@ -139,6 +157,16 @@ export async function startConnect(openUrl: (url: string) => Promise<void>) {
         .catch((e) => set({ stage: "error", message: (e as Error).message }))
         .finally(() => c.kill());
       return;
+    }
+    // Claude's answer to the code: in a terminal the program stays open after an error, so read it here.
+    if (codeSent && !saved && state.stage === "signing-in") {
+      const err = afterCode.split("\n").map((l) => l.trim()).find((l) => /✘|OAuth error|error:|wasn't accepted|expired|invalid code|denied/i.test(l));
+      if (err) {
+        if (watchdog) clearTimeout(watchdog);
+        set({ stage: "error", message: `${hideKeys(err).replace(/^✘\s*/, "")} Tap Connect to try again (each code works once).`, loginUrl: undefined, needsCode: false });
+        c.kill();
+        return;
+      }
     }
     const url = compact.match(/https:\/\/[^\s"'<>]+(oauth|authorize)[^\s"'<>]*/)?.[0];
     const needsCode = /paste|authorization code|enter.*code/i.test(log);
@@ -163,15 +191,25 @@ export async function startConnect(openUrl: (url: string) => Promise<void>) {
 
 export function connectCode(code: string) {
   if (!child?.stdin) throw new Error("Nothing is waiting for a code. Tap Connect again.");
+  const c = child;
+  afterCode = "";
+  codeSent = true;
   // A terminal expects Enter as "\r"; a plain pipe a newline.
-  child.stdin.write(`${code.trim()}${inTerminal ? "\r" : "\n"}`);
+  c.stdin!.write(`${code.trim()}${inTerminal ? "\r" : "\n"}`);
   set({ message: "Checking the code…", needsCode: false });
   if (watchdog) clearTimeout(watchdog);
+  // If Claude shows one more screen (e.g. "press Enter"), nudge once.
+  const nudge = setTimeout(() => {
+    if (state.stage === "signing-in" && child === c && inTerminal) c.stdin?.write("\r");
+  }, Number(process.env.MAUSDROID_CONNECT_AFTER_NUDGE_MS ?? 40_000));
   watchdog = setTimeout(() => {
+    clearTimeout(nudge);
     if (state.stage !== "signing-in") return;
+    const said = lastLines(afterCode || lastLog);
+    console.log(`[connect-claude] no key after the code; Claude's screen said: ${said}`);
     child?.kill();
-    set({ stage: "error", message: "Claude didn't answer within 90 seconds. Tap Connect to try again." });
-  }, 90_000);
+    set({ stage: "error", message: `Claude didn't finish within 2 minutes${said ? ` — its screen said: “${said}”` : " and printed nothing after the code"}. Tap Connect to try again with a new code, and send this message to your developer session if it happens again.` });
+  }, Number(process.env.MAUSDROID_CONNECT_CODE_MS ?? 120_000));
 }
 
 export function cancelConnect() {
