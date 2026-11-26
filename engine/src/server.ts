@@ -21,6 +21,7 @@ import * as callSession from "./call-session.ts";
 import * as share from "./share.ts";
 import * as botAdmin from "./bot-admin.ts";
 import * as selfupdate from "./selfupdate.ts";
+import * as cloudKeys from "./cloud-keys.ts";
 import * as pairing from "./pairing.ts";
 import { readMemory, writeMemory } from "./memory.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
@@ -503,6 +504,33 @@ route("POST", "/api/improve/run", () => {
   return json(runRoutineNow(r.id));
 });
 route("POST", "/api/improve/reveal", async () => json(await improve.revealDue(new Date(), true)));
+// Setting up cloud builds from the phone.
+route("GET", "/api/improve/cloud", async () => json({ checklist: await cloudKeys.checklist(), connect: cloudKeys.connectState() }));
+route("POST", "/api/improve/cloud/connect", async (req) => {
+  const opener = async (url: string) => {
+    if (req.via === "local" && bridgeAvailable()) await bridge("/open-url", { url });
+  };
+  if (!getSecret("github")) throw new HttpError(400, "Save a GitHub token first (Settings → Memory → GitHub token).");
+  void cloudKeys.startConnect(opener).catch(() => {});
+  return json(cloudKeys.connectState());
+});
+route("POST", "/api/improve/cloud/code", (req) => {
+  try {
+    cloudKeys.connectCode(String(req.body?.code ?? ""));
+  } catch (e) {
+    throw new HttpError(400, (e as Error).message);
+  }
+  return json(cloudKeys.connectState());
+});
+route("POST", "/api/improve/cloud/secret", async (req) => {
+  try {
+    await cloudKeys.addSecret(String(req.body?.name ?? ""), String(req.body?.value ?? ""));
+  } catch (e) {
+    throw new HttpError(400, (e as Error).message);
+  }
+  return json({ checklist: await cloudKeys.checklist() });
+});
+route("POST", "/api/improve/cloud/cancel", () => (cloudKeys.cancelConnect(), json(cloudKeys.connectState())));
 route("POST", "/api/improve/rollback", (req) => json(badRequest(() => {
   const r = selfupdate.rollBack(req.body?.version ? String(req.body.version) : undefined);
   improve.recordApplied(`Rolled back ${r.from} → ${r.to}`, `Went back from ${r.from} to ${r.to}.`, "code");

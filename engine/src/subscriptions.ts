@@ -235,6 +235,24 @@ const watchdogs = new Map<SubId, NodeJS.Timeout>();
 const viaPty = new Set<SubId>();
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, "").replace(/\r/g, "\n");
 
+/**
+ * Finds a Claude key (sk-ant-oat…) in program output. A key wrapped onto the
+ * next line(s) is joined, but only lines made purely of key characters, so
+ * the following text is never glued on.
+ */
+export function findClaudeKey(log: string): string | null {
+  const lines = log.split(/\r?\n/).map((l) => l.trim());
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/sk-ant-oat[0-9A-Za-z_-]{20,}/);
+    if (!m) continue;
+    let tok = m[0];
+    // Only if the key ran to the end of its line.
+    if (lines[i].endsWith(tok)) for (let j = i + 1; j < lines.length && /^[0-9A-Za-z_-]+$/.test(lines[j]) && tok.length < 400; j++) tok += lines[j];
+    return tok;
+  }
+  return null;
+}
+
 export async function signIn(id: SubId, openUrl: (url: string) => Promise<void>) {
   try {
     await install(id);
@@ -269,7 +287,7 @@ export async function signIn(id: SubId, openUrl: (url: string) => Promise<void>)
     const url = compact.match(/https:\/\/[^\s"'<>]+(oauth|authorize|auth\.openai\.com)[^\s"'<>]*/)?.[0];
     const needsCode = /paste|authorization code|enter.*code/i.test(log) && id !== "chatgpt";
     if (id === "claude") {
-      const tok = compact.match(/sk-ant-oat[0-9A-Za-z_-]{20,}/)?.[0];
+      const tok = findClaudeKey(log);
       if (tok) void setSecret("sub:claude:token", tok).then(() => set(id, { stage: "signed-in", message: "Signed in to Claude ✓", loginUrl: undefined, needsCode: false }));
     }
     set(id, { log: log.slice(-1500), ...(url ? { loginUrl: url } : {}), needsCode });

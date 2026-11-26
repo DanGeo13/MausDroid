@@ -100,6 +100,108 @@ function SuggestionCard({ p, onDone }: { p: any; onDone: () => void }) {
   );
 }
 
+/** Adds a key to GitHub from a file on the phone (encrypted on the phone first). */
+function FileSecret({ name, accept, onDone }: { name: string; accept: string; onDone: () => void }) {
+  const pick = async (e: Event) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    (e.target as HTMLInputElement).value = "";
+    if (!f) return;
+    try {
+      await api("improve/cloud/secret", { body: { name, value: await f.text() } });
+      toast("Saved to GitHub ✓");
+    } catch (err) {
+      toast(`⚠️ ${(err as Error).message}`);
+    }
+    onDone();
+  };
+  return (
+    <label class="btn secondary small" style={{ display: "inline-block" }}>
+      Add from file
+      <input type="file" accept={accept} hidden onChange={pick} />
+    </label>
+  );
+}
+
+/** Cloud builds set-up: a checklist and "Connect with Claude" (all from the phone). */
+function CloudSetup() {
+  const [d, setD] = useState<any | null>(null);
+  const [code, setCode] = useState("");
+  const load = () => api("improve/cloud").then(setD).catch((e) => setD({ error: (e as Error).message }));
+  useEffect(() => {
+    void load();
+  }, []);
+  const busy = d?.connect?.stage === "signing-in" || d?.connect?.stage === "saving";
+  useEffect(() => {
+    if (!busy) return;
+    const t = setInterval(load, 2000);
+    return () => clearInterval(t);
+  }, [busy]);
+  if (!d) return <p class="muted">Checking cloud build set-up…</p>;
+  if (d.error) return <p class="help">⚠️ {d.error}</p>;
+  const c = d.checklist;
+  const has = (n: string) => c.secrets?.[n];
+  const Row = ({ ok, children }: { ok: boolean | null | undefined; children: any }) => (
+    <div style={{ padding: ".25rem 0" }}>
+      {ok ? "✅" : ok === false ? "⬜" : "❔"} {children}
+    </div>
+  );
+  const act = async (path: string, body: object = {}) => {
+    try {
+      setD({ ...d, connect: await api(path, { body }) });
+    } catch (e) {
+      toast(`⚠️ ${(e as Error).message}`);
+    }
+    setTimeout(load, 800);
+  };
+  return (
+    <div class="section">
+      <h2>Cloud builds set-up</h2>
+      <p class="help">What program changes built in the cloud need, in your GitHub repository {c.repo}. Keys are stored as GitHub secrets — they can't be read back, only replaced.</p>
+      <Row ok={c.githubToken}>GitHub token on this phone</Row>
+      {c.problem ? <p class="help">⚠️ {c.problem}</p> : null}
+      <Row ok={has("CLAUDE_CODE_OAUTH_TOKEN")}>
+        Claude key for cloud builds{" "}
+        {!busy ? (
+          <button class="btn small" disabled={!c.githubToken} onClick={() => act("improve/cloud/connect")}>
+            {has("CLAUDE_CODE_OAUTH_TOKEN") ? "Reconnect" : "Connect with Claude"}
+          </button>
+        ) : null}
+      </Row>
+      {d.connect?.stage !== "idle" && d.connect?.message ? <p class="help">{d.connect.message}</p> : null}
+      {d.connect?.loginUrl && busy ? (
+        <p class="help">
+          <a href={d.connect.loginUrl} target="_blank" rel="noopener">
+            Open Claude's sign-in page
+          </a>
+        </p>
+      ) : null}
+      {d.connect?.needsCode ? (
+        <div class="inline">
+          <input value={code} onInput={(e) => setCode((e.target as HTMLInputElement).value)} placeholder="Paste the code from Claude's page" />
+          <button class="btn small" disabled={!code.trim()} onClick={() => (act("improve/cloud/code", { code }), setCode(""))}>
+            Send
+          </button>
+        </div>
+      ) : null}
+      {busy ? (
+        <button class="btn secondary small" onClick={() => act("improve/cloud/cancel")}>
+          Cancel
+        </button>
+      ) : null}
+      <Row ok={has("MAUSDROID_UPDATE_KEY_PEM")}>Update signing key (lets GitHub publish updates)</Row>
+      {has("MAUSDROID_UPDATE_KEY_PEM") === false ? (
+        <p class="help">
+          Pick the file <b>update-signing-key.pem</b>: <FileSecret name="MAUSDROID_UPDATE_KEY_PEM" accept=".pem,text/plain,application/x-pem-file,*/*" onDone={load} />
+        </p>
+      ) : null}
+      <Row ok={has("CODEX_AUTH_JSON") || has("OPENAI_API_KEY")}>Codex key (only if you choose GitHub + Codex)</Row>
+      <button class="btn secondary small" onClick={load}>
+        Check again
+      </button>
+    </div>
+  );
+}
+
 function Settings({ o, onDone }: { o: any; onDone: () => void }) {
   const [s, setS] = useState({ ...o.settings });
   const save = async () => {
@@ -266,7 +368,10 @@ export function Improve({ onBack, openBot }: { onBack: () => void; openBot: (id:
         {!o ? (
           <p class="muted">Loading…</p>
         ) : mode === "settings" ? (
-          <Settings o={o} onDone={() => (setMode("view"), load())} />
+          <>
+            <Settings o={o} onDone={() => (setMode("view"), load())} />
+            <CloudSetup />
+          </>
         ) : (
           <>
             <p class="help">
