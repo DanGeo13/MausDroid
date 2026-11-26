@@ -19,6 +19,7 @@ test("Claude and ChatGPT: sign in by login, then chat", async () => {
   // Stand-in Codex: `login` prints the OpenAI sign-in link and saves auth; `exec` answers.
   fs.writeFileSync(path.join(bin, "codex"), `#!/bin/sh
 if [ "$1" = "login" ]; then echo "Starting local login server on http://localhost:1455."; echo "If your browser did not open, navigate to this URL to authenticate:"; echo "https://auth.openai.com/oauth/authorize?client_id=x&redirect_uri=http%3A%2F%2Flocalhost%3A1455"; sleep 1; mkdir -p "$HOME/.codex"; echo '{}' > "$HOME/.codex/auth.json"; echo "Successfully logged in"; exit 0; fi
+for a in "$@"; do [ "$a" = "stale-thread" ] && { echo "Error: thread/resume: thread/resume failed: no rollout found for thread id stale-thread (code -32600)" >&2; exit 1; }; done
 echo '{"type":"thread.started","thread_id":"t1"}'
 for a in "$@"; do case "$a" in attachments/*) [ -f "$a" ] && echo '{"type":"item.completed","item":{"type":"agent_message","text":"I can open the picture"}}';; esac; done
 echo '{"type":"item.completed","item":{"type":"agent_message","text":"Hello from ChatGPT subscription"}}'
@@ -96,6 +97,16 @@ echo '{"type":"result","is_error":false,"session_id":"c1"}'
     const pic = await call("/api/files/json", "POST", { name: "photo.png", mime: "image/png", b64: Buffer.from("png").toString("base64") });
     await call(`/api/bots/${bots[0].id}/messages`, "POST", { text: "look", attachments: [pic.id] });
     await until(async () => (await call(`/api/bots/${bots[0].id}/messages`)).some((m) => m.text === "I can open the picture"), "codex got the picture");
+
+    // A saved conversation Codex no longer has: MausDroid starts a fresh one by itself.
+    await call(`/api/bots/${bots[0].id}`, "PATCH", { cliSession: "stale-thread" });
+    const before = (await call(`/api/bots/${bots[0].id}/messages`)).length;
+    await call(`/api/bots/${bots[0].id}/messages`, "POST", { text: "still there?" });
+    await until(async () => (await call(`/api/bots/${bots[0].id}/messages`)).slice(before).some((m) => m.text === "Hello from ChatGPT subscription"), "reply after a lost conversation");
+    const after = (await call(`/api/bots/${bots[0].id}/messages`)).slice(before);
+    assert.ok(after.some((m) => m.role === "note" && /fresh conversation/.test(m.text)), "says it started fresh");
+    assert.ok(!after.some((m) => m.status === "error"), "no error shown");
+    assert.equal((await call("/api/state")).bots.find((b) => b.id === bots[0].id).cliSession, "t1", "the new conversation is saved");
 
     // Signing out removes the login.
     await call("/api/subs/chatgpt/signout", "POST", {});

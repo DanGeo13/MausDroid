@@ -260,6 +260,9 @@ async function runTool(bot: Bot, tools: Tool[], call: Extract<Block, { type: "to
   }
 }
 
+/** Errors meaning a saved Claude Code / Codex conversation no longer exists. */
+export const STALE_SESSION = /no rollout found|thread\/resume failed|no conversation found|conversation .{0,40}not found|session .{0,40}not found|could not find (the )?(session|conversation)/i;
+
 async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: AbortSignal, attachments: Attachment[] = []) {
   // On the phone the program reaches MausDroid locally; a computer reaches it over Tailscale.
   const onPhone = p.runOn !== "computer" && isSignedIn(p.subId!);
@@ -276,8 +279,10 @@ async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: Abo
   let current: ReturnType<typeof addMessage> | null = null;
   let streaming: ReturnType<typeof addMessage> | null = null;
   let streamed = "";
-  try {
+  let produced = false;
+  const pass = async () => {
   for await (const ev of runCli(p, run, signal)) {
+    if (ev.kind !== "session") produced = true;
     if (ev.kind === "session" && ev.sessionId) updateBot(bot.id, { cliSession: ev.sessionId });
     else if (ev.kind === "delta" && ev.text) {
       if (!streaming) {
@@ -305,11 +310,25 @@ async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: Abo
       emit("message", { botId: bot.id, message: m });
     } else if (ev.kind === "error") throw new Error(ev.text);
   }
+  };
+  try {
+    try {
+      await pass();
+    } catch (e) {
+      // The earlier conversation can't be continued (Codex / Claude no longer has it): start a fresh one once.
+      if (!run.resume || produced || signal.aborted || !STALE_SESSION.test(errorText(e))) throw e;
+      updateBot(bot.id, { cliSession: undefined });
+      run.resume = undefined;
+      const note = addMessage(bot.id, { role: "note", text: "Started a fresh conversation — the earlier one couldn't be continued.", status: "done" });
+      emit("message", { botId: bot.id, message: note });
+      await pass();
+    }
   } finally {
     // Stopped or failed half-way: keep what was said so far.
-    if (streaming) {
-      patchMessage(bot.id, streaming.id, { text: streamed, status: signal.aborted ? "stopped" : "done" });
-      emit("message.updated", { botId: bot.id, messageId: streaming.id, text: streamed });
+    const half = streaming as ReturnType<typeof addMessage> | null; // set inside pass()
+    if (half) {
+      patchMessage(bot.id, half.id, { text: streamed, status: signal.aborted ? "stopped" : "done" });
+      emit("message.updated", { botId: bot.id, messageId: half.id, text: streamed });
       if (streamed) lastReply.set(bot.id, streamed);
     }
   }
