@@ -1,7 +1,7 @@
 export interface Bot {
   id: string; name: string; emoji: string; color: string; persona: string; providerId: string | null; model: string | null;
   approvalMode: "ask-risky" | "ask-all" | "auto"; tools: { web: boolean; browser: boolean; apps: boolean; phone: boolean };
-  skills: string[]; alwaysAllow?: string[]; pinned: boolean; hidden: boolean; unread: number; busy?: boolean; last?: Msg | null; lastMessageAt?: string;
+  skills: string[]; alwaysAllow?: string[]; disabledTools?: string[]; pinned: boolean; hidden: boolean; unread: number; busy?: boolean; last?: Msg | null; lastMessageAt?: string;
 }
 export interface Msg {
   id: string; role: "user" | "assistant" | "tool" | "note"; text: string; at: string; source?: string;

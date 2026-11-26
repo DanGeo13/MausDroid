@@ -1,5 +1,5 @@
 import type { ToolSpec } from "../types.ts";
-import type { Bot } from "../bots.ts";
+import { getBot, listBots, type Bot } from "../bots.ts";
 import { bridge, bridgeAvailable } from "../bridge.ts";
 import { webFetch, webSearch, tailnetFetch } from "./web.ts";
 import { notifyUser } from "../notify.ts";
@@ -19,6 +19,8 @@ import { describeLocationError, getLocation } from "../location.ts";
 import * as calls from "../calls.ts";
 import * as improve from "../improve.ts";
 import * as share from "../share.ts";
+import * as botAdmin from "../bot-admin.ts";
+import { saveSkill } from "../skills.ts";
 import { listSkills, readSkill, readSkillFile } from "../skills.ts";
 import { callComposio, composioTools } from "../composio.ts";
 import fs from "node:fs";
@@ -42,6 +44,8 @@ interface Tool {
   risk?: (input: any) => string | null;
   /** Ask even in "never ask" mode (e.g. changing or deleting a routine). */
   alwaysAsk?: boolean;
+  /** MausDroid admin: Improver may use it without asking (you gave it admin rights). */
+  admin?: boolean;
   /** The type of access, for "Always allow this type" (default: the tool's name). */
   permission?: (input: any) => { key: string; label: string };
   run: (ctx: ToolContext, input: any) => Promise<ToolResult | string>;
@@ -206,15 +210,43 @@ const builtins: Tool[] = [
   },
 ];
 
+/** Tools only some bots get: calling (Maus), editing bots (Maus, Improver), admin (Improver). */
+const ONLY_IMPROVER = /^(improve_|routine_admin_|skill_save$|tool_list$)/;
+const ONLY_MAUS_OR_IMPROVER = /^bot_(list|edit)$/;
+function mayHave(bot: Bot, name: string) {
+  if (name === "call_user") return calls.isCallBot(bot.id);
+  if (ONLY_IMPROVER.test(name)) return improve.isImprover(bot.id);
+  if (ONLY_MAUS_OR_IMPROVER.test(name)) return improve.isImprover(bot.id) || calls.callBot()?.id === bot.id;
+  return true;
+}
+export function onlyFor(name: string): string | null {
+  if (name === "call_user") return "Maus";
+  if (ONLY_IMPROVER.test(name)) return "Improver";
+  if (ONLY_MAUS_OR_IMPROVER.test(name)) return "Maus and Improver";
+  return null;
+}
+
+/** Every built-in tool, for the bot editor and Settings → Tools. */
+export function toolCatalog() {
+  return allBuiltins().map((t) => ({
+    name: t.spec.name,
+    description: t.spec.description,
+    group: t.group,
+    risky: Boolean(t.alwaysAsk || t.risk || WRITE_WORDS.test(t.spec.name.replace(/^(web|skill|memory|routine)_(read|list|search|fetch)$/, ""))),
+    onlyFor: onlyFor(t.spec.name),
+  }));
+}
+
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools(), ...shareTools()])];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools(), ...shareTools(), ...adminTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
   // Only the call bot (Maus) can phone the person.
-  const allowed = list.filter((t) => (t.spec.name !== "call_user" || calls.isCallBot(bot.id)) && (!t.spec.name.startsWith("improve_") || improve.isImprover(bot.id)));
+  const off = new Set(bot.disabledTools ?? []);
+  const allowed = list.filter((t) => mayHave(bot, t.spec.name) && !off.has(t.spec.name));
   list.length = 0;
   list.push(...allowed);
   if (bot.tools.apps) {
@@ -233,6 +265,7 @@ export async function toolsFor(bot: Bot): Promise<Tool[]> {
           },
           run: async (_c, input) => callComposio(spec.name, input),
         });
+      for (let i = list.length - 1; i >= 0; i--) if (off.has(list[i].spec.name)) list.splice(i, 1);
     } catch {
       /* Composio unreachable: the bot works without apps this turn */
     }
@@ -692,6 +725,110 @@ function improveTools(): Tool[] {
   ];
 }
 
+// ---------------- Editing bots (Maus with your OK; Improver as admin) and Improver admin ----------------
+
+function adminTools(): Tool[] {
+  return [
+    {
+      group: "core",
+      admin: true,
+      spec: { name: "bot_list", description: "List all bots with their instructions, AI and model, tool switches, tools switched off, skills and approval setting.", inputSchema: obj({}) },
+      run: async () => JSON.stringify(listBotsForTools().map(botAdmin.botSummary), null, 1),
+    },
+    {
+      group: "core",
+      admin: true,
+      alwaysAsk: true,
+      spec: {
+        name: "bot_edit",
+        description: "Change another bot (or yourself): name, emoji, instructions (persona), AI provider and model, tool switches, single tools on/off, skills, approval setting (not your own). Give only what changes. Every change can be undone in Settings → Tools.",
+        inputSchema: obj(
+          {
+            bot_id: str("Bot id or name"),
+            name: str("New name"),
+            emoji: str("New emoji"),
+            persona: str("New instructions (the whole text)"),
+            provider_id: str("AI provider id (e.g. claude, chatgpt, local) or empty for the default"),
+            model: str("Model id, or empty for the provider's default"),
+            tools: { type: "object", description: "Tool switches: {web, browser, apps, phone} true/false" },
+            enable_tools: { type: "array", items: { type: "string" }, description: "Single tools to switch on (names from tool_list / Settings → Tools)" },
+            disable_tools: { type: "array", items: { type: "string" }, description: "Single tools to switch off" },
+            skills: { type: "array", items: { type: "string" }, description: "Skills it may use (empty = all)" },
+            approval_mode: { type: "string", enum: ["ask-risky", "ask-all", "auto"] },
+          },
+          ["bot_id"],
+        ),
+      },
+      risk: () => "Change a bot", // the approval card shows the exact before → after (see gate)
+      permission: () => ({ key: "bots:edit", label: "changing other bots" }),
+      run: async (c, i) => {
+        const ch = botAdmin.applyBotEdit(c.bot, i);
+        return `Changed ${ch.botName} (change ${ch.id}, can be undone): ${Object.keys(ch.after).join(", ")}.`;
+      },
+    },
+    {
+      group: "core",
+      admin: true,
+      spec: { name: "tool_list", description: "Every built-in tool with what it does, whether it can change things, and which bots have it switched off.", inputSchema: obj({}) },
+      run: async () => JSON.stringify(toolCatalog().map((t) => ({ ...t, offFor: listBotsForTools().filter((b) => (b.disabledTools ?? []).includes(t.name)).map((b) => b.name) })), null, 1),
+    },
+    {
+      group: "core",
+      admin: true,
+      spec: { name: "routine_admin_list", description: "All routines of every bot (full details).", inputSchema: obj({}) },
+      run: async () => JSON.stringify(listRoutines().map((r) => ({ ...routineDetails(r), bot: getBotName(r.botId) })), null, 1),
+    },
+    {
+      group: "core",
+      admin: true,
+      spec: {
+        name: "routine_admin_update",
+        description: "Change any bot's routine (keeps its id): title, prompt, schedule, enabled, timeout_minutes. Give only what changes.",
+        inputSchema: obj({ id: str("Routine id"), title: str("New title"), prompt: str("New prompt"), enabled: { type: "boolean" }, timeout_minutes: { type: "number" }, ...scheduleSchema, kind: { ...scheduleSchema.kind, description: "New schedule kind (only when changing the schedule)" } }, ["id"]),
+      },
+      run: async (_c, i) => {
+        const r = getRoutine(String(i.id));
+        if (!r) throw new Error("No routine with that id. Use routine_admin_list.");
+        const patch: any = {};
+        if (i.title) patch.title = i.title;
+        if (i.prompt) patch.prompt = i.prompt;
+        if (typeof i.enabled === "boolean") patch.enabled = i.enabled;
+        if (typeof i.timeout_minutes === "number") patch.timeoutMinutes = Math.max(1, Math.min(60, i.timeout_minutes));
+        if (i.kind) patch.schedule = scheduleFrom(i);
+        const u = updateRoutine(r.id, patch);
+        return `Updated "${u.title}" (${getBotName(u.botId)}): ${describeSchedule(u.schedule)}${u.enabled ? "" : " (paused)"}.`;
+      },
+    },
+    {
+      group: "core",
+      admin: true,
+      spec: { name: "skill_save", description: "Create or replace a skill: the complete SKILL.md (frontmatter with name and description, then instructions).", inputSchema: obj({ name: str("Skill name"), content: str("Complete SKILL.md") }, ["name", "content"]) },
+      run: async (_c, i) => {
+        if (!/^---[\s\S]*?name:[\s\S]*?description:[\s\S]*?---/.test(String(i.content))) throw new Error("SKILL.md needs frontmatter with name and description.");
+        return `Saved skill "${saveSkill(String(i.name), String(i.content))}".`;
+      },
+    },
+    {
+      group: "core",
+      admin: true,
+      spec: { name: "improve_record", description: "Record a change you just made at the person's request, so it shows in Improvements history (applied).", inputSchema: obj({ title: str("Short title"), change: str("What you changed"), area: { type: "string", enum: ["routine", "skill", "code", "other"] } }, ["title", "change"]) },
+      run: async (_c, i) => `Recorded: ${improve.recordApplied(String(i.title), String(i.change), (i.area ?? "other") as any).title}`,
+    },
+    {
+      group: "core",
+      admin: true,
+      spec: { name: "improve_withdraw", description: "Withdraw waiting or shown suggestion cards the person no longer wants (by id or title words).", inputSchema: obj({ ids: { type: "array", items: { type: "string" }, description: "Suggestion ids or words from their titles" } }, ["ids"]) },
+      run: async (_c, i) => {
+        const r = improve.withdraw((i.ids ?? []).map(String));
+        return r.length ? `Withdrew: ${r.map((p) => p.title).join("; ")}.` : "No matching waiting suggestions.";
+      },
+    },
+  ];
+}
+
+const listBotsForTools = () => listBots().filter((b) => !b.hidden);
+const getBotName = (id: string) => getBot(id)?.name ?? "(missing bot)";
+
 // ---------------- Approvals ----------------
 
 const COMPOSIO_READONLY = /SEARCH_TOOLS|GET_TOOL_SCHEMAS|MANAGE_CONNECTIONS/;
@@ -722,7 +859,17 @@ export async function gate(bot: Bot, tool: Tool, input: any, signal?: AbortSigna
     if (run?.startedAt && r?.researchCutoffMinutes && Date.now() > new Date(run.startedAt).getTime() + r.researchCutoffMinutes * 60_000)
       return { allow: false, reason: `Research cutoff reached (${r.researchCutoffMinutes} min). Stop researching and score, file and report what you have.` };
   }
-  const reason = tool.risk?.(input) ?? null;
+  // MausDroid admin tools: Improver has admin rights and isn't asked (other tools still follow its approval setting).
+  if (tool.admin && improve.isImprover(bot.id)) return { allow: true };
+  let reason = tool.risk?.(input) ?? null;
+  if (tool.spec.name === "bot_edit") {
+    try {
+      const plan = botAdmin.planBotEdit(bot, input);
+      reason = botAdmin.describeEdit(plan.target, plan.before, plan.after);
+    } catch (e) {
+      return { allow: false, reason: (e as Error).message };
+    }
+  }
   const ask = tool.alwaysAsk || bot.approvalMode === "ask-all" || (bot.approvalMode === "ask-risky" && Boolean(reason));
   if (!ask) return { allow: true };
   if (tool.spec.name.startsWith("composio__") && COMPOSIO_READONLY.test(tool.spec.name)) return { allow: true };

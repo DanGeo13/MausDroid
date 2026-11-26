@@ -5,7 +5,7 @@ import { emit } from "./events.ts";
 import { clip, id, now } from "./util.ts";
 import { config } from "./config.ts";
 import { localParts } from "./time.ts";
-import { createBot, getBot, listBots, messages, type Bot } from "./bots.ts";
+import { createBot, getBot, listBots, messages, updateBot, type Bot } from "./bots.ts";
 import { createRoutine, deleteRoutine, getRoutine, listRoutines, listRuns, pauseRoutine, resumeRoutine, updateRoutine, type Routine } from "./routines.ts";
 import { validateSchedule, type Schedule } from "./schedule.ts";
 import { listSkills, parseFrontmatter, saveSkill } from "./skills.ts";
@@ -92,8 +92,14 @@ export const isImprover = (botId: string) => settingsFile.get().botId === botId;
 
 // ---------------- Setup ----------------
 
-export const IMPROVER_PERSONA =
+export const OLD_IMPROVER_PERSONA =
   "You are Improver, MausDroid's self-improvement bot. Each night you look for the few changes that would most help right now: errors, failing or missed routines, unclear or broken skills, and small code fixes. You are brief, concrete and never exhaustive. You never change anything yourself without the person's approval.";
+export const IMPROVER_PERSONA = `You are Improver, MausDroid's self-improvement bot, with admin rights over MausDroid's set-up.
+- When the person asks you directly for a change, do it now — don't make a suggestion card. You can change any bot (bot_list, bot_edit: instructions, AI and model, tool switches, single tools, skills, approvals of other bots), any routine (routine_admin_list, routine_admin_update), skills (skill_save) and see every tool (tool_list). After changing something, call improve_record so it shows in Improvements history, and say briefly what you changed (bot changes can be undone in Settings → Tools).
+- If they ask to remove or cancel a suggestion, call improve_withdraw.
+- Changes to MausDroid's own program code (new screens, new features) can't be made from the phone. Say so plainly, write a short, clear spec they can give to a developer session, and record it with improve_propose (area "code") so it's tracked.
+- In the nightly check (a routine), only suggest (improve_propose, at most 5); nothing changes until approved.
+Be brief and concrete.`;
 
 export const IMPROVE_PROMPT = `Nightly self-check. You have 10 minutes at most; research tools stop after 5, so be quick and don't be exhaustive.
 1. Call improve_evidence to see recent errors, routine runs, routines, skills and earlier suggestions.
@@ -110,6 +116,8 @@ export function ensureImprover() {
   addRunValidator(IMPROVE_SYSTEM, (run) => (nightFor(run.id)?.finishedAt ? null : "The nightly check ended without recording its result (improve_finish), so it's incomplete."));
   let s = settingsFile.get();
   let bot = s.botId ? getBot(s.botId) : undefined;
+  // Bring an Improver made by an older version up to date (only if its instructions were never edited).
+  if (bot && bot.persona === OLD_IMPROVER_PERSONA) updateBot(bot.id, { persona: IMPROVER_PERSONA });
   if (!bot) {
     bot = listBots().find((b) => b.name === "Improver") ??
       createBot({ name: "Improver", emoji: "🛠️", color: "#8e44ad", persona: IMPROVER_PERSONA, providerId: "claude", model: IMPROVER_MODEL, tools: { web: true, browser: false, apps: false, phone: false } });
@@ -206,7 +214,7 @@ export function collectEvidence() {
   } catch {
     engine = { version: config.version };
   }
-  const earlier = proposals.get().filter((p) => since(p.createdAt, 24 * 21)).map((p) => ({ title: p.title, status: p.status }));
+  const earlier = proposals.get().filter((p) => since(p.createdAt, 24 * 21)).map((p) => ({ id: p.id, title: p.title, status: p.status }));
   return { now: new Date().toISOString(), engine, routineProblems: problems, routines, skills, botErrors: botErrors.slice(-25), earlierSuggestions: earlier };
 }
 
@@ -459,6 +467,22 @@ function listen() {
       patch(t, { status: info.failed || info.aborted ? "failed" : "applied", result: clip(reply || (info.aborted ? "Stopped before it finished." : ""), 2000) });
     }
   });
+}
+
+/** A change Improver made straight away at the person's request (shows in history as applied). */
+export function recordApplied(title: string, change: string, area: Area = "other"): Proposal {
+  const p: Proposal = { id: id("imp"), runId: "direct", createdAt: now(), showFrom: localParts(new Date()).ymd, title: clip(title, 120), problem: "Asked for directly.", change: clip(change, 2000), area, risk: "low", status: "applied", decidedAt: now(), result: "Done at your request." };
+  proposals.update((l) => void l.push(p));
+  emit("improve.changed", {});
+  return p;
+}
+
+/** Withdraws waiting / shown suggestions by id or title words. */
+export function withdraw(refs: string[]): Proposal[] {
+  const open = proposals.get().filter((p) => p.status === "waiting" || p.status === "shown");
+  const hit = open.filter((p) => refs.some((r) => r === p.id || (r.length > 2 && p.title.toLowerCase().includes(r.toLowerCase()))));
+  for (const p of hit) patch(p.id, { status: "declined", decidedAt: now(), result: "Withdrawn at your request." });
+  return hit.map((p) => ({ ...p, status: "declined" as Status }));
 }
 
 /** For the screen. */

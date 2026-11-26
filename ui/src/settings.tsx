@@ -1067,7 +1067,7 @@ function MemoryTab() {
   );
 }
 
-export const SETTINGS_TABS = ["AI", "Voice & assistant", "Appearance", "Connected apps", "Skills", "Routines & alerts", "Phone", "Website & devices", "Memory"] as const;
+export const SETTINGS_TABS = ["AI", "Voice & assistant", "Appearance", "Connected apps", "Tools", "Skills", "Routines & alerts", "Phone", "Website & devices", "Memory"] as const;
 
 export function Settings({ tab, setTab, bots, onBack }: { tab: string; setTab: (t: string) => void; bots: Bot[]; onBack: () => void }) {
   return (
@@ -1086,7 +1086,7 @@ export function Settings({ tab, setTab, bots, onBack }: { tab: string; setTab: (
         ))}
       </div>
       <div class="page">
-        {tab === "AI" ? <AiTab /> : tab === "Voice & assistant" ? <VoiceTab bots={bots} /> : tab === "Appearance" ? <AppearanceTab /> : tab === "Connected apps" ? <AppsTab /> : tab === "Skills" ? <SkillsTab /> : tab === "Routines & alerts" ? <RoutinesTab bots={bots} /> : tab === "Phone" ? <PhoneTab /> : tab === "Website & devices" ? <WebsiteTab /> : <MemoryTab />}
+        {tab === "AI" ? <AiTab /> : tab === "Voice & assistant" ? <VoiceTab bots={bots} /> : tab === "Appearance" ? <AppearanceTab /> : tab === "Connected apps" ? <AppsTab /> : tab === "Tools" ? <ToolsTab /> : tab === "Skills" ? <SkillsTab /> : tab === "Routines & alerts" ? <RoutinesTab bots={bots} /> : tab === "Phone" ? <PhoneTab /> : tab === "Website & devices" ? <WebsiteTab /> : <MemoryTab />}
       </div>
     </>
   );
@@ -1094,8 +1094,133 @@ export function Settings({ tab, setTab, bots, onBack }: { tab: string; setTab: (
 
 // ---------------- Bot editor ----------------
 /** Plain words for a permission type key. */
+// ---------------- Tools ----------------
+const GROUP_LABEL: Record<string, string> = { core: "Always available", web: "Web", browser: "Background browser", apps: "Connected apps", phone: "Phone" };
+const toolTitle = (n: string) => n.replace(/^composio__/, "apps: ").replace(/_/g, " ");
+
+function ToolBadges({ t }: { t: any }) {
+  return (
+    <span style={{ display: "inline-flex", gap: ".3rem", flexWrap: "wrap" }}>
+      <span class="pill">{GROUP_LABEL[t.group] ?? t.group}</span>
+      {t.risky ? <span class="pill warn">can change things — asks first</span> : null}
+      {t.onlyFor ? <span class="pill">only {t.onlyFor}</span> : null}
+    </span>
+  );
+}
+
+/** Settings → Tools: every tool, and which bots have it. */
+function ToolsTab() {
+  const [d, reload] = useLoad<any>("tools");
+  const [changes, reloadC] = useLoad<any[]>("bot-changes");
+  const [q, setQ] = useState("");
+  if (!d) return <p class="muted">Loading…</p>;
+  const has = (b: any, t: any) => (t.group === "core" || b.tools?.[t.group]) && !b.disabledTools.includes(t.name);
+  const setFor = (t: any, botIds: string[], enabled: boolean) => run(async () => (await api(`tools/${encodeURIComponent(t.name)}/bots`, { body: { botIds, enabled } }), reload()))();
+  const shown = d.tools.filter((t: any) => !q || `${t.name} ${t.description}`.toLowerCase().includes(q.toLowerCase()));
+  const groups = [...new Set(shown.map((t: any) => t.group))] as string[];
+  return (
+    <>
+      <div class="section">
+        <h2>Tools</h2>
+        <p class="help">Every tool your bots can use. Tap a bot's name to switch that tool on or off for it. The switches for whole groups (web, browser, apps) are in each bot's editor. Tools that send, buy, post or delete things ask you first.</p>
+        <input value={q} onInput={(e) => setQ(val(e))} placeholder="Search tools" />
+      </div>
+      {groups.map((g) => (
+        <div class="section">
+          <h2>{GROUP_LABEL[g] ?? g}</h2>
+          {shown
+            .filter((t: any) => t.group === g)
+            .map((t: any) => (
+              <div class="tool-row">
+                <div>
+                  <b>{toolTitle(t.name)}</b> <ToolBadges t={t} />
+                </div>
+                <div class="muted" style={{ fontSize: ".82rem" }}>{t.description}</div>
+                <div class="seg" style={{ flexWrap: "wrap", marginTop: ".35rem" }}>
+                  {d.bots.map((b: any) => {
+                    const groupOff = t.group !== "core" && !b.tools?.[t.group];
+                    return (
+                      <button class={has(b, t) ? "on" : ""} disabled={groupOff} title={groupOff ? `${GROUP_LABEL[t.group]} is off for ${b.name} (bot editor)` : ""} onClick={() => setFor(t, [b.id], !has(b, t))}>
+                        {b.emoji} {b.name}
+                      </button>
+                    );
+                  })}
+                  <button onClick={() => setFor(t, d.bots.map((b: any) => b.id), true)}>All on</button>
+                  <button onClick={() => setFor(t, d.bots.map((b: any) => b.id), false)}>All off</button>
+                </div>
+              </div>
+            ))}
+        </div>
+      ))}
+      <div class="section">
+        <h2>Changes bots made to other bots</h2>
+        <p class="help">Maus asks you before changing another bot; Improver has admin rights and doesn't. Undo puts the bot back as it was.</p>
+        {changes?.length ? (
+          changes.map((c: any) => (
+            <div class="toggle">
+              <span>
+                <b>{c.by}</b> changed <b>{c.botName}</b>: {Object.keys(c.after).join(", ")}
+                <br />
+                <span class="muted" style={{ fontSize: 12 }}>
+                  {new Date(c.at).toLocaleString()} {c.undoneAt ? "· undone" : ""}
+                </span>
+              </span>
+              {c.undoneAt ? null : (
+                <button class="btn secondary small" onClick={run(async () => (await api(`bot-changes/${c.id}/undo`, { body: {} }), reloadC(), reload()), "Undone")}>
+                  Undo
+                </button>
+              )}
+            </div>
+          ))
+        ) : (
+          <p class="muted">None yet.</p>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Bot editor: every tool this bot can have, with a tick box each. */
+function BotTools({ b, set }: { b: Partial<Bot>; set: (p: Partial<Bot>) => void }) {
+  const [d] = useLoad<any>("tools");
+  const [open, setOpen] = useState(false);
+  if (!d) return null;
+  const off = new Set(b.disabledTools ?? []);
+  const avail = d.tools.filter((t: any) => t.group === "core" || (b.tools as any)?.[t.group]);
+  const toggle = (name: string) => {
+    const n = new Set(off);
+    if (n.has(name)) n.delete(name);
+    else n.add(name);
+    set({ disabledTools: [...n].sort() });
+  };
+  return (
+    <div class="section">
+      <h2>Tools</h2>
+      <p class="help">
+        {avail.length - avail.filter((t: any) => off.has(t.name)).length} of {avail.length} tools on. Untick any this bot shouldn't use. All bots' tools: Settings → Tools.
+      </p>
+      <button class="btn secondary small" onClick={() => setOpen(!open)}>
+        {open ? "Hide tools" : "Show tools"}
+      </button>
+      {open
+        ? avail.map((t: any) => (
+            <label class="toggle">
+              <span>
+                <b>{toolTitle(t.name)}</b> <ToolBadges t={t} />
+                <br />
+                <span class="muted" style={{ fontSize: ".8rem" }}>{t.description}</span>
+              </span>
+              <input type="checkbox" checked={!off.has(t.name)} onChange={() => toggle(t.name)} />
+            </label>
+          ))
+        : null}
+    </div>
+  );
+}
+
 export function permissionLabel(k: string): string {
   if (k === "routines:change") return "changing or deleting its routines";
+  if (k === "bots:edit") return "changing other bots";
   const m = k.match(/^apps:(.+):write$/);
   if (m) return `changing things in ${m[1].split("+").join(", ")}`;
   if (k === "apps:workbench") return "running code in Composio's workbench";
@@ -1174,6 +1299,7 @@ export function BotEditor({ bot, onClose }: { bot: Bot | null; onClose: (deleted
             </select>
           </div>
         </div>
+        <BotTools b={b} set={set} />
         {skills?.length ? (
           <div class="section">
             <h2>Skills</h2>

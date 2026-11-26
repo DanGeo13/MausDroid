@@ -180,3 +180,5 @@ input[type="range"] { padding: 0; accent-color: var(--accent); background: trans
 .improve-card details pre { margin: .2rem 0; }
 .row-detail { padding: .45rem 0; border-bottom: 1px solid var(--panel2); }
 .row-detail summary { cursor: pointer; }
+.tool-row { padding: .55rem 0; border-bottom: 1px solid var(--panel2); }
+.tool-row .seg button { font-size: .78rem; }

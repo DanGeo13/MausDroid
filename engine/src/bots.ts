@@ -25,6 +25,8 @@ export interface Bot {
   /** Claude Code / Codex conversation to resume. */
   cliSession?: string;
   alwaysAllow: string[];
+  /** Single tools switched off for this bot (bot editor / Settings → Tools). */
+  disabledTools?: string[];
 }
 
 export interface ChatMessage {

@@ -19,10 +19,12 @@ import * as routines from "./routines.ts";
 import * as improve from "./improve.ts";
 import * as callSession from "./call-session.ts";
 import * as share from "./share.ts";
+import * as botAdmin from "./bot-admin.ts";
 import * as pairing from "./pairing.ts";
 import { readMemory, writeMemory } from "./memory.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
 import { handleMcp } from "./mcp-server.ts";
+import { toolCatalog } from "./tools/index.ts";
 import { collection } from "./store.ts";
 import { errorText } from "./util.ts";
 import { runRoutineNow } from "./scheduler.ts";
@@ -473,6 +475,19 @@ const badRequest = (fn: () => unknown) => {
     throw new HttpError(400, errorText(e));
   }
 };
+// Tools: every tool, which bots have it (bot editor + Settings → Tools), and bot changes made by bots.
+route("GET", "/api/tools", () =>
+  json({
+    tools: toolCatalog(),
+    bots: bots.listBots().filter((b) => !b.hidden).map((b) => ({ id: b.id, name: b.name, emoji: b.emoji, tools: b.tools, disabledTools: b.disabledTools ?? [] })),
+  }),
+);
+route("POST", "/api/tools/:name/bots", (req, [name]) => {
+  botAdmin.setToolForBots(decodeURIComponent(name), (req.body?.botIds ?? []).map(String), req.body?.enabled !== false);
+  return json({ ok: true });
+});
+route("GET", "/api/bot-changes", () => json(botAdmin.listBotChanges()));
+route("POST", "/api/bot-changes/:id/undo", (_r, [id]) => json(badRequest(() => botAdmin.undoBotChange(id))));
 route("POST", "/api/share", (req) => {
   const rec = badRequest(() => share.receiveShare({ text: req.body?.text, attachments: attachmentsFrom(req.body?.attachments) })) as share.ShareRecord;
   const bot = bots.getBot(rec.botId);
