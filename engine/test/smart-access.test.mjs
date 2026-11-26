@@ -19,6 +19,11 @@ test("Claude Code: MausDroid's tools pre-approved, read-only allowed, commands a
   assert.ok(i > 0);
   assert.deepEqual(args.slice(i + 1, i + 1 + cli.CLI_ALLOWED_TOOLS.length), cli.CLI_ALLOWED_TOOLS);
   assert.ok(cli.CLI_ALLOWED_TOOLS.includes("mcp__mausdroid"));
+  // Claude Code doesn't ask (MausDroid's own gate is the only approval layer); its risky tools are off.
+  assert.equal(args[args.indexOf("--permission-mode") + 1], "bypassPermissions");
+  const d = args.indexOf("--disallowedTools");
+  for (const t of ["Bash", "Edit", "Write"]) assert.ok(args.slice(d + 1, d + 1 + cli.CLI_DISALLOWED_TOOLS.length).includes(t), t);
+  assert.ok(!args.includes("--permission-prompt-tool"));
   assert.ok(!cli.CLI_ALLOWED_TOOLS.some((t) => /^(Bash|Edit|Write)$/.test(t)), "commands and file changes aren't pre-approved");
   assert.equal(cli.cliPermission("mcp__mausdroid__composio__COMPOSIO_MULTI_EXECUTE_TOOL"), "allow", "MausDroid gates its own tools when they run");
   assert.equal(cli.cliPermission("WebFetch"), "allow");
@@ -38,20 +43,21 @@ test("existing chats catch up on access changes once; new bots start up to date"
     // A bot from before the change (it never saw an access update), with its chat history.
     await e.call(`/api/bots/${maus.id}`, "PATCH", { accessSeen: null });
     await e.call(`/api/bots/${maus.id}/messages`, "POST", { text: "read my email" });
-    await e.until(async () => (await e.call(`/api/bots/${maus.id}/messages`)).data.some((x) => x.role === "assistant"), "reply");
+    await e.until(async () => (await e.call(`/api/bots/${maus.id}/messages`)).data.some((x) => x.role === "assistant" && x.text === "ok"), "reply");
     const firstAsk = JSON.stringify(m.seen.at(-1).messages.at(-1));
     assert.match(firstAsk, /MausDroid update since earlier in this chat: Reading no longer needs approval/);
+    assert.match(firstAsk, /Claude Code's own approval step is switched off/);
     assert.match(firstAsk, /read my email/);
     const msgs = (await e.call(`/api/bots/${maus.id}/messages`)).data;
     assert.ok(msgs.some((x) => x.role === "note" && /access was updated/.test(x.text)), "the person sees it too");
     // Only once.
     await e.call(`/api/bots/${maus.id}/messages`, "POST", { text: "again" });
-    await e.until(async () => (await e.call(`/api/bots/${maus.id}/messages`)).data.filter((x) => x.role === "assistant").length === 2, "second reply");
+    await e.until(async () => (await e.call(`/api/bots/${maus.id}/messages`)).data.filter((x) => x.role === "assistant" && x.text === "ok").length === 2, "second reply");
     assert.ok(!JSON.stringify(m.seen.at(-1).messages.at(-1)).includes("MausDroid update"), "not repeated");
     // A new bot starts with today's rules.
     const nb = (await e.call("/api/bots", "POST", { name: "Fresh" })).data;
     await e.call(`/api/bots/${nb.id}/messages`, "POST", { text: "hi" });
-    await e.until(async () => (await e.call(`/api/bots/${nb.id}/messages`)).data.some((x) => x.role === "assistant"), "fresh reply");
+    await e.until(async () => (await e.call(`/api/bots/${nb.id}/messages`)).data.some((x) => x.role === "assistant" && x.text === "ok"), "fresh reply");
     assert.ok(!JSON.stringify(m.seen.at(-1).messages.at(-1)).includes("MausDroid update"));
     // Every bot is told to retry rather than trust earlier "blocked" results.
     assert.match(JSON.stringify(m.seen.at(-1).messages[0]), /try the tool again before saying something can't be reached/);
@@ -59,4 +65,14 @@ test("existing chats catch up on access changes once; new bots start up to date"
     await e.stop();
     m.close();
   }
+});
+
+test("Claude tool results show what really happened", async () => {
+  const cli = await load("src/providers/cli.ts");
+  const use = cli.parseCliLine("claude", JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "mcp__mausdroid__browser_open", input: { url: "x" } }] } }), { text: "" });
+  assert.deepEqual(use, [{ kind: "tool", name: "mcp__mausdroid__browser_open", input: { url: "x" }, toolId: "tu1" }]);
+  const res = cli.parseCliLine("claude", JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu1", is_error: true, content: [{ type: "text", text: "Claude requested permissions to use mcp__mausdroid__browser_open, but you haven't granted it yet." }] }] } }), { text: "" });
+  assert.equal(res[0].toolId, "tu1");
+  assert.equal(res[0].isError, true);
+  assert.match(res[0].text, /haven't granted it yet/);
 });

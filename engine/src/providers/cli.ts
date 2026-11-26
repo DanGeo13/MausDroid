@@ -33,6 +33,9 @@ export interface CliRun {
 export interface CliEvent {
   kind: "text" | "delta" | "tool" | "tool_result" | "session" | "done" | "error";
   text?: string;
+  /** Links a tool call to its result. */
+  toolId?: string;
+  isError?: boolean;
   name?: string;
   input?: unknown;
   sessionId?: string;
@@ -42,6 +45,8 @@ const engineFor = (sub: SubId): CliRun["engine"] => (sub === "chatgpt" ? "codex"
 
 /** Tools Claude Code may use without asking: all of MausDroid's (it gates them itself) and its own read-only ones. */
 export const CLI_ALLOWED_TOOLS = ["mcp__mausdroid", "Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "TodoWrite", "NotebookRead"];
+/** Claude Code's own tools that could change things outside MausDroid's approvals: off. */
+export const CLI_DISALLOWED_TOOLS = ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "KillShell", "BashOutput"];
 const CLI_READ_ONLY = new Set(CLI_ALLOWED_TOOLS.filter((t) => t !== "mcp__mausdroid"));
 
 /**
@@ -60,8 +65,11 @@ export function cliArgs(run: CliRun): string[] {
   if (run.engine === "claude") {
     const mcp = JSON.stringify({ mcpServers: { mausdroid: { type: "http", url: run.mcpUrl, headers: { authorization: `Bearer ${run.mcpToken}` } } } });
     const args = ["-p", run.prompt, "--output-format", "stream-json", "--verbose", "--mcp-config", mcp,
-      "--permission-prompt-tool", "mcp__mausdroid__approval_prompt", "--append-system-prompt", run.systemPrompt, "--include-partial-messages",
-      // MausDroid's own tools are allowed here: MausDroid's single approval layer decides (reading never asks; sending, buying, posting or deleting does).
+      "--append-system-prompt", run.systemPrompt, "--include-partial-messages",
+      // One approval layer: Claude Code doesn't ask (its own prompts got in the way of simple reads);
+      // MausDroid's tools ask you themselves when something would be sent, changed, deleted, bought or posted.
+      // Claude Code's own command-running and file-writing tools are switched off entirely.
+      "--permission-mode", "bypassPermissions", "--disallowedTools", ...CLI_DISALLOWED_TOOLS,
       "--allowedTools", ...CLI_ALLOWED_TOOLS];
     if (run.model && run.model !== "default") args.push("--model", run.model);
     if (run.resume) args.push("--resume", run.resume);
@@ -94,11 +102,11 @@ export function parseCliLine(engine: CliRun["engine"], line: string, acc: { text
     if (ev.type === "assistant")
       for (const b of ev.message?.content ?? []) {
         if (b.type === "text") out.push({ kind: "text", text: b.text });
-        if (b.type === "tool_use") out.push({ kind: "tool", name: b.name, input: b.input });
+        if (b.type === "tool_use") out.push({ kind: "tool", name: b.name, input: b.input, toolId: b.id });
       }
     if (ev.type === "user")
       for (const b of ev.message?.content ?? [])
-        if (b.type === "tool_result") out.push({ kind: "tool_result", text: typeof b.content === "string" ? b.content : JSON.stringify(b.content).slice(0, 2000) });
+        if (b.type === "tool_result") out.push({ kind: "tool_result", toolId: b.tool_use_id, isError: Boolean(b.is_error), text: typeof b.content === "string" ? b.content : (Array.isArray(b.content) ? b.content.map((c: any) => c.text ?? "").join("\n") : JSON.stringify(b.content)).slice(0, 2000) });
     if (ev.type === "result") {
       if (ev.session_id) out.push({ kind: "session", sessionId: ev.session_id });
       out.push(ev.is_error ? { kind: "error", text: ev.result ?? "Claude reported an error" } : { kind: "done" });

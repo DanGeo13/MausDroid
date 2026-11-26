@@ -1,4 +1,4 @@
-import { addMessage, getBot, history, patchMessage, setHistory, updateBot, type Bot } from "./bots.ts";
+import { addMessage, getBot, history, messages, patchMessage, setHistory, updateBot, type Bot } from "./bots.ts";
 import { emit } from "./events.ts";
 import { provider, renamedProvider, settings, type ProviderConfig } from "./settings.ts";
 import { getSecret } from "./secrets.ts";
@@ -156,7 +156,7 @@ async function drain(botId: string) {
         updateBot(botId, { accessSeen: LATEST_ACCESS_UPDATE });
         if (note && batch[0]) {
           batch[0] = { ...batch[0], text: `${note}\n\n${batch[0].text}` };
-          const shown = addMessage(botId, { role: "note", text: "MausDroid's access was updated: reading (email, calendar, files) no longer needs approval. This chat has been told, so it tries again instead of using earlier results.", status: "done" });
+          const shown = addMessage(botId, { role: "note", text: "MausDroid's access was updated: reading (email, calendar, files) just works, and only changes ask you. This chat has been told, so it tries again instead of using earlier results.", status: "done" });
           emit("message", { botId, message: shown });
         }
       }
@@ -293,6 +293,7 @@ async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: Abo
   let current: ReturnType<typeof addMessage> | null = null;
   let streaming: ReturnType<typeof addMessage> | null = null;
   let streamed = "";
+  const toolMsgs = new Map<string, string>();
   let produced = false;
   const pass = async () => {
   for await (const ev of runCli(p, run, signal)) {
@@ -320,8 +321,17 @@ async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: Abo
       }
       lastReply.set(bot.id, ev.text);
     } else if (ev.kind === "tool") {
-      const m = addMessage(bot.id, { role: "tool", text: "", tool: { name: ev.name ?? "tool", input: ev.input, status: "done" } });
+      const m = addMessage(bot.id, { role: "tool", text: "", tool: { name: ev.name ?? "tool", input: ev.input, status: "running" } });
+      if (ev.toolId) toolMsgs.set(ev.toolId, m.id);
       emit("message", { botId: bot.id, message: m });
+    } else if (ev.kind === "tool_result" && ev.toolId && toolMsgs.has(ev.toolId)) {
+      // Show what really happened (a refusal shows as one, not as a tick).
+      const mid = toolMsgs.get(ev.toolId)!;
+      toolMsgs.delete(ev.toolId);
+      const cur = messages(bot.id, undefined, 200).find((x) => x.id === mid);
+      const refused = Boolean(ev.isError) && /permission|not allowed|denied|declined|haven't granted|blocked/i.test(ev.text ?? "");
+      patchMessage(bot.id, mid, { tool: { ...(cur?.tool ?? { name: "tool" }), result: clip(ev.text ?? "", 2000), isError: Boolean(ev.isError), status: refused ? "denied" : "done" } as any });
+      emit("message.updated", { botId: bot.id, messageId: mid });
     } else if (ev.kind === "error") throw new Error(ev.text);
   }
   };
@@ -338,6 +348,12 @@ async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: Abo
       await pass();
     }
   } finally {
+    // Tools that never reported back (some programs don't) are marked done.
+    for (const mid of toolMsgs.values()) {
+      const cur = messages(bot.id, undefined, 200).find((x) => x.id === mid);
+      if (cur?.tool?.status === "running") patchMessage(bot.id, mid, { tool: { ...cur.tool, status: "done" } });
+      emit("message.updated", { botId: bot.id, messageId: mid });
+    }
     // Stopped or failed half-way: keep what was said so far.
     const half = streaming as ReturnType<typeof addMessage> | null; // set inside pass()
     if (half) {
