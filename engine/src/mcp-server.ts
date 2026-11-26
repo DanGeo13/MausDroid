@@ -40,6 +40,7 @@ const approvalTool = {
 
 export async function handleMcp(botId: string, req: IncomingMessage, res: ServerResponse, body: any) {
   const send = (status: number, obj: unknown) => {
+    if (res.destroyed) return;
     res.writeHead(status, { "content-type": "application/json" });
     res.end(JSON.stringify(obj));
   };
@@ -64,30 +65,38 @@ export async function handleMcp(botId: string, req: IncomingMessage, res: Server
       return reply({ tools: [approvalTool, ...tools.map((t) => t.spec)].map((t: any) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) });
     }
     case "tools/call": {
+      const controller = new AbortController();
+      const { signal } = controller;
+      const timeout = setTimeout(() => controller.abort(), 600_000);
+      res.once("close", () => {
+        clearTimeout(timeout);
+        controller.abort();
+      });
       const { name, arguments: args } = body.params ?? {};
       if (name === "approval_prompt") {
         const toolName = String(args?.tool_name ?? "");
         // MausDroid's own tools are gated when they run (reading never asks); read-only tools are fine.
         if (cliPermission(toolName) === "allow") return reply({ content: [{ type: "text", text: JSON.stringify({ behavior: "allow", updatedInput: args?.input ?? {} }) }] });
         const label = toolName === "Bash" ? "running commands" : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(toolName) ? "changing files in its work folder" : `using ${toolName}`;
-        const r = await requestApproval(bot.id, `cli:${toolName}`, `${bot.name} wants to use ${toolName}`, clip(JSON.stringify(args?.input ?? {}, null, 1), 1200), undefined, label);
+        const r = await requestApproval(bot.id, `cli:${toolName}`, `${bot.name} wants to use ${toolName}`, clip(JSON.stringify(args?.input ?? {}, null, 1), 1200), signal, label);
         const decision = r.allow ? { behavior: "allow", updatedInput: args?.input ?? {} } : { behavior: "deny", message: "The person declined." };
         return reply({ content: [{ type: "text", text: JSON.stringify(decision) }] });
       }
       const tool = (await toolsFor(bot)).find((t) => t.spec.name === name);
       if (!tool) return fail(`No tool ${name}`);
-      {
-        const r = await gate(bot, tool, args ?? {});
-        if (!r.allow) return reply({ content: [{ type: "text", text: r.reason ?? "The person declined this action." }], isError: true });
-      }
       try {
-        const out = await tool.run({ bot, signal: AbortSignal.timeout(600_000) }, args ?? {});
+        signal.throwIfAborted();
+        const decision = await gate(bot, tool, args ?? {}, signal);
+        if (!decision.allow) return reply({ content: [{ type: "text", text: decision.reason ?? "The person declined this action." }], isError: true });
+        signal.throwIfAborted();
+        const out = await tool.run({ bot, signal }, args ?? {});
         const r = typeof out === "string" ? { text: out } : out;
         return reply({
           content: [{ type: "text", text: clip(r.text) }, ...(r.images ?? []).map((i) => ({ type: "image", mimeType: i.mediaType, data: i.data }))],
           isError: Boolean(r.isError),
         });
       } catch (e) {
+        if (signal.aborted) return reply({ content: [{ type: "text", text: "Tool call cancelled or timed out." }], isError: true });
         const m = addMessage(bot.id, { role: "tool", text: "", tool: { name, input: args, result: errorText(e), isError: true, status: "done" } });
         emit("message", { botId: bot.id, message: m });
         return reply({ content: [{ type: "text", text: errorText(e) }], isError: true });

@@ -156,7 +156,7 @@ async function drain(botId: string) {
         updateBot(botId, { accessSeen: LATEST_ACCESS_UPDATE });
         if (note && batch[0]) {
           batch[0] = { ...batch[0], text: `${note}\n\n${batch[0].text}` };
-          const shown = addMessage(botId, { role: "note", text: "MausDroid's access was updated: reading (email, calendar, files) just works, and only changes ask you. This chat has been told, so it tries again instead of using earlier results.", status: "done" });
+          const shown = addMessage(botId, { role: "note", text: "MausDroid's access was updated. Your bot will use its current tool settings in this chat.", status: "done" });
           emit("message", { botId, message: shown });
         }
       }

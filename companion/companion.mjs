@@ -37,10 +37,16 @@ function args(run) {
     if (run.model && run.model !== "default") a.push("-m", run.model);
     return ["gemini", a];
   }
-  const base = ["exec", "--json", "--skip-git-repo-check", "-c", `mcp_servers.mausdroid.url="${run.mcpUrl}"`, "-c", `mcp_servers.mausdroid.bearer_token_env_var="MAUSDROID_MCP_TOKEN"`];
-  if (run.model && run.model !== "default") base.push("-m", run.model);
-  for (const img of run.images ?? []) base.push("-i", img);
-  return ["codex", run.resume ? ["exec", "resume", run.resume, ...base.slice(1), run.prompt] : [...base, `${run.systemPrompt}\n\n${run.prompt}`]];
+  const a = ["exec", ...(run.resume ? ["resume", run.resume] : []), "--json", "--skip-git-repo-check",
+    "-c", `mcp_servers.mausdroid.url=${JSON.stringify(run.mcpUrl)}`,
+    "-c", 'mcp_servers.mausdroid.bearer_token_env_var="MAUSDROID_MCP_TOKEN"',
+    // The phone checks the bot's permissions, including while resuming an existing session.
+    "-c", 'mcp_servers.mausdroid.default_tools_approval_mode="approve"',
+    "-c", "mcp_servers.mausdroid.tool_timeout_sec=600"];
+  if (run.model && run.model !== "default") a.push("-m", run.model);
+  for (const img of run.images ?? []) a.push("-i", img);
+  a.push(run.resume ? run.prompt : `${run.systemPrompt}\n\n${run.prompt}`);
+  return ["codex", a];
 }
 
 const ok = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -80,7 +86,9 @@ http
         if (code && !res.writableEnded) res.write(JSON.stringify(run.engine === "claude" ? { type: "result", is_error: true, result: err || `exit ${code}` } : run.engine === "gemini" ? { type: "result", status: "error", error: { message: err || `exit ${code}` } } : { type: "error", message: err || `exit ${code}` }) + "\n");
         res.end();
       });
-      req.on("close", () => !child.killed && child.kill());
+      res.on("close", () => {
+        if (!res.writableEnded) child.kill();
+      });
     });
   })
   .listen(PORT, HOST, () => {

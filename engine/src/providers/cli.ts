@@ -75,15 +75,16 @@ export function cliArgs(run: CliRun): string[] {
     if (run.resume) args.push("--resume", run.resume);
     return args;
   }
-  {
-    const base = ["exec", "--json", "--skip-git-repo-check", "-c", `mcp_servers.mausdroid.url="${run.mcpUrl}"`,
-      // Newer Codex takes the key from an environment variable (MAUSDROID_MCP_TOKEN, set when it starts), not the command line.
-      "-c", `mcp_servers.mausdroid.bearer_token_env_var="MAUSDROID_MCP_TOKEN"`];
-    if (run.model && run.model !== "default") base.push("-m", run.model);
-    for (const img of run.images ?? []) base.push("-i", img);
-    return run.resume ? ["exec", "resume", run.resume, ...base.slice(1), run.prompt] : [...base, `${run.systemPrompt}\n\n${run.prompt}`];
-  }
-  return [];
+  const args = ["exec", ...(run.resume ? ["resume", run.resume] : []), "--json", "--skip-git-repo-check",
+    "-c", `mcp_servers.mausdroid.url=${JSON.stringify(run.mcpUrl)}`,
+    "-c", 'mcp_servers.mausdroid.bearer_token_env_var="MAUSDROID_MCP_TOKEN"',
+    // MausDroid checks the bot's current permissions on each call. Codex exec can't show approval prompts.
+    "-c", 'mcp_servers.mausdroid.default_tools_approval_mode="approve"',
+    "-c", "mcp_servers.mausdroid.tool_timeout_sec=600"];
+  if (run.model && run.model !== "default") args.push("-m", run.model);
+  for (const img of run.images ?? []) args.push("-i", img);
+  args.push(run.resume ? run.prompt : `${run.systemPrompt}\n\n${run.prompt}`);
+  return args;
 }
 
 /** Turns one line of the program's JSON output into MausDroid events. */
@@ -113,11 +114,17 @@ export function parseCliLine(engine: CliRun["engine"], line: string, acc: { text
     }
   } else if (engine === "codex") {
     if (ev.type === "thread.started") out.push({ kind: "session", sessionId: ev.thread_id });
+    const it = ev.item ?? {};
+    if (it.type === "mcp_tool_call" && (ev.type === "item.started" || ev.type === "item.completed")) {
+      if (ev.type === "item.started") out.push({ kind: "tool", name: it.tool, input: it.arguments, toolId: it.id });
+      else {
+        const result = it.result?.content?.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+        out.push({ kind: "tool_result", toolId: it.id, isError: it.status === "failed" || Boolean(it.error), text: (it.error?.message || result || "").slice(0, 2000) });
+      }
+    }
     if (ev.type === "item.completed") {
-      const it = ev.item ?? {};
       if (it.type === "agent_message") out.push({ kind: "text", text: it.text });
       else if (it.type === "command_execution") out.push({ kind: "tool", name: "shell", input: { command: it.command } }, { kind: "tool_result", text: String(it.aggregated_output ?? "").slice(0, 2000) });
-      else if (it.type === "mcp_tool_call") out.push({ kind: "tool", name: it.tool, input: it.arguments });
     }
     if (ev.type === "turn.completed") out.push({ kind: "done" });
     if (ev.type === "turn.failed" || ev.type === "error") out.push({ kind: "error", text: ev.error?.message ?? ev.message ?? "ChatGPT (Codex) error" });

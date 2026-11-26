@@ -38,7 +38,11 @@ export async function fakeComposio(state = {}) {
         if (!body.auth_config?.credentials?.client_id) return send(400, { error: { message: "client_id is required" } });
         return send(201, { toolkit: { slug: body.toolkit.slug }, auth_config: { id: `ac_${body.toolkit.slug}${state.authConfigs.length}`, auth_scheme: body.auth_config.authScheme, is_composio_managed: false } });
       }
-      if (p === "/mcp") return send(500, { error: "no mcp in stand-in" });
+      if (p === "/mcp") {
+        if (!state.mcp) return send(500, { error: "no mcp in stand-in" });
+        const result = state.mcp(body);
+        return result === undefined ? res.writeHead(202).end() : send(200, { jsonrpc: "2.0", id: body.id, result });
+      }
       if (p === "/connected_accounts") return send(200, { items: state.accounts.map((a) => ({ id: a.id, alias: a.alias, status: a.status ?? "ACTIVE", toolkit: { slug: a.toolkit } })) });
       const tool = p.match(/^\/tools\/([A-Z_]+)$/);
       if (tool) return send(200, { slug: tool[1], version: "20251101_00", input_parameters: { properties: Object.fromEntries((state.tools[tool[1]] ?? []).map((n) => [n, {}])) } });

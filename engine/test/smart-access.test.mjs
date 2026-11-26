@@ -76,3 +76,76 @@ test("Claude tool results show what really happened", async () => {
   assert.equal(res[0].isError, true);
   assert.match(res[0].text, /haven't granted it yet/);
 });
+
+test("Codex delegates MausDroid approvals on fresh and resumed conversations", async () => {
+  const { cliArgs, parseCliLine } = await load("src/providers/cli.ts");
+  const run = { engine: "codex", prompt: "Read my email", systemPrompt: "instructions", mcpUrl: "http://localhost/mcp/bot", mcpToken: "token" };
+  for (const resume of [undefined, "existing-thread"]) {
+    const args = cliArgs({ ...run, resume });
+    if (resume) assert.deepEqual(args.slice(0, 3), ["exec", "resume", resume]);
+    assert.ok(args.includes('mcp_servers.mausdroid.default_tools_approval_mode="approve"'));
+    assert.equal(args.at(-1), resume ? run.prompt : `${run.systemPrompt}\n\n${run.prompt}`);
+  }
+  const item = { type: "mcp_tool_call", id: "item_1", tool: "browser_open", arguments: { url: "https://example.org" } };
+  const parse = (type, fields) => parseCliLine("codex", JSON.stringify({ type, item: { ...item, ...fields } }), { text: "" });
+  assert.deepEqual(parse("item.started"), [{ kind: "tool", name: item.tool, input: item.arguments, toolId: item.id }]);
+  assert.deepEqual(parse("item.completed", { status: "failed", error: { message: "Permission denied" } }), [
+    { kind: "tool_result", toolId: item.id, isError: true, text: "Permission denied" },
+  ]);
+});
+
+test("MCP checks updated bot permissions on the same bot URL before performing Gmail actions", async () => {
+  const { startEngine } = await import("./_engine.mjs");
+  const { fakeComposio } = await import("./_composio.mjs");
+  const { createHmac } = await import("node:crypto");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const tool = "COMPOSIO_MULTI_EXECUTE_TOOL";
+  const executed = [];
+  const c = await fakeComposio({ mcp: ({ method, params }) => {
+    if (method === "initialize") return { protocolVersion: params.protocolVersion, capabilities: { tools: {} } };
+    if (method === "tools/list") return { tools: [{ name: tool, description: "Run Gmail tools", inputSchema: { type: "object" } }] };
+    if (method === "tools/call") {
+      executed.push(params.arguments.tools[0].tool_slug);
+      return { content: [{ type: "text", text: "Gmail result" }] };
+    }
+  } });
+  const dir = mkdtempSync(join(tmpdir(), "md-mcp-"));
+  const key = "test-mcp-key";
+  writeFileSync(join(dir, "secrets.json"), JSON.stringify({ "mcp:key": `dev:${Buffer.from(key).toString("base64")}` }));
+  const e = await startEngine({ dir, env: { MAUSDROID_COMPOSIO_API: c.url } });
+  try {
+    assert.equal((await e.call("/api/composio/key", "POST", { key: "ak_test" })).status, 200);
+    const bot = (await e.call("/api/state")).data.bots[0];
+    const token = createHmac("sha256", key).update(`mcp:${bot.id}`).digest("hex");
+    const patch = (body) => e.call(`/api/bots/${bot.id}`, "PATCH", body);
+    const call = (tool_slug, signal) => fetch(`${e.base}/mcp/${bot.id}`, {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, signal,
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: `composio__${tool}`, arguments: { tools: [{ tool_slug }] } } }),
+    }).then((res) => res.json());
+    const pendingCard = async () => (await e.call("/api/cards")).data.find((card) => card.botId === bot.id);
+
+    await patch({ approvalMode: "ask-all", cliSession: "existing-thread" });
+    const stopped = new AbortController();
+    const readWhileRestricted = assert.rejects(call("GMAIL_FETCH_EMAILS", stopped.signal), { name: "AbortError" });
+    await e.until(pendingCard, "read approval under ask-all");
+    stopped.abort();
+    await readWhileRestricted;
+    await e.until(async () => !(await pendingCard()), "approval cleared when the MCP client disconnects");
+    assert.deepEqual(executed, []);
+
+    const updated = await patch({ approvalMode: "ask-risky" });
+    assert.equal(updated.data.cliSession, "existing-thread");
+    assert.equal((await call("GMAIL_FETCH_EMAILS")).result.content[0].text, "Gmail result");
+    const write = call("GMAIL_SEND_EMAIL");
+    const card = await e.until(pendingCard, "MausDroid approval for sending mail");
+    assert.deepEqual(executed, ["GMAIL_FETCH_EMAILS"]);
+    await e.call(`/api/cards/${card.id}`, "POST", { allow: false });
+    assert.equal((await write).result.isError, true);
+    assert.deepEqual(executed, ["GMAIL_FETCH_EMAILS"]);
+  } finally {
+    await e.stop();
+    c.close();
+  }
+});

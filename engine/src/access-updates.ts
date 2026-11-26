@@ -14,6 +14,10 @@ export const ACCESS_UPDATES: { id: string; note: string }[] = [
     id: "2026-11-26-no-claude-prompts",
     note: "Claude Code's own approval step is switched off (it was refusing MausDroid's tools, which looked like 'blocked at the approval step'). MausDroid's tools now just work; only sending, creating, changing, deleting, archiving, buying or posting asks the person, with a card. Earlier 'blocked' results in this chat are out of date — try again now.",
   },
+  {
+    id: "2026-11-26-codex-tool-access",
+    note: "Codex now sends MausDroid tool calls to the app for approval under this bot's current settings, including in existing chats. If an earlier Codex tool call said 'approval policy is never', try the MausDroid tool again.",
+  },
 ];
 export const LATEST_ACCESS_UPDATE = ACCESS_UPDATES[ACCESS_UPDATES.length - 1].id;
 

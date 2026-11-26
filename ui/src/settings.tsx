@@ -1491,10 +1491,11 @@ export function permissionLabel(k: string): string {
 export function BotEditor({ bot, onClose }: { bot: Bot | null; onClose: (deleted?: boolean) => void }) {
   const [s] = useLoad<any>("settings");
   const [skills] = useLoad<any[]>("skills");
-  const [b, setB] = useState<Partial<Bot>>(bot ?? { name: "", emoji: "🤖", color: "#6c5ce7", persona: "", approvalMode: "ask-risky", tools: { web: true, browser: true, apps: true, phone: false }, skills: [] });
-  const set = (patch: Partial<Bot>) => setB({ ...b, ...patch });
+  const [edits, setEdits] = useState<Partial<Bot>>({});
+  const b: Partial<Bot> = { ...(bot ?? { name: "", emoji: "🤖", color: "#6c5ce7", persona: "", approvalMode: "ask-risky", tools: { web: true, browser: true, apps: true, phone: false }, skills: [] }), ...edits };
+  const set = (patch: Partial<Bot>) => setEdits((prev) => ({ ...prev, ...patch }));
   const save = run(async () => {
-    if (bot) await api(`bots/${bot.id}`, { method: "PATCH", body: b });
+    if (bot) await api(`bots/${bot.id}`, { method: "PATCH", body: edits });
     else await api("bots", { body: b });
     onClose();
   }, "Saved");
