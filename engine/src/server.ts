@@ -455,6 +455,15 @@ route("POST", "/api/composio/link", async (req) => {
   if (req.via === "local" && bridgeAvailable()) await bridge("/open-url", { url }).catch(() => {});
   return json({ url });
 });
+route("GET", "/api/composio/toolkits/:slug/auth", async (_r, [slug]) => json(await composio.toolkitAuth(decodeURIComponent(slug))));
+route("POST", "/api/composio/toolkits/:slug/auth", async (req, [slug]) => {
+  try {
+    return json(await composio.setupCustomAuth(decodeURIComponent(slug), String(req.body?.mode ?? "OAUTH2"), req.body?.credentials ?? {}));
+  } catch (e) {
+    throw new HttpError(400, (e as Error).message);
+  }
+});
+route("DELETE", "/api/composio/toolkits/:slug/auth", async (_r, [slug]) => (await composio.removeCustomAuth(decodeURIComponent(slug)), json({ ok: true })));
 route("DELETE", "/api/composio/connections/:id", async (_r, [id]) => (await composio.removeConnection(id), json({ ok: true })));
 
 // Skills marketplace

@@ -351,6 +351,7 @@ function AiTab() {
 
 // ---------------- Connected apps ----------------
 function AppsTab() {
+  const [setup, setSetup] = useState<{ slug: string; name: string } | null>(null);
   const [s, reloadS] = useLoad<any>("settings");
   const [key, setKey] = useState("");
   const [search, setSearch] = useState("");
@@ -406,18 +407,31 @@ function AppsTab() {
         </div>
       </div>
       {(conns ?? []).some((c) => c.toolkit === "googlecalendar") ? <Calendars /> : null}
+      {setup ? <AppSignInSetup slug={setup.slug} name={setup.name} onClose={() => (setSetup(null), reloadConns())} /> : null}
       <div class="section">
         <h2>Add an app</h2>
-        <input value={search} onInput={(e) => setSearch(val(e))} placeholder="Search: gmail, drive, outlook, canva…" />
+        <input value={search} onInput={(e) => setSearch(val(e))} placeholder="Search: gmail, drive, outlook, ebay, canva…" />
+        {/gum ?tree/i.test(search) && !kits.some((k) => /gumtree/i.test(k.slug)) ? (
+          <p class="help">
+            Gumtree has no app connection (no Composio toolkit, no public API). Your bots use Gumtree through the <b>background browser</b> with your own login instead — just ask, e.g. “search Gumtree for a road bike under $300 near me”. Posting or messaging always asks you first.
+          </p>
+        ) : null}
         <div class="grid" style={{ marginTop: 10 }}>
           {kits.map((k) => (
             <button
               class="app-tile"
-              onClick={run(async () => {
+              onClick={async () => {
                 const alias = (conns ?? []).some((c) => c.toolkit === k.slug) ? prompt(`Name this extra ${k.name} account (e.g. work, personal):`) ?? undefined : undefined;
-                const r = await api("composio/link", { body: { toolkit: k.slug, alias } });
-                if (!(window as any).MausDroidNative) window.open(r.url, "_blank");
-              }, "Finish signing in, then come back and tap Refresh")}
+                try {
+                  const r = await api("composio/link", { body: { toolkit: k.slug, alias } });
+                  if (!(window as any).MausDroidNative) window.open(r.url, "_blank");
+                  toast("Finish signing in, then come back and tap Refresh");
+                } catch (e) {
+                  // Apps Composio doesn't sign in for (e.g. eBay) need your own developer app first.
+                  if (/Set up sign-in|own developer app|does not manage auth/i.test((e as Error).message)) setSetup({ slug: k.slug, name: k.name });
+                  else toast(`⚠️ ${(e as Error).message}`);
+                }
+              }}
             >
               {k.logo ? <img src={k.logo} alt="" /> : null}
               <strong>{k.name}</strong>
@@ -429,6 +443,106 @@ function AppsTab() {
         </div>
       </div>
     </>
+  );
+}
+
+/** Your own sign-in setup for an app Composio doesn't sign in for (e.g. eBay): its developer keys go to Composio. */
+function AppSignInSetup({ slug, name, onClose }: { slug: string; name: string; onClose: () => void }) {
+  const [d, setD] = useState<any | null>(null);
+  const [mode, setMode] = useState("");
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    api(`composio/toolkits/${encodeURIComponent(slug)}/auth`)
+      .then((r) => {
+        setD(r);
+        const first = r.schemes.find((x: any) => x.mode === "OAUTH2") ?? r.schemes[0];
+        setMode(first?.mode ?? "");
+        setVals(Object.fromEntries((first?.fields ?? []).filter((f: any) => f.default).map((f: any) => [f.name, f.default])));
+      })
+      .catch((e) => setD({ error: (e as Error).message }));
+  }, [slug]);
+  const scheme = d?.schemes?.find((x: any) => x.mode === mode);
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api(`composio/toolkits/${encodeURIComponent(slug)}/auth`, { body: { mode, credentials: vals } });
+      setDone(true);
+      toast("Saved in Composio ✓");
+    } catch (e) {
+      toast(`⚠️ ${(e as Error).message}`);
+    }
+    setBusy(false);
+  };
+  const connect = async () => {
+    try {
+      const r = await api("composio/link", { body: { toolkit: slug } });
+      if (!(window as any).MausDroidNative) window.open(r.url, "_blank");
+      toast("Finish signing in, then come back and tap Refresh");
+      onClose();
+    } catch (e) {
+      toast(`⚠️ ${(e as Error).message}`);
+    }
+  };
+  return (
+    <div class="section">
+      <h2>Set up sign-in: {name}</h2>
+      {!d ? <p class="muted">Loading…</p> : d.error ? <p class="help">⚠️ {d.error}</p> : null}
+      {d && !d.error ? (
+        <>
+          <p class="help">
+            Composio doesn't sign in to {name} for you: it needs your own (free) {name} developer app. Enter its keys here once — they're stored in your Composio project, not on this phone — then connect your {name} account as usual.
+          </p>
+          {slug === "ebay" ? (
+            <ol class="help" style={{ paddingLeft: "1.1rem" }}>
+              <li>
+                Sign in at <a href="https://developer.ebay.com" target="_blank" rel="noopener">developer.ebay.com</a> with your eBay account (join the developer program if asked — it's free).
+              </li>
+              <li>Open <b>Application Keys</b> and create a <b>Production</b> keyset: the <b>App ID</b> is the client ID and the <b>Cert ID</b> is the client secret.</li>
+              <li>
+                In <b>User Tokens</b>, add an <b>eBay Redirect URL</b> (RuName). Set its “auth accepted URL” to Composio's sign-in return address (Composio shows it in the field below if it needs it), and copy the RuName if a field asks for it.
+              </li>
+            </ol>
+          ) : null}
+          {d.schemes.length > 1 ? (
+            <div class="field">
+              <label>Sign-in type</label>
+              <select value={mode} onChange={(e) => setMode(val(e))}>
+                {d.schemes.map((x: any) => (
+                  <option value={x.mode}>{x.mode}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          {(scheme?.fields ?? []).map((f: any) => (
+            <div class="field">
+              <label>
+                {f.label}
+                {f.required ? "" : " (optional)"}
+              </label>
+              <input type={f.secret ? "password" : "text"} value={vals[f.name] ?? ""} onInput={(e) => setVals({ ...vals, [f.name]: val(e) })} autocomplete="off" />
+              {f.description ? <p class="help">{f.description}</p> : null}
+            </div>
+          ))}
+          <div class="inline">
+            {!done ? (
+              <button class="btn" disabled={busy || (scheme?.fields ?? []).some((f: any) => f.required && !vals[f.name]?.trim())} onClick={save}>
+                Save sign-in setup
+              </button>
+            ) : (
+              <button class="btn" onClick={connect}>
+                Connect {name} now
+              </button>
+            )}
+            <button class="btn secondary" onClick={onClose}>
+              Close
+            </button>
+          </div>
+          {d.yours && !done ? <p class="help">You already have a setup ({d.yours}); saving replaces it.</p> : null}
+        </>
+      ) : null}
+    </div>
   );
 }
 

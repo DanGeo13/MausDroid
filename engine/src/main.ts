@@ -55,6 +55,8 @@ async function main() {
   await step("server", () => startServer());
   await step("secrets", () => initSecrets());
   await step("bots", () => ensureDefaultBots());
+  const { ensureBuiltinSkills } = await import("./skills.ts");
+  await step("skills", () => ensureBuiltinSkills());
   await step("mcp", () => initMcpServer());
   await step("proxy", () => startEgressProxy(config.port + 3));
   const { ensureAuditRoutine } = await import("./audit-setup.ts");

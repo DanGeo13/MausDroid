@@ -19,7 +19,25 @@ export async function fakeComposio(state = {}) {
       const body = b ? JSON.parse(b) : {};
       calls.push({ method: req.method, path: url.pathname, body });
       const p = url.pathname.replace(/^\/api\/v3/, "");
-      if (p === "/tool_router/session") return send(200, { session_id: "sess1", mcp: { type: "http", url: `http://127.0.0.1:${server.address().port}/mcp` } });
+      if (p === "/tool_router/session") {
+        state.sessionAuth = body.auth_configs ?? null;
+        state.sessions = (state.sessions ?? 0) + 1;
+        return send(200, { session_id: `sess${state.sessions}`, mcp: { type: "http", url: `http://127.0.0.1:${server.address().port}/mcp` } });
+      }
+      const link = p.match(/^\/tool_router\/session\/([^/]+)\/link$/);
+      if (link) {
+        // Apps Composio doesn't sign in for need a sign-in setup in the session.
+        if ((state.unmanaged ?? []).includes(body.toolkit) && !state.sessionAuth?.[body.toolkit])
+          return send(400, { error: { message: `Composio does not manage auth for toolkit ${body.toolkit} and no auth config without required fields is available. Please create an auth config manually or specify one in auth_config_override.` } });
+        return send(200, { redirect_url: `https://connect.example/${body.toolkit}` });
+      }
+      const kit = p.match(/^\/toolkits\/([a-z0-9_]+)$/);
+      if (kit && state.toolkitInfo?.[kit[1]]) return send(200, state.toolkitInfo[kit[1]]);
+      if (p === "/auth_configs" && req.method === "POST") {
+        state.authConfigs = [...(state.authConfigs ?? []), body];
+        if (!body.auth_config?.credentials?.client_id) return send(400, { error: { message: "client_id is required" } });
+        return send(201, { toolkit: { slug: body.toolkit.slug }, auth_config: { id: `ac_${body.toolkit.slug}${state.authConfigs.length}`, auth_scheme: body.auth_config.authScheme, is_composio_managed: false } });
+      }
       if (p === "/mcp") return send(500, { error: "no mcp in stand-in" });
       if (p === "/connected_accounts") return send(200, { items: state.accounts.map((a) => ({ id: a.id, alias: a.alias, status: a.status ?? "ACTIVE", toolkit: { slug: a.toolkit } })) });
       const tool = p.match(/^\/tools\/([A-Z_]+)$/);

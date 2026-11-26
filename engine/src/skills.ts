@@ -142,3 +142,37 @@ export async function installFromGitHub(ref: string, only?: string[]) {
   }
   return installed;
 }
+
+/** Skills that come with MausDroid (added once; your edits are kept). */
+const BUILTIN_SKILLS: Record<string, string> = {
+  gumtree: `---
+name: gumtree
+description: Search, watch and read Gumtree (Australia) listings in the background browser with the person's own login — Gumtree has no app connection. Use for "find on Gumtree", price checks, watching for new listings, and drafting listings or messages for approval.
+---
+# Gumtree (through the background browser)
+
+Gumtree has no API or Composio toolkit, so use the phone's background browser (browser_open, browser_read, browser_scroll, browser_click, browser_type, browser_screenshot).
+
+## Searching
+- Open https://www.gumtree.com.au/s-QUERY/k0 (spaces as hyphens, e.g. /s-road-bike/k0). Add a location by opening the site and using its location box, or ask the person for their suburb once and remember it (memory_save).
+- browser_read the results; scroll for more. For each useful listing give: title, price, suburb, posted time and the link. Point out obvious duplicates or likely scams (too-cheap prices, "shipping only", requests to pay outside Gumtree).
+- To check a listing, open its link and read the description, condition and seller details.
+
+## Watching for new listings
+- Suggest a routine (routine_create, e.g. every 2 hours) that runs the same search and calls notify_user only for listings it hasn't reported before (keep the links you've seen in memory).
+
+## Logging in
+- Only when needed (messages, saved searches, posting): call browser_ask_login so the person signs in themselves in the browser. Never ask for their password in chat.
+
+## Never without the person's OK
+- Posting, editing or deleting a listing, messaging a seller, making an offer or paying. Draft the text first, show it, and only send after they approve (the approval card).
+- Don't create accounts or automate bulk actions; keep to what a person would do by hand.
+`,
+};
+
+export function ensureBuiltinSkills() {
+  for (const [name, md] of Object.entries(BUILTIN_SKILLS)) {
+    if (listSkills().some((s) => s.name === name)) continue;
+    saveSkill(name, md);
+  }
+}

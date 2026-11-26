@@ -37,6 +37,8 @@ async function createSession(key: string, userId: string) {
       user_id: userId,
       manage_connections: { enable: true, enable_wait_for_connections: true, enable_connection_removal: true },
       multi_account: { enable: true, max_accounts_per_toolkit: 10, require_explicit_selection: true },
+      // Apps signed in with your own developer app (e.g. eBay) use your sign-in setup.
+      ...(Object.keys(settings().composio.authConfigs ?? {}).length ? { auth_configs: settings().composio.authConfigs } : {}),
     }),
     signal: AbortSignal.timeout(30_000),
   });
@@ -103,7 +105,11 @@ export async function composioTools(): Promise<ToolSpec[]> {
 export async function callComposio(name: string, args: unknown) {
   const c = mcp();
   if (!c) throw new Error("Composio is not connected. Add your project key in Settings → Connected apps.");
-  return c.callTool(name.replace(/^composio__/, ""), args);
+  const r = await c.callTool(name.replace(/^composio__/, ""), args);
+  // An app that needs your own developer app: tell the bot (and so the person) how to fix it.
+  const m = r.text.match(/toolkit ([a-z0-9_]+)[^\n]{0,40}does not manage auth/i);
+  if (m) r.text += `\n\n[MausDroid: ${m[1]} needs the person's own ${m[1]} developer app. Tell them: Settings → Connected apps → ${m[1]} → "Set up sign-in", enter its keys there (never in chat), then connect again.]`;
+  return r;
 }
 
 /** Toolkit catalogue for the Connected apps screen. */
@@ -142,7 +148,7 @@ export async function linkToolkit(toolkit: string, alias?: string): Promise<{ ur
     headers: headers(key, true),
     body: JSON.stringify({ toolkit, ...(alias ? { alias } : {}) }),
   });
-  if (!res.ok) throw new Error(await responseError(res));
+  if (!res.ok) throw new Error(explainAuthError(toolkit, await responseError(res)));
   const j = (await res.json()) as any;
   const url = j.redirect_url ?? j.link ?? j.url;
   if (!url) throw new Error("Composio did not return a sign-in link.");
@@ -157,6 +163,91 @@ export async function removeConnection(id: string) {
   tools = null;
 }
 
+
+// ---------------- Apps that need your own developer app (e.g. eBay) ----------------
+
+export interface AuthField {
+  name: string;
+  label: string;
+  description: string;
+  secret: boolean;
+  required: boolean;
+  default?: string | null;
+}
+
+/** How an app signs in: whether Composio manages it, and the details your own setup needs. */
+export async function toolkitAuth(slug: string) {
+  const key = getSecret("composio");
+  if (!key) throw new Error("Add your Composio project key first.");
+  const res = await fetch(`${API}/toolkits/${encodeURIComponent(slug)}`, { headers: headers(key) });
+  if (!res.ok) throw new Error(await responseError(res));
+  const j = (await res.json()) as any;
+  const field = (f: any, required: boolean): AuthField => ({ name: f.name, label: f.displayName ?? f.name, description: f.description ?? "", secret: Boolean(f.is_secret), required, default: f.default ?? null });
+  const schemes = (j.auth_config_details ?? []).map((d: any) => ({
+    mode: d.mode as string,
+    fields: [...(d.fields?.auth_config_creation?.required ?? []).map((f: any) => field(f, true)), ...(d.fields?.auth_config_creation?.optional ?? []).filter((f: any) => f.user_visible !== false).map((f: any) => field(f, false))],
+  }));
+  return {
+    slug: j.slug ?? slug,
+    name: j.name ?? slug,
+    composioManaged: (j.composio_managed_auth_schemes ?? []).length > 0,
+    schemes,
+    yours: settings().composio.authConfigs?.[slug] ?? null,
+  };
+}
+
+/** Saves your own sign-in setup for an app (its developer keys stay in Composio, not on the phone) and uses it from now on. */
+export async function setupCustomAuth(slug: string, mode: string, credentials: Record<string, string>) {
+  const key = getSecret("composio");
+  const st = settings().composio;
+  if (!key || !st.userId) throw new Error("Add your Composio project key first.");
+  const clean = Object.fromEntries(Object.entries(credentials ?? {}).map(([k, v]) => [k, String(v ?? "").trim()]).filter(([, v]) => v));
+  const res = await fetch(`${API}/auth_configs`, {
+    method: "POST",
+    headers: headers(key, true),
+    body: JSON.stringify({ toolkit: { slug }, auth_config: { type: "use_custom_auth", authScheme: mode, credentials: clean, name: `MausDroid ${slug}`, is_enabled_for_tool_router: true } }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`Composio didn't accept these details: ${await responseError(res)}`);
+  const j = (await res.json()) as any;
+  const id = j.auth_config?.id ?? j.id;
+  if (!id) throw new Error("Composio didn't return the new sign-in setup.");
+  updateSettings((s) => {
+    s.composio.authConfigs = { ...(s.composio.authConfigs ?? {}), [slug]: id };
+  });
+  await renewSession();
+  return { id };
+}
+
+export async function removeCustomAuth(slug: string) {
+  updateSettings((s) => {
+    const m = { ...(s.composio.authConfigs ?? {}) };
+    delete m[slug];
+    s.composio.authConfigs = m;
+  });
+  await renewSession();
+}
+
+/** A new session so bots and sign-ins use the current sign-in setups. */
+async function renewSession() {
+  const key = getSecret("composio");
+  const userId = settings().composio.userId;
+  if (!key || !userId) return;
+  const s = await createSession(key, userId);
+  updateSettings((st) => {
+    st.composio.sessionId = s.session_id;
+    st.composio.mcpUrl = s.mcp.url;
+  });
+  client = null;
+  tools = null;
+}
+
+/** Composio's "doesn't manage auth" error, in plain words with the fix. */
+export function explainAuthError(slug: string, message: string) {
+  return /does not manage auth|auth_config_override|create an auth config/i.test(message)
+    ? `${slug} needs your own developer app: Settings → Connected apps → ${slug} → "Set up sign-in" and enter its keys.`
+    : message;
+}
 
 // ---------------- Direct tool execution (one chosen account) ----------------
 

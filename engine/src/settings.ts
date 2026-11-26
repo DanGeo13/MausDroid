@@ -44,7 +44,7 @@ const RENAMED: Record<string, string> = { anthropic: "claude", openai: "chatgpt"
 export interface Settings {
   providers: ProviderConfig[];
   defaultProvider: string | null;
-  composio: { userId?: string; sessionId?: string; mcpUrl?: string };
+  composio: { userId?: string; sessionId?: string; mcpUrl?: string; /** Your own sign-in setups (auth configs) for apps Composio doesn't manage, e.g. eBay. */ authConfigs?: Record<string, string> };
   website: { relayUrl?: string; deviceId?: string; enabled: boolean };
   tailscale: { enabled: boolean; hostname: string };
   onboardingDone: boolean;
