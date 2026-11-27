@@ -1,8 +1,6 @@
-const GROQ_API = "https://api.groq.com/openai/v1";
-// Groq models that accept images, per LiteLLM's model list (Nov 2026); Groq's /models doesn't say.
-const IMAGE_MODELS = ["qwen/qwen3.8-27b"];
-const DEFAULT_MODEL = IMAGE_MODELS[0];
-const seesImages = (id) => IMAGE_MODELS.includes(id) || /vision|-vl\b/i.test(id);
+const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
+const DEFAULT_MODEL = "gemini-flash-latest";
+const NOT_FOR_CHAT = /tts|image|embedding|live|robotics|computer-use|deep-research|aqa|veo|imagen|genie|customtools/i;
 
 const log = document.getElementById("log");
 const input = document.getElementById("input");
@@ -23,8 +21,8 @@ function addBubble(cls, text) {
 }
 
 async function getApiKey() {
-  const { groqKey } = await chrome.storage.local.get("groqKey");
-  return groqKey;
+  const { geminiKey } = await chrome.storage.local.get("geminiKey");
+  return geminiKey;
 }
 
 function showKeyForm() {
@@ -38,33 +36,36 @@ keyForm.onsubmit = async (e) => {
   e.preventDefault();
   const key = keyInput.value.trim();
   if (!key) return;
-  if (!key.startsWith("gsk_")) {
-    addBubble("a", "That doesn't look like a Groq key. Groq keys start with gsk_. Get one at console.groq.com/keys.");
+  if (!key.startsWith("AIza")) {
+    addBubble("a", "That doesn't look like a Gemini key. Gemini keys start with AIza. Get one at aistudio.google.com/apikey.");
     return;
   }
-  await chrome.storage.local.set({ groqKey: key });
+  await chrome.storage.local.set({ geminiKey: key });
   keyInput.value = "";
   keyForm.hidden = true;
   addBubble("a", "Key saved. Click 'Look at this tab'.");
   loadModels();
 };
 
-class GroqError extends Error {
+class GeminiError extends Error {
   constructor(status, body) {
     let message = body;
     try { message = JSON.parse(body).error?.message ?? body; } catch {}
     super(message);
     this.status = status;
   }
-  get cantSeeImages() {
-    return this.status === 404 || /image|vision|multimodal|content must be a string|content.*type/i.test(this.message);
-  }
   get friendly() {
-    if (this.status === 401) return "Groq didn't accept that API key. Click 'API key' and paste it again (it starts with gsk_).";
-    if (this.status === 429) return `Groq's limit was reached for now. Wait a minute and try again. (${this.message})`;
-    if (/too large|size|exceed/i.test(this.message)) return `The screenshot was too big for Groq. Make the browser window smaller and try again. (${this.message})`;
-    return `Groq said ${this.status || "error"}: ${this.message.slice(0, 300)}`;
+    if (/api key not valid|API_KEY_INVALID/i.test(this.message) || this.status === 401) {
+      return "Google didn't accept that API key. Click 'API key' and paste it again (it starts with AIza).";
+    }
+    if (this.status === 429) return `Gemini's limit was reached for now. Wait a minute and try again, or pick a "Lite" model. (${this.message.slice(0, 200)})`;
+    if (this.status === 404) return `The model "${modelSelect.value}" isn't available. Pick another in the Model menu.`;
+    return `Gemini said ${this.status || "error"}: ${this.message.slice(0, 300)}`;
   }
+}
+
+function modelLabel(id) {
+  return id === DEFAULT_MODEL ? `${id} (recommended)` : id;
 }
 
 async function loadModels() {
@@ -73,26 +74,29 @@ async function loadModels() {
   let ids = [DEFAULT_MODEL];
   if (key) {
     try {
-      const res = await fetch(`${GROQ_API}/models`, { headers: { authorization: `Bearer ${key}` } });
+      const res = await fetch(`${GEMINI_API}/models?pageSize=1000`, { headers: { "x-goog-api-key": key } });
       if (res.ok) {
-        const live = (await res.json()).data
-          .filter((m) => m.active !== false && !/whisper|tts|guard|playai|orpheus|embed/i.test(m.id))
-          .map((m) => m.id);
-        if (live.length) ids = live;
+        const live = ((await res.json()).models ?? [])
+          .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+          .map((m) => m.name.replace(/^models\//, ""))
+          .filter((id) => /^(gemini|gemma)/.test(id) && !NOT_FOR_CHAT.test(id));
+        if (live.length) ids = [...new Set([DEFAULT_MODEL, ...live])];
       }
     } catch {}
   }
-  ids.sort((a, b) => Number(seesImages(b)) - Number(seesImages(a)) || a.localeCompare(b));
+  const rank = (id) => (id === DEFAULT_MODEL ? 0 : id.endsWith("-latest") ? 1 : id.startsWith("gemini") ? 2 : 3);
+  ids.sort((a, b) => rank(a) - rank(b) || b.localeCompare(a, undefined, { numeric: true }));
   modelSelect.innerHTML = "";
-  for (const id of ids) modelSelect.add(new Option(seesImages(id) ? `👁 ${id}` : id, id));
-  modelSelect.value = ids.includes(saved) ? saved : ids.includes(DEFAULT_MODEL) ? DEFAULT_MODEL : ids[0];
+  for (const id of ids) modelSelect.add(new Option(modelLabel(id), id));
+  modelSelect.value = ids.includes(saved) ? saved : DEFAULT_MODEL;
 }
 
 modelSelect.onchange = () => chrome.storage.local.set({ model: modelSelect.value });
 
 async function captureTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  return chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 80 });
+  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 80 });
+  return dataUrl.split(",")[1];
 }
 
 async function* sseData(res) {
@@ -108,74 +112,49 @@ async function* sseData(res) {
       const line = buffer.slice(0, i).trim();
       buffer = buffer.slice(i + 1);
       if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (data === "[DONE]") return;
-      try { yield JSON.parse(data); } catch {}
+      try { yield JSON.parse(line.slice(5).trim()); } catch {}
     }
   }
 }
 
-function hasImage(messages) {
-  return messages.some((m) => Array.isArray(m.content) && m.content.some((c) => c.type === "image_url"));
-}
-
-function stripThinking(text) {
-  return text.replace(/<think>[\s\S]*?(<\/think>\s*|$)/g, "").trimStart();
-}
-
-async function streamAnswer(key, model, messages, bubble) {
-  const res = await fetch(`${GROQ_API}/chat/completions`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({ model, messages, stream: true }),
-  });
-  if (!res.ok) throw new GroqError(res.status, await res.text());
-  let raw = "";
-  for await (const ev of sseData(res)) {
-    if (ev.error) throw new GroqError(0, JSON.stringify(ev));
-    const delta = ev.choices?.[0]?.delta?.content;
-    if (delta) {
-      raw += delta;
-      const shown = stripThinking(raw);
-      bubble.textContent = shown || "Thinking…";
-      log.scrollTop = log.scrollHeight;
-    }
-  }
-  return stripThinking(raw);
-}
-
-async function ask(content) {
+async function ask(parts) {
   const key = await getApiKey();
   if (!key) {
-    addBubble("a", "Click 'API key' and paste your Groq key first (from console.groq.com/keys).");
+    addBubble("a", "Click 'API key' and paste your Gemini key first (from aistudio.google.com/apikey).");
     showKeyForm();
     return;
   }
   busy = true;
   const bubble = addBubble("a", "Thinking…");
-  const userMessage = { role: "user", content };
+  const userTurn = { role: "user", parts };
+  let answer = "";
 
-  const messages = [{ role: "system", content: PROMPT }, ...conversation, userMessage];
   try {
-    let answer;
-    try {
-      answer = await streamAnswer(key, modelSelect.value, messages, bubble);
-    } catch (err) {
-      const canSwitch = err instanceof GroqError && err.cantSeeImages && hasImage(messages) && modelSelect.value !== DEFAULT_MODEL;
-      if (!canSwitch) throw err;
-      const from = modelSelect.value;
-      modelSelect.value = DEFAULT_MODEL;
-      if (modelSelect.value !== DEFAULT_MODEL) modelSelect.add(new Option(`👁 ${DEFAULT_MODEL}`, DEFAULT_MODEL, true, true));
-      chrome.storage.local.set({ model: DEFAULT_MODEL });
-      addBubble("q", `"${from}" can't read images, so I switched to ${DEFAULT_MODEL}.`);
-      log.append(bubble);
-      answer = await streamAnswer(key, DEFAULT_MODEL, messages, bubble);
+    const res = await fetch(`${GEMINI_API}/models/${encodeURIComponent(modelSelect.value)}:streamGenerateContent?alt=sse`, {
+      method: "POST",
+      headers: { "x-goog-api-key": key, "content-type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: PROMPT }] },
+        contents: [...conversation, userTurn],
+      }),
+    });
+    if (!res.ok) throw new GeminiError(res.status, await res.text());
+
+    for await (const ev of sseData(res)) {
+      if (ev.error) throw new GeminiError(ev.error.code ?? 0, JSON.stringify(ev));
+      if (ev.promptFeedback?.blockReason) throw new Error(`Gemini wouldn't answer this (${ev.promptFeedback.blockReason}).`);
+      for (const part of ev.candidates?.[0]?.content?.parts ?? []) {
+        if (part.thought || !part.text) continue;
+        answer += part.text;
+        bubble.textContent = answer;
+        log.scrollTop = log.scrollHeight;
+      }
     }
     if (!answer) throw new Error("No answer came back. Try again.");
-    conversation.push(userMessage, { role: "assistant", content: answer });
+    conversation.push(userTurn, { role: "model", parts: [{ text: answer }] });
   } catch (err) {
-    if (err instanceof GroqError) bubble.textContent = `Error: ${err.friendly}`;
-    else if (err instanceof TypeError) bubble.textContent = "Couldn't reach Groq. Check your internet connection.";
+    if (err instanceof GeminiError) bubble.textContent = `Error: ${err.friendly}`;
+    else if (err instanceof TypeError) bubble.textContent = "Couldn't reach Gemini. Check your internet connection.";
     else bubble.textContent = `Error: ${err.message}`;
   }
   busy = false;
@@ -185,16 +164,16 @@ async function lookAtTab() {
   if (busy) return;
   log.innerHTML = "";
   conversation = [];
-  let imageUrl;
+  let imageBase64;
   try {
-    imageUrl = await captureTab();
+    imageBase64 = await captureTab();
   } catch {
     addBubble("a", "Couldn't capture this tab. Chrome blocks screenshots of some pages (like chrome:// pages and the Web Store). Try a normal web page.");
     return;
   }
   await ask([
-    { type: "text", text: "Answer the questions in this screenshot." },
-    { type: "image_url", image_url: { url: imageUrl } },
+    { text: "Answer the questions in this screenshot." },
+    { inline_data: { mime_type: "image/jpeg", data: imageBase64 } },
   ]);
 }
 
@@ -210,14 +189,14 @@ document.getElementById("form").onsubmit = (e) => {
     return;
   }
   addBubble("q", q);
-  ask(q);
+  ask([{ text: q }]);
 };
 
 (async () => {
   await loadModels();
   if (await getApiKey()) lookAtTab();
   else {
-    addBubble("a", "Click 'API key' and paste your Groq key (from console.groq.com/keys) to get started.");
+    addBubble("a", "Click 'API key' and paste your Gemini key (from aistudio.google.com/apikey) to get started.");
     showKeyForm();
   }
 })();

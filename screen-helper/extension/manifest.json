@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Screen Helper",
-  "version": "0.6.0",
-  "description": "Groq AI reads the current tab and answers the questions on it.",
+  "version": "0.7.0",
+  "description": "Gemini reads the current tab and answers the questions on it.",
   "permissions": ["sidePanel", "storage", "tabs"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },

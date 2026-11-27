@@ -1,6 +1,6 @@
 # Screen Helper (Chrome extension)
 
-Press **⌘ ⇧ Y** in Chrome and a side panel opens. AI on **Groq** looks at the current tab and
+Press **⌘ ⇧ Y** in Chrome and a side panel opens. **Gemini** looks at the current tab and
 answers the questions on it: multiple choice, short answers, and putting things in the right
 order. Ask follow-ups underneath. It only sees the visible part of the current Chrome tab.
 
@@ -11,7 +11,7 @@ order. Ask follow-ups underneath. It only sees the visible part of the current C
 3. If an older Screen Helper is there, click **Remove** on it.
 4. Click **Load unpacked** and choose the `screen-helper/extension` folder.
 5. Pin it: click the puzzle-piece icon in the toolbar, then the pin next to **Screen Helper**.
-6. Get a Groq API key at https://console.groq.com/keys (it starts with `gsk_`).
+6. Get a free Gemini API key at https://aistudio.google.com/apikey (it starts with `AIza`).
 7. Open the panel, click **API key**, paste it, and click **Save**. The key is stored on this
    computer only, in Chrome's extension storage.
 
@@ -19,8 +19,9 @@ order. Ask follow-ups underneath. It only sees the visible part of the current C
 
 - Press **⌘ ⇧ Y** (or click the toolbar icon). It reads the tab straight away.
 - Moved to a new question? Click **Look at this tab**.
-- **Model** menu: the list comes from Groq. Models marked 👁 can read images; pick one of those.
-  Your choice is remembered.
+- **Model** menu: the list comes from your Google account. `gemini-flash-latest` (recommended) is
+  fast and always the newest Flash; `gemini-pro-latest` is more careful but slower, with lower free
+  limits. "Lite" models are quickest. Your choice is remembered.
 - To change the shortcut, go to `chrome://extensions/shortcuts`.
 
 ## Change the instructions
