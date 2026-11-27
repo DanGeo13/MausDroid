@@ -1,6 +1,8 @@
 const GROQ_API = "https://api.groq.com/openai/v1";
-const DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
-const SEES_IMAGES = /llama-4|vision|scout|maverick|-vl\b|vl-/i;
+// Groq models that accept images, per LiteLLM's model list (Nov 2026); Groq's /models doesn't say.
+const IMAGE_MODELS = ["qwen/qwen3.8-27b"];
+const DEFAULT_MODEL = IMAGE_MODELS[0];
+const seesImages = (id) => IMAGE_MODELS.includes(id) || /vision|-vl\b/i.test(id);
 
 const log = document.getElementById("log");
 const input = document.getElementById("input");
@@ -47,15 +49,22 @@ keyForm.onsubmit = async (e) => {
   loadModels();
 };
 
-function friendlyError(status, body) {
-  const message = (() => {
-    try { return JSON.parse(body).error?.message ?? body; } catch { return body; }
-  })();
-  if (status === 401) return "Groq didn't accept that API key. Click 'API key' and paste it again (it starts with gsk_).";
-  if (status === 429) return "Groq's free limit was reached for now. Wait a minute and try again.";
-  if (/image|vision|multimodal|content.*type/i.test(message)) return `The model "${modelSelect.value}" can't read images. Pick one marked 👁 in the Model menu.`;
-  if (/too large|size|exceed/i.test(message)) return "The screenshot was too big for Groq. Make the browser window smaller and try again.";
-  return `Groq said ${status}: ${message.slice(0, 300)}`;
+class GroqError extends Error {
+  constructor(status, body) {
+    let message = body;
+    try { message = JSON.parse(body).error?.message ?? body; } catch {}
+    super(message);
+    this.status = status;
+  }
+  get cantSeeImages() {
+    return this.status === 404 || /image|vision|multimodal|content must be a string|content.*type/i.test(this.message);
+  }
+  get friendly() {
+    if (this.status === 401) return "Groq didn't accept that API key. Click 'API key' and paste it again (it starts with gsk_).";
+    if (this.status === 429) return `Groq's limit was reached for now. Wait a minute and try again. (${this.message})`;
+    if (/too large|size|exceed/i.test(this.message)) return `The screenshot was too big for Groq. Make the browser window smaller and try again. (${this.message})`;
+    return `Groq said ${this.status || "error"}: ${this.message.slice(0, 300)}`;
+  }
 }
 
 async function loadModels() {
@@ -73,9 +82,9 @@ async function loadModels() {
       }
     } catch {}
   }
-  ids.sort((a, b) => Number(SEES_IMAGES.test(b)) - Number(SEES_IMAGES.test(a)) || a.localeCompare(b));
+  ids.sort((a, b) => Number(seesImages(b)) - Number(seesImages(a)) || a.localeCompare(b));
   modelSelect.innerHTML = "";
-  for (const id of ids) modelSelect.add(new Option(SEES_IMAGES.test(id) ? `👁 ${id}` : id, id));
+  for (const id of ids) modelSelect.add(new Option(seesImages(id) ? `👁 ${id}` : id, id));
   modelSelect.value = ids.includes(saved) ? saved : ids.includes(DEFAULT_MODEL) ? DEFAULT_MODEL : ids[0];
 }
 
@@ -106,6 +115,35 @@ async function* sseData(res) {
   }
 }
 
+function hasImage(messages) {
+  return messages.some((m) => Array.isArray(m.content) && m.content.some((c) => c.type === "image_url"));
+}
+
+function stripThinking(text) {
+  return text.replace(/<think>[\s\S]*?(<\/think>\s*|$)/g, "").trimStart();
+}
+
+async function streamAnswer(key, model, messages, bubble) {
+  const res = await fetch(`${GROQ_API}/chat/completions`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({ model, messages, stream: true }),
+  });
+  if (!res.ok) throw new GroqError(res.status, await res.text());
+  let raw = "";
+  for await (const ev of sseData(res)) {
+    if (ev.error) throw new GroqError(0, JSON.stringify(ev));
+    const delta = ev.choices?.[0]?.delta?.content;
+    if (delta) {
+      raw += delta;
+      const shown = stripThinking(raw);
+      bubble.textContent = shown || "Thinking…";
+      log.scrollTop = log.scrollHeight;
+    }
+  }
+  return stripThinking(raw);
+}
+
 async function ask(content) {
   const key = await getApiKey();
   if (!key) {
@@ -116,33 +154,29 @@ async function ask(content) {
   busy = true;
   const bubble = addBubble("a", "Thinking…");
   const userMessage = { role: "user", content };
-  let answer = "";
 
+  const messages = [{ role: "system", content: PROMPT }, ...conversation, userMessage];
   try {
-    const res = await fetch(`${GROQ_API}/chat/completions`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        model: modelSelect.value,
-        messages: [{ role: "system", content: PROMPT }, ...conversation, userMessage],
-        stream: true,
-      }),
-    });
-    if (!res.ok) throw new Error(friendlyError(res.status, await res.text()));
-
-    for await (const ev of sseData(res)) {
-      if (ev.error) throw new Error(friendlyError(0, JSON.stringify(ev)));
-      const delta = ev.choices?.[0]?.delta?.content;
-      if (delta) {
-        answer += delta;
-        bubble.textContent = answer;
-        log.scrollTop = log.scrollHeight;
-      }
+    let answer;
+    try {
+      answer = await streamAnswer(key, modelSelect.value, messages, bubble);
+    } catch (err) {
+      const canSwitch = err instanceof GroqError && err.cantSeeImages && hasImage(messages) && modelSelect.value !== DEFAULT_MODEL;
+      if (!canSwitch) throw err;
+      const from = modelSelect.value;
+      modelSelect.value = DEFAULT_MODEL;
+      if (modelSelect.value !== DEFAULT_MODEL) modelSelect.add(new Option(`👁 ${DEFAULT_MODEL}`, DEFAULT_MODEL, true, true));
+      chrome.storage.local.set({ model: DEFAULT_MODEL });
+      addBubble("q", `"${from}" can't read images, so I switched to ${DEFAULT_MODEL}.`);
+      log.append(bubble);
+      answer = await streamAnswer(key, DEFAULT_MODEL, messages, bubble);
     }
     if (!answer) throw new Error("No answer came back. Try again.");
     conversation.push(userMessage, { role: "assistant", content: answer });
   } catch (err) {
-    bubble.textContent = err instanceof TypeError ? "Couldn't reach Groq. Check your internet connection." : `Error: ${err.message}`;
+    if (err instanceof GroqError) bubble.textContent = `Error: ${err.friendly}`;
+    else if (err instanceof TypeError) bubble.textContent = "Couldn't reach Groq. Check your internet connection.";
+    else bubble.textContent = `Error: ${err.message}`;
   }
   busy = false;
 }
