@@ -17,19 +17,19 @@ export interface SavedDownload {
   size: number;
 }
 
-export async function saveToDownloads(a: Attachment, asName?: string): Promise<SavedDownload> {
+export async function saveToDownloads(a: Attachment, asName?: string, folder = "MausDroid"): Promise<SavedDownload> {
   if (!bridgeAvailable()) throw new Error("Saving to Downloads needs the Android app.");
   const src = filePath(a);
   const size = fs.statSync(src).size;
   let r: any;
   try {
-    r = await bridge("/files/save-download", { path: src, name: (asName?.trim() || a.name).replace(/[\\/:*?"<>|]+/g, " ").trim(), mime: a.mime, folder: "MausDroid" }, 120_000);
+    r = await bridge("/files/save-download", { path: src, name: (asName?.trim() || a.name).replace(/[\\/:*?"<>|]+/g, " ").trim(), mime: a.mime, folder }, 120_000);
   } catch (e) {
     if (/unknown \/files\/save-download/.test(errorText(e))) throw new Error("This needs the newer MausDroid app (0.11.0 or later): Settings → Updates → install the app update.");
     throw e;
   }
   if (Number(r.size) !== size) throw new Error(`The copy in Downloads is ${r.size} bytes but should be ${size}, so it wasn't saved properly.`);
-  return { name: String(r.name ?? a.name), location: String(r.location ?? `Download/MausDroid/${a.name}`), uri: String(r.uri ?? ""), size };
+  return { name: String(r.name ?? a.name), location: String(r.location ?? `Download/${folder}/${a.name}`), uri: String(r.uri ?? ""), size };
 }
 
 /** The first link to the file's bytes anywhere in a Composio response. */
@@ -56,7 +56,9 @@ export async function fetchForDownload(i: { url?: string; file_id?: string; driv
     const accounts = (await listConnections()).filter((a: any) => a.toolkit === "googledrive" && a.status === "ACTIVE");
     const account = i.account_id ?? accounts[0]?.id;
     if (!account) throw new Error("Google Drive isn't connected (Settings → Apps).");
-    const data = await executeTool("GOOGLEDRIVE_DOWNLOAD_FILE", args, account);
+    let data = await executeTool("GOOGLEDRIVE_DOWNLOAD_FILE", args, account).catch(() => null);
+    // Not a Google Doc/Sheet/Slides (e.g. already a PDF): download it as it is.
+    if (!findFileUrl(data)) data = await executeTool("GOOGLEDRIVE_DOWNLOAD_FILE", await argsFor("GOOGLEDRIVE_DOWNLOAD_FILE", { id: { names: ["file_id", "fileId"], value: i.drive_file_id } }), account);
     url = findFileUrl(data) ?? undefined;
     if (!url) throw new Error("Google Drive didn't return the file. Try again with the file's download link (url).");
   }
@@ -71,4 +73,16 @@ export async function fetchForDownload(i: { url?: string; file_id?: string; driv
   let name = i.name || (fromHeader ? decodeURIComponent(fromHeader) : decodeURIComponent(new URL(url).pathname.split("/").pop() || "download"));
   if (!/\.[a-z0-9]{2,5}$/i.test(name)) name += type === "application/pdf" || buf.subarray(0, 4).toString() === "%PDF" ? ".pdf" : "";
   return saveFile(name, type && type !== "application/octet-stream" ? type : guessMime(name), buf);
+}
+
+/** The Drive file id in a Google Docs / Sheets / Slides / Drive link. */
+export function driveIdFrom(link: string | undefined): string | undefined {
+  if (!link) return undefined;
+  return /\/(?:document|spreadsheets|presentation|file)\/d\/([A-Za-z0-9_-]{20,})/.exec(link)?.[1] ?? /[?&]id=([A-Za-z0-9_-]{20,})/.exec(link)?.[1];
+}
+
+export async function deleteDownload(uri: string): Promise<boolean> {
+  if (!bridgeAvailable() || !uri) return false;
+  const r = await bridge<{ deleted?: boolean }>("/files/delete-download", { uri }, 20_000).catch(() => ({ deleted: false }));
+  return Boolean(r.deleted);
 }

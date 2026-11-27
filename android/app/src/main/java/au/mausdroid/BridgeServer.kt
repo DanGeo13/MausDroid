@@ -182,6 +182,20 @@ class BridgeServer(
                     }
                     ok(JSONObject().put("text", heard))
                 }
+                "/files/delete-download" -> ok(JSONObject().put("deleted", Downloads.delete(ctx, body.getString("uri"))))
+                "/pdf/find" -> {
+                    val src = java.io.File(body.getString("path"))
+                    if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only MausDroid's own files")
+                    val qs = body.optJSONArray("quotes") ?: org.json.JSONArray()
+                    val pages = PdfTools.findPages(src.path, (0 until qs.length()).map { qs.optString(it) })
+                    ok(JSONObject().put("pages", org.json.JSONArray(pages)).put("canSearch", PdfTools.canSearch).put("pageCount", PdfTools.pageCount(src.path)))
+                }
+                "/pdf/open" -> {
+                    val src = java.io.File(body.getString("path"))
+                    if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only MausDroid's own files")
+                    ctx.startActivity(Intent(ctx, PdfViewActivity::class.java).putExtra("path", src.path).putExtra("page", body.optInt("page", 0)).putExtra("quote", body.optString("quote")).putExtra("title", body.optString("title")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    ok()
+                }
                 "/voice/engines" -> ok(JSONObject().put("engines", voice.engines()))
                 "/voice/voices" -> ok(voice.voices(body.optString("engine").takeIf { it.isNotBlank() }))
                 "/call/ring" -> { CallRinger.ring(ctx, body.getString("callId"), body.optString("name", "Maus"), body.optString("emoji", "🐭"), body.optString("reason")); ok() }

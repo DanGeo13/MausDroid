@@ -4,8 +4,8 @@ import { bridge, bridgeAvailable } from "./bridge.ts";
 import { collection, dataPath } from "./store.ts";
 import { emit } from "./events.ts";
 import { notifyUser } from "./notify.ts";
-import { getFile, saveFile } from "./files.ts";
-import { saveToDownloads, type SavedDownload } from "./downloads.ts";
+import { deleteFile, filePath, getFile, saveFile } from "./files.ts";
+import { deleteDownload, driveIdFrom, fetchForDownload, saveToDownloads, type SavedDownload } from "./downloads.ts";
 import { settings } from "./settings.ts";
 import { join, readWav, seconds, writeWav, type Pcm } from "./wav.ts";
 import { clip, errorText, id as newId, now } from "./util.ts";
@@ -38,6 +38,29 @@ export interface AudioOverview {
   segments?: Segment[];
   /** The source the hosts discussed is kept on the phone (for "explain that last bit"). */
   hasSource?: boolean;
+  /** The source and its resources as PDFs, in Downloads › MausDroid Review Podcast (removed when the next overview is made). */
+  pdfs?: PodcastPdf[];
+  pdfNote?: string;
+}
+
+export interface PodcastPdf {
+  fileId: string;
+  name: string;
+  location: string;
+  uri: string;
+  kind: "source" | "resource";
+}
+export const PDF_FOLDER = "MausDroid Review Podcast";
+
+export interface PodcastInput {
+  title: string;
+  week?: string;
+  script: string;
+  staff_update_name?: string;
+  staff_update_link?: string;
+  source_text?: string;
+  drive_file_id?: string;
+  resources?: { name?: string; url?: string; drive_file_id?: string }[];
 }
 
 export interface Segment {
@@ -47,7 +70,7 @@ export interface Segment {
   startMs: number;
   endMs: number;
   /** A short quote from the source this line is based on; url jumps to it where the source supports that. */
-  source?: { quote: string; url?: string };
+  source?: { quote: string; url?: string; pdf?: string; page?: number };
 }
 
 export interface AudioSettings {
@@ -225,7 +248,7 @@ export function sourceJump(link: string | undefined, quote: string | undefined):
  * Records an overview from a written script (in the background). Returns at
  * once; the person is notified when it's ready (or if it fails).
  */
-export function createOverview(input: { title: string; week?: string; script: string; staff_update_name?: string; staff_update_link?: string; source_text?: string }): AudioOverview {
+export function createOverview(input: PodcastInput): AudioOverview {
   const lines = parseScript(String(input.script ?? ""));
   if (lines.length < 2) throw new Error("Write the script as a conversation, one line per turn, starting each with A: or B:.");
   const o: AudioOverview = {
@@ -248,11 +271,78 @@ export function createOverview(input: { title: string; week?: string; script: st
   }
   emit("audio-overview", { id: o.id });
   running.add(o.id);
-  void record(o, lines).finally(() => running.delete(o.id));
+  void record(o, lines, input).finally(() => running.delete(o.id));
   return o;
 }
 
-async function record(o: AudioOverview, lines: Line[]) {
+/**
+ * The source (a Google Doc becomes a PDF) and any Drive / PDF resources, saved
+ * to Downloads › MausDroid Review Podcast. Web pages that aren't PDFs stay links.
+ */
+async function preparePdfs(o: AudioOverview, input: PodcastInput): Promise<{ pdfs: PodcastPdf[]; notes: string[] }> {
+  const want: { name: string; kind: PodcastPdf["kind"]; drive_file_id?: string; url?: string }[] = [];
+  const srcId = input.drive_file_id || driveIdFrom(input.staff_update_link);
+  const srcName = (input.staff_update_name || o.title).replace(/\.pdf$/i, "");
+  if (srcId) want.push({ name: `${srcName}.pdf`, kind: "source", drive_file_id: srcId });
+  else if (input.staff_update_link && /\.pdf($|\?)/i.test(input.staff_update_link)) want.push({ name: `${srcName}.pdf`, kind: "source", url: input.staff_update_link });
+  for (const r of (input.resources ?? []).slice(0, 10)) {
+    const id = r.drive_file_id || driveIdFrom(r.url);
+    const name = `${String(r.name || "Resource").replace(/\.pdf$/i, "").slice(0, 80)}.pdf`;
+    if (id) want.push({ name, kind: "resource", drive_file_id: id });
+    else if (r.url && /^https?:\/\//.test(r.url)) want.push({ name, kind: "resource", url: r.url });
+  }
+  const pdfs: PodcastPdf[] = [];
+  const notes: string[] = [];
+  for (const w of want) {
+    try {
+      const a = await fetchForDownload({ drive_file_id: w.drive_file_id, url: w.url, name: w.name });
+      const head = fs.readFileSync(filePath(a)).subarray(0, 5).toString();
+      if (head !== "%PDF-") {
+        deleteFile(a.id);
+        notes.push(`${w.name.replace(/\.pdf$/, "")} isn't a PDF or Google file, so it stays a link.`);
+        continue;
+      }
+      const saved = await saveToDownloads(a, w.name, PDF_FOLDER);
+      pdfs.push({ fileId: a.id, name: saved.name, location: saved.location, uri: saved.uri, kind: w.kind });
+    } catch (e) {
+      const what = w.name.replace(/\.pdf$/, "");
+      notes.push(/gives a web page/.test(errorText(e)) ? `${what} isn't a PDF or Google file, so it stays a link.` : `${what}: ${errorText(e)}`);
+    }
+  }
+  return { pdfs, notes };
+}
+
+/** Which PDF page each line's quote is on (the source first, then resources). */
+async function placeQuotes(segments: Segment[], pdfs: PodcastPdf[]) {
+  for (const pdf of pdfs) {
+    const open = segments.filter((sg) => sg.source?.quote && sg.source.page === undefined);
+    if (!open.length) return;
+    const f = getFile(pdf.fileId);
+    if (!f) continue;
+    const r = await bridge<{ pages?: number[] }>("/pdf/find", { path: filePath(f), quotes: open.map((sg) => sg.source!.quote) }, 60_000).catch(() => null);
+    open.forEach((sg, i) => {
+      const page = r?.pages?.[i] ?? -1;
+      if (page >= 0) Object.assign(sg.source!, { pdf: pdf.fileId, page });
+    });
+  }
+  // Not found in any PDF: the source PDF still opens (at page 1).
+  const src = pdfs.find((p) => p.kind === "source");
+  if (src) for (const sg of segments) if (sg.source?.quote && !sg.source.pdf) sg.source.pdf = src.fileId;
+}
+
+/** The previous overviews' PDFs are deleted from the phone when a new one is made. */
+async function removeOldPdfs(keepId: string) {
+  for (const old of store.get().overviews) {
+    if (old.id === keepId || !old.pdfs?.length) continue;
+    for (const p of old.pdfs) {
+      await deleteDownload(p.uri);
+      deleteFile(p.fileId);
+    }
+    patch(old.id, { pdfs: [], segments: old.segments?.map((sg) => (sg.source ? { ...sg, source: { quote: sg.source.quote, url: sg.source.url } } : sg)) });
+  }
+}
+
+async function record(o: AudioOverview, lines: Line[], input: PodcastInput = { title: o.title, script: "" }) {
   const s = audioSettings();
   const limit = s.maxMinutes * 60;
   const dir = dataPath("audio-work", o.id);
@@ -329,7 +419,11 @@ async function record(o: AudioOverview, lines: Line[]) {
         dlNote = ` (Couldn't also save it to Downloads: ${errorText(e)})`;
       }
     }
-    patch(o.id, { status: "ready", progress: undefined, fileId: file.id, seconds: Math.round(len), linesLeftOut: leftOut || undefined, downloads, segments });
+    patch(o.id, { progress: "Saving the sources as PDFs" });
+    const { pdfs, notes } = await preparePdfs(o, input).catch((e) => ({ pdfs: [] as PodcastPdf[], notes: [errorText(e)] }));
+    if (pdfs.length) await placeQuotes(segments, pdfs);
+    patch(o.id, { status: "ready", progress: undefined, fileId: file.id, seconds: Math.round(len), linesLeftOut: leftOut || undefined, downloads, segments, pdfs, pdfNote: notes.length ? notes.join(" ") : undefined });
+    await removeOldPdfs(o.id).catch(() => {});
     const mins = `${Math.floor(len / 60)}:${String(Math.round(len % 60)).padStart(2, "0")}`;
     await notifyUser({
       title: `🎧 ${o.title} is ready`,
@@ -348,6 +442,11 @@ async function record(o: AudioOverview, lines: Line[]) {
 
 export function deleteOverview(oid: string) {
   if (running.has(oid)) throw new Error("It's still recording.");
+  // Its PDFs go too, so nothing is left behind in Downloads.
+  for (const p of getOverview(oid)?.pdfs ?? []) {
+    void deleteDownload(p.uri);
+    deleteFile(p.fileId);
+  }
   store.update((s) => {
     s.overviews = s.overviews.filter((o) => o.id !== oid);
   });
@@ -370,7 +469,7 @@ export const AUDIO_PROMPT = `A new Staff Update has been published and shared wi
 2. Cover what's taking place NEXT WEEK: day by day, key dates and times, deadlines, events, duties and anything I need to do or bring. Only facts from the update — never guess.
 ${PODCAST_STYLE}
 3. Keep it under 1,300 words (it must stay under 10 minutes). No headings, lists or links.
-4. Call audio_overview_record with: title like "Week 8 audio overview", week (e.g. "Term 4 Week 8"), staff_update_name, staff_update_link, source_text (the update's text, so I can ask about it while listening) and the script.
+4. Call audio_overview_record with: title like "Week 8 audio overview", week (e.g. "Term 4 Week 8"), staff_update_name, staff_update_link, drive_file_id (the Drive file id below), source_text (the update's text, so I can ask about it while listening), resources (other Google Docs, Drive files or PDFs the update links to, with names) and the script. They're saved as PDFs on my phone so I can jump to each line's source.
 It records in the background and notifies me with a link when it's ready. If you can't read the update, say so plainly instead.`;
 
 /** Checks Drive for a Staff Update not handled yet; raises a (silent) alert that starts the routine. */

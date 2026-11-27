@@ -14,6 +14,12 @@ import java.io.File
  * app's file picker can find it, then checks the saved copy's size.
  */
 object Downloads {
+    /** Deletes a file this app saved to Downloads (no permission needed for its own files). */
+    fun delete(ctx: Context, uri: String): Boolean = runCatching {
+        if (uri.startsWith("content://")) ctx.contentResolver.delete(android.net.Uri.parse(uri), null, null) > 0
+        else File(java.net.URI(uri)).delete()
+    }.getOrDefault(false)
+
     fun save(ctx: Context, path: String, name: String, mime: String, folder: String): JSONObject {
         val src = File(path)
         if (!src.isFile) throw IllegalArgumentException("File not found.")

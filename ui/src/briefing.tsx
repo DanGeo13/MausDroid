@@ -237,7 +237,7 @@ function AudioCard({ focusId }: { focusId?: string }) {
         </button>
         {openTx ? (
           <div class="transcript" style={{ marginTop: ".4rem" }}>
-            {o.segments.map((sg: any) => {
+            {o.segments.map((sg: any, i: number) => {
               const now = live?.overviewId === o.id && live.positionMs >= sg.startMs && live.positionMs < sg.endMs + 350;
               return (
                 <div class="toggle" style={{ alignItems: "flex-start", cursor: "pointer", fontWeight: now ? 600 : undefined }} onClick={() => jump(o, sg.startMs)} title="Play from here">
@@ -246,11 +246,24 @@ function AudioCard({ focusId }: { focusId?: string }) {
                   </span>
                   <span style={{ flex: 1 }}>
                     <strong>{sg.host === "female" ? "A" : "B"}:</strong> {sg.text}
-                    {sg.source?.url ? (
+                    {sg.source?.pdf || sg.source?.url ? (
                       <>
                         {" "}
-                        <a href={sg.source.url} target="_blank" onClick={(e) => e.stopPropagation()} title={`“${sg.source.quote}”`}>
-                          source ↗
+                        <a
+                          href={sg.source.pdf ? `api/files/${sg.source.pdf}#page=${(sg.source.page ?? 0) + 1}` : sg.source.url}
+                          target="_blank"
+                          title={`“${sg.source.quote}”`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!sg.source.pdf) return;
+                            // On the phone: MausDroid's PDF viewer, at the page, with the quote highlighted.
+                            e.preventDefault();
+                            void api(`audio-overviews/${o.id}/source`, { body: { index: i } })
+                              .then((r) => r.open && window.open(r.open, "_blank"))
+                              .catch((err) => toast(`⚠️ ${(err as Error).message}`));
+                          }}
+                        >
+                          {sg.source.page !== undefined ? `p. ${sg.source.page + 1} ↗` : "source ↗"}
                         </a>
                       </>
                     ) : null}
@@ -302,6 +315,8 @@ function AudioCard({ focusId }: { focusId?: string }) {
               Open audio file
             </a>
           </div>
+          {o.pdfs?.length ? <div class="help">Sources saved as PDFs in Download/{"MausDroid Review Podcast"} ({o.pdfs.map((p: any) => p.name).join(", ")}); they're removed when the next overview is made.</div> : null}
+          {o.pdfNote ? <div class="help">{o.pdfNote}</div> : null}
           {o.downloads ? (
             <div class="help">Saved to {o.downloads.location}</div>
           ) : (

@@ -35,6 +35,11 @@ test("source quotes, jumps, segments, commands", async () => {
   assert.equal(a.sourceJump("https://school.example/news", "Fete: Friday 2pm on the oval"), "https://school.example/news#:~:text=Fete%3A%20Friday%202pm%20on%20the%20oval");
   assert.equal(a.sourceJump("https://docs.google.com/document/d/abc/edit", "Fete"), undefined, "Google Docs can't jump to a quote: replay only");
   assert.equal(a.sourceJump(undefined, "x"), undefined);
+  const d = await load("src/downloads.ts");
+  assert.equal(d.driveIdFrom("https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz_-123/edit"), "1AbCdEfGhIjKlMnOpQrStUvWxYz_-123");
+  assert.equal(d.driveIdFrom("https://drive.google.com/file/d/1ZZZZZZZZZZZZZZZZZZZZZZZZZ/view"), "1ZZZZZZZZZZZZZZZZZZZZZZZZZ");
+  assert.equal(d.driveIdFrom("https://drive.google.com/open?id=1YYYYYYYYYYYYYYYYYYYYYYYYY"), "1YYYYYYYYYYYYYYYYYYYYYYYYY");
+  assert.equal(d.driveIdFrom("https://school.example/news"), undefined);
   const segs = [
     { speaker: "A", host: "female", text: "one", startMs: 0, endMs: 2000 },
     { speaker: "B", host: "male", text: "two", startMs: 2350, endMs: 5000 },
@@ -55,7 +60,7 @@ test("source quotes, jumps, segments, commands", async () => {
 });
 
 async function fakePhone() {
-  const st = { synth: [], enq: [], listenQ: [], playStart: 0, playFrom: 0, playing: false, stopped: -1, interrupt: false, interrupted: 0 };
+  const st = { synth: [], enq: [], listenQ: [], playStart: 0, playFrom: 0, playing: false, stopped: -1, interrupt: false, interrupted: 0, saved: [], deleted: [], n: 0 };
   const position = () => (st.playing ? st.playFrom + (Date.now() - st.playStart) : -1);
   const server = http.createServer((req, res) => {
     let b = "";
@@ -73,7 +78,12 @@ async function fakePhone() {
           fs.writeFileSync(body.out, wav(words * 0.3 / (body.sonicRate ?? 1)));
           return send({ ok: true });
         }
-        case "/files/save-download": return send({ uri: "content://x", name: body.name, location: `Download/MausDroid/${body.name}`, size: fs.statSync(body.path).size });
+        case "/files/save-download": st.saved.push(body); return send({ uri: `content://media/downloads/${++st.n}`, name: body.name, location: `Download/${body.folder}/${body.name}`, size: fs.statSync(body.path).size });
+        case "/files/delete-download": st.deleted.push(body.uri); return send({ deleted: true });
+        case "/pdf/open": (st.opened ??= []).push(body); return send({});
+        case "/pdf/find": return send({ pages: body.quotes.map((q) => (/Reports/.test(q) ? 2 : /carnival/i.test(q) ? 0 : -1)), canSearch: true, pageCount: 3 });
+        case "/map.pdf": res.writeHead(200, { "content-type": "application/pdf" }); return res.end("%PDF-1.4 fake carnival map");
+        case "/page.html": res.writeHead(200, { "content-type": "text/html" }); return res.end("<html>newsletter</html>");
         case "/speech/enqueue": {
           st.enq.push(body);
           const audio = body.items.find((i) => i.kind === "audio");
@@ -127,7 +137,7 @@ test("podcast: chosen hosts, per-phrase cues, segments; hands-free explain and c
       asked.push(last);
       return { text: "The carnival's on Tuesday {pause 200} and all staff are on duty from 9." };
     }
-    if (/Make this week's audio overview/.test(all) && !/Recording started/.test(last)) return { tool: "audio_overview_record", args: { title: "Week 8 audio overview", script: SCRIPT, staff_update_link: "https://school.example/news/week-8", source_text: SOURCE } };
+    if (/Make this week's audio overview/.test(all) && !/Recording started/.test(last)) return { tool: "audio_overview_record", args: { title: /Week 9/.test(all.slice(-4000)) ? "Week 9 audio overview" : "Week 8 audio overview", script: SCRIPT, staff_update_link: "https://school.example/news/week-8", source_text: SOURCE, resources: [{ name: "Carnival map", url: `${ph.url}/map.pdf` }, { name: "Newsletter", url: `${ph.url}/page.html` }] } };
 
     return { text: "ok" };
   });
@@ -195,9 +205,75 @@ test("podcast: chosen hosts, per-phrase cues, segments; hands-free explain and c
     await e.until(async () => ph.st.enq.filter((q) => q.items.some((i) => i.kind === "audio")).length === 3, "jumped");
     assert.equal(ph.st.enq.filter((q) => q.items.some((i) => i.kind === "audio"))[2].items[0].startMs, sg[1].startMs);
     await e.call(`/api/audio-overviews/${id}/listen/stop`, "POST", {});
+
+    // Sources as PDFs in their own Downloads folder; each quote placed on its page.
+    assert.deepEqual(o.pdfs.map((p) => [p.name, p.location, p.kind]), [["Carnival map.pdf", "Download/MausDroid Review Podcast/Carnival map.pdf", "resource"]]);
+    assert.match(o.pdfNote, /Newsletter isn't a PDF/, "a web page stays a link");
+    assert.equal(sg[0].source.page, 0);
+    assert.equal(sg[0].source.pdf, o.pdfs[0].fileId);
+    assert.equal(sg[3].source.page, 2);
+    const firstUris = o.pdfs.map((p) => p.uri);
+    // The next overview: the previous one's PDFs are deleted from the phone.
+    await e.call("/api/alerts/incoming", "POST", { type: "staff-update", source: "Google Drive", title: "New Staff Update: Week 9", body: "Drive file id: w9", id: "staff-update:w9", notify: false });
+    await e.until(async () => (await e.call("/api/audio-overviews")).data.overviews.some((x) => x.title === "Week 9 audio overview" && x.status === "ready"), "second overview", 20000);
+    const after = (await e.call("/api/audio-overviews")).data.overviews;
+    assert.deepEqual(ph.st.deleted, firstUris);
+    assert.deepEqual(after.find((x) => x.id === id).pdfs, []);
+    assert.equal(after.find((x) => x.title === "Week 9 audio overview").pdfs.length, 1, "the new overview keeps its own");
+    assert.equal((await e.call(`/api/files/${firstUris.length && o.pdfs[0].fileId}/info`)).status, 404, "the app's own copy is gone too");
   } finally {
     await e.stop();
     m.close();
+    ph.close();
+  }
+});
+
+test("podcast: a Google Doc source is saved as a PDF (exported through Drive) and quotes point at its pages", async () => {
+  const { fakeComposio } = await import("./_composio.mjs");
+  const ph = await fakePhone();
+  const exports = [];
+  const c = await fakeComposio({
+    accounts: [{ id: "ca_drive", toolkit: "googledrive", alias: "work" }],
+    tools: { GOOGLEDRIVE_DOWNLOAD_FILE: ["file_id", "mime_type"] },
+    handlers: {
+      GOOGLEDRIVE_DOWNLOAD_FILE: (args) => {
+        exports.push(args);
+        if (args.mime_type !== "application/pdf") throw new Error("expected a PDF export");
+        return { file: { s3url: `${ph.url}/map.pdf` } };
+      },
+    },
+  });
+  const DOC = "https://docs.google.com/document/d/1StaffUpdateWeek8xxxxxxxxxxx/edit";
+  const m = await fakeModel((body) => {
+    const all = JSON.stringify(body.messages);
+    const last = JSON.stringify(body.messages.at(-1));
+    if (/Make this week's audio overview/.test(all) && !/Recording started/.test(last)) return { tool: "audio_overview_record", args: { title: "Week 8 audio overview", script: SCRIPT, staff_update_name: "Week 8 Staff Update", staff_update_link: DOC, source_text: SOURCE } };
+    return { text: "ok" };
+  });
+  const e = await startEngine({ env: { MAUSDROID_BRIDGE_URL: ph.url, MAUSDROID_BRIDGE_TOKEN: "x", MAUSDROID_COMPOSIO_API: c.url } });
+  try {
+    await useModel(e, m.url);
+    await e.call("/api/composio/key", "POST", { key: "ak_test" });
+    await e.call("/api/audio-overviews/settings", "PUT", { saveToDownloads: false });
+    await e.call("/api/alerts/incoming", "POST", { type: "staff-update", source: "Google Drive", title: "New Staff Update: Week 8", body: "Drive file id: 1StaffUpdateWeek8xxxxxxxxxxx", id: "staff-update:d8", notify: false });
+    const o = await e.until(async () => (await e.call("/api/audio-overviews")).data.overviews.find((x) => x.status !== "recording"), "recorded", 20000);
+    assert.equal(o.status, "ready", o.error);
+    assert.equal(exports[0].file_id, "1StaffUpdateWeek8xxxxxxxxxxx");
+    assert.deepEqual(o.pdfs.map((p) => [p.name, p.location, p.kind]), [["Week 8 Staff Update.pdf", "Download/MausDroid Review Podcast/Week 8 Staff Update.pdf", "source"]]);
+    const sg = o.segments;
+    assert.equal(sg[3].source.page, 2);
+    assert.equal(sg[3].source.pdf, o.pdfs[0].fileId);
+    assert.equal(sg[3].source.url, undefined, "no web jump for a Google Doc; the PDF is used instead");
+    // Tapping the source opens MausDroid's PDF viewer at that page with the quote.
+    const r = await e.call(`/api/audio-overviews/${o.id}/source`, "POST", { index: 3 });
+    assert.equal(r.status, 200);
+    assert.equal(ph.st.opened[0].page, 2);
+    assert.equal(ph.st.opened[0].quote, "Reports due Friday 4pm");
+    assert.ok(ph.st.opened[0].path.startsWith(e.dir));
+  } finally {
+    await e.stop();
+    m.close();
+    c.close();
     ph.close();
   }
 });

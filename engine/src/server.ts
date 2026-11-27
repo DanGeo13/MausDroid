@@ -449,6 +449,16 @@ route("PUT", "/api/audio-overviews/settings", (req) => json(audio.saveAudioSetti
 route("POST", "/api/audio-overviews/:id/listen", (req, [id]) => json(badRequest(() => podcast.startPodcast(id, Number(req.body?.fromMs ?? 0)))));
 route("GET", "/api/audio-overviews/:id/listen", (_r, [id]) => json(podcast.podcastSession(id) ?? { overviewId: id, state: "ended", active: false }));
 route("POST", "/api/audio-overviews/:id/listen/stop", async (_r, [id]) => json((await podcast.stopPodcast(id)) ?? {}));
+// A transcript line's source: open the PDF at its page with the quote highlighted (phone only).
+route("POST", "/api/audio-overviews/:id/source", async (req, [id]) => {
+  const o = audio.getOverview(id);
+  const sg = o?.segments?.[Number(req.body?.index)];
+  const f = sg?.source?.pdf ? files.getFile(sg.source.pdf) : null;
+  if (!o || !sg || !f) throw new HttpError(404, "That line has no saved source PDF.");
+  if (!bridgeAvailable()) return json({ open: `api/files/${f.id}#page=${(sg.source!.page ?? 0) + 1}` });
+  await bridge("/pdf/open", { path: files.filePath(f), page: sg.source!.page ?? 0, quote: sg.source!.quote, title: f.name });
+  return json({ ok: true });
+});
 route("DELETE", "/api/audio-overviews/:id", (_r, [id]) => (audio.deleteOverview(id), json({ ok: true })));
 // Make one now from this week's Staff Update (runs the routine, even if this update already had one).
 route("POST", "/api/audio-overviews/make", async () => {
