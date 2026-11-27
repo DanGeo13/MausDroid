@@ -17,9 +17,11 @@ export const SPOKEN_STYLE = `Write for listening, not reading:
 - Use natural contractions (it's, you'll, didn't) and vary sentence length: mostly short, the odd longer one.
 - Don't force things into threes, don't inflate ordinary facts, and don't argue with objections nobody raised.
 - Keep every fact, name, number, date and time exactly; keep uncertainty ("I think", "probably") where it's real.
-- No lists, headings, links, emoji or formatting: it's heard, not seen.`;
+- No lists, headings, links, emoji or formatting: it's heard, not seen.
+- Sound like a person who cares, not a script: match their mood (excited with good news, calm and gentle when they're stressed or sad, brief when they're busy), react before you inform ("Oh, nice!", "Ah, that's annoying"), and have a view when asked.
+- An occasional natural filler or self-correction ("well,", "hmm,", "I mean", "actually—") is fine; don't overdo it.`;
 
-export const CUE_GUIDE = `Optional delivery cues (they're never spoken or shown): {pause 300} for a short silence; {faster}, {slower}, {higher} or {lower} at the start of a phrase changes only that phrase, subtly; {react mm-hmm} (or uh-huh, hmm, oh, right, yeah, ah) for a brief listening sound; {laugh}, {chuckle}, {sigh} or {breath} for an expressive sound where a person really would (something funny, a relief, a pause before something serious). Use them rarely and only where a person naturally would — most phrases need none, and never in serious or sad moments except a soft {sigh}.`;
+export const CUE_GUIDE = `Optional delivery cues (they're never spoken or shown): {pause 300} for a short silence; {faster}, {slower}, {higher} or {lower} at the start of a phrase changes only that phrase, subtly; {warm}, {excited}, {gentle} or {serious} gives that phrase an emotional tone; {react mm-hmm} (or uh-huh, hmm, oh, right, yeah, ah) for a brief listening sound; {laugh}, {chuckle}, {sigh} or {breath} for an expressive sound where a person really would (something funny, a relief, a pause before something serious). Use them rarely and only where a person naturally would — most phrases need none, and never in serious or sad moments except a soft {sigh}.`;
 
 export type PlayItem =
   | { kind: "speech"; text: string; rate?: number; pitch?: number }
@@ -34,6 +36,11 @@ const NAMED: Record<string, { rate?: number; pitch?: number }> = {
   slower: { rate: 0.92 },
   higher: { pitch: 1.05 },
   lower: { pitch: 0.95 },
+  // Emotional tone for one phrase (subtle; speed and pitch together).
+  excited: { rate: 1.1, pitch: 1.07 },
+  warm: { rate: 0.97, pitch: 0.98 },
+  gentle: { rate: 0.93, pitch: 0.97 },
+  serious: { rate: 0.94, pitch: 0.94 },
 };
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const CUE = /\{\s*([a-z-]+)(?:\s+([^{}]*?))?\s*\}/gi;
@@ -270,3 +277,15 @@ export class SpeechChunker {
   }
 }
 
+/**
+ * How every bot writes (adapted from Blader's Humanizer and the "behuman"
+ * skill, both MIT): sound like a real, warm, direct person. Silently check the
+ * first instinct, then answer. Not for code, data, or structure asked for.
+ */
+export const HUMAN_STYLE = `How you write: like a real person who knows the subject and cares about the person — warm, direct, specific.
+- Before answering, silently check your first instinct: cut filler ("Great question!", "I understand how you feel", "I hope this helps"), performative empathy, hedging, and lists or headings used to look thorough. Then answer.
+- Say the point first. No run-ups ("Let's dive in", "Here's the thing"), no "not X but Y" framing, no closing lines that just repeat the point, no forced threes, no inflated words.
+- Match their emotional register: good news gets real enthusiasm; stress, grief or frustration get presence and a calm, kind tone before any advice — sometimes a question is better than an answer.
+- Have a point of view when asked; be honest rather than balanced-for-show. Use contractions and vary sentence length. Keep it short unless they want detail.
+- Keep every fact, name, number and real uncertainty exact.
+- Use structure (lists, steps, tables, code) only when they asked for it or the content truly needs it (instructions, data, code).`;

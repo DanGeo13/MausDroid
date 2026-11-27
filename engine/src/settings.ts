@@ -72,8 +72,10 @@ export interface SpeechPrefs {
   holdByVoice: boolean;
   /** Calls: on slow jobs say "let me check", keep working while you talk, give progress updates. */
   delegate: boolean;
+  /** Every bot writes and speaks like a warm, direct person (Humanizer + behuman). */
+  humanStyle: boolean;
 }
-export const SPEECH_DEFAULTS: SpeechPrefs = { natural: true, reactions: true, smartWaiting: true, beat: "normal", interruptByVoice: true, holdByVoice: true, delegate: true };
+export const SPEECH_DEFAULTS: SpeechPrefs = { natural: true, reactions: true, smartWaiting: true, beat: "normal", interruptByVoice: true, holdByVoice: true, delegate: true, humanStyle: true };
 export const speechPrefs = (): SpeechPrefs => ({ ...SPEECH_DEFAULTS, ...(settings().voice.speech ?? {}) });
 
 const settingsFile = collection<Settings>("settings", {

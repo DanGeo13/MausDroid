@@ -270,6 +270,41 @@ class Voice(private val ctx: Context) {
 
     fun stopListening() = main.post { recognizer?.stopListening() }
 
+    /**
+     * Listens like listen(), but if a speech service can't (an assistant app set
+     * as the phone's default, a missing language, a refusal), tries the next one:
+     * your chosen service, Google's, the phone default, then others. Partial words
+     * still stream to [l]. No start/stop beeps. Call on the main thread.
+     */
+    fun listenWithFallback(l: Listener, silenceMs: Long = 0) {
+        val serviceProblem = setOf(SpeechRecognizer.ERROR_CLIENT, SpeechRecognizer.ERROR_SERVER, SpeechRecognizer.ERROR_RECOGNIZER_BUSY, 10, 11, 12, 13) +
+            (if (hasMic()) setOf(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) else emptySet())
+        val seen = mutableSetOf<String>()
+        val candidates = (listOfNotNull(chosen) + (if (preferredSet) listOf(preferred) else emptyList()) + recognizers()).filter { seen.add(it?.flattenToShortString() ?: "default") }
+        val failures = mutableListOf<String>()
+        beginQuiet()
+        fun attempt(i: Int) {
+            if (i >= candidates.size) {
+                endQuiet()
+                return l.onError("No speech service on this phone would listen (tried ${failures.joinToString(", ")}). Choose Google in MausDroid → Settings → Voice & assistant → Speech recognition.", -1)
+            }
+            val svc = candidates[i]
+            listen(object : Listener {
+                override fun onPartial(text: String) = l.onPartial(text)
+                override fun onLevel(rms: Float) = l.onLevel(rms)
+                override fun onFinal(text: String) { preferred = svc; preferredSet = true; endQuiet(); l.onFinal(text) }
+                override fun onError(message: String, code: Int) {
+                    if (code in serviceProblem) {
+                        failures.add("${label(svc)} (code $code)")
+                        if (code == 12 || code == 13) dropLanguage = true
+                        main.postDelayed({ attempt(i + 1) }, 150)
+                    } else { endQuiet(); l.onError(message, code) }
+                }
+            }, silenceMs, svc)
+        }
+        attempt(0)
+    }
+
     /** True when this phone can recognise speech on the device itself (nothing sent anywhere). */
     fun onDeviceAvailable(): Boolean =
         android.os.Build.VERSION.SDK_INT >= 33 && runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(ctx) }.getOrDefault(false)

@@ -365,7 +365,7 @@ route("PUT", "/api/settings/voice", (req) => {
     if ("assistantSpeak" in b) st.assistant.speak = Boolean(b.assistantSpeak);
     if (b.speech && typeof b.speech === "object") {
       const cur = { ...(st.voice.speech ?? {}) } as Record<string, unknown>;
-      for (const k of ["natural", "reactions", "smartWaiting", "interruptByVoice", "holdByVoice", "delegate"]) if (k in b.speech) cur[k] = Boolean(b.speech[k]);
+      for (const k of ["natural", "reactions", "smartWaiting", "interruptByVoice", "holdByVoice", "delegate", "humanStyle"]) if (k in b.speech) cur[k] = Boolean(b.speech[k]);
       if (["quick", "normal", "relaxed"].includes(b.speech.beat)) cur.beat = b.speech.beat;
       st.voice.speech = cur;
     }
@@ -388,7 +388,7 @@ route("POST", "/api/voice/stop", async () => json(await bridge("/voice/stop", {}
 route("POST", "/api/bots/:id/voice", (req, [id]) => json(voice.sendByVoice(id, String(req.body?.text ?? ""))));
 route("GET", "/api/assistant", () => {
   const b = voice.assistantBot();
-  return json({ botId: b?.id ?? null, botName: b?.name ?? null, emoji: b?.emoji ?? null, color: b?.color ?? null, speak: settings().assistant.speak });
+  return json({ botId: b?.id ?? null, botName: b?.name ?? null, emoji: b?.emoji ?? null, color: b?.color ?? null, speak: settings().assistant.speak, recognizer: settings().voice.recognizer ?? "" });
 });
 route("POST", "/api/assistant/ask", async (req) => json(await voice.askAssistant(String(req.body?.text ?? ""), attachmentsFrom(req.body?.attachments), req.body?.screen)));
 
@@ -429,7 +429,7 @@ route("GET", "/api/calls", () => {
 });
 route("PUT", "/api/calls/settings", (req) => json(calls.saveCallSettings(req.body ?? {})));
 route("GET", "/api/calls/may", async () => json(await calls.mayCall()));
-route("POST", "/api/calls/start", () => json(calls.startOutgoing()));
+route("POST", "/api/calls/start", (req) => json(calls.startOutgoing(req.body?.botId ? String(req.body.botId) : undefined)));
 route("GET", "/api/calls/:id", (_r, [id]) => {
   const c = calls.getCall(id);
   if (!c) throw new HttpError(404, "No such call");

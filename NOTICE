@@ -13,5 +13,5 @@ Bundled third-party components:
 - Tailscale tsnet (BSD-3-Clause) — built-in Tailscale (tsbridge)
 - Preact (MIT), qrcode-generator (MIT), NanoHTTPD (BSD-3-Clause), AndroidX (Apache-2.0)
 - Sonic (Bill Cox, Apache-2.0, https://github.com/waywardgeek/sonic, commit b93885d) — per-phrase speed and pitch
-- Spoken-style rules adapted from Humanizer (Siqi Chen, MIT, https://github.com/blader/humanizer)
+- Spoken and written style adapted from Humanizer (Siqi Chen, MIT, https://github.com/blader/humanizer) and the behuman skill (Alireza Rezvani / voidborne-d, MIT, https://github.com/alirezarezvani/claude-skills)
 - Speech: the phone's installed Phonon engine (gradium-ai/xn-ptts, MIT/Apache-2.0) through Android's text-to-speech service; no model is bundled

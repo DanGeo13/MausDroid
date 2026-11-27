@@ -1,3 +1,4 @@
+import { enqueueSpeech } from "./speech-queue.ts";
 import { bridge } from "./bridge.ts";
 import { emit } from "./events.ts";
 import { onTurnEnd, sendToBot } from "./agent.ts";
@@ -71,7 +72,7 @@ async function playFrom(s: Session, ms: number) {
   s.positionMs = ms;
   s.state = "playing";
   changed(s);
-  await bridge("/speech/enqueue", { items: [{ kind: "audio", path: filePath(f), startMs: Math.max(0, Math.round(ms)), seq: 0 }], turn: `pod:${s.overviewId}`, flush: true }, 10_000);
+  await enqueueSpeech({ items: [{ kind: "audio", path: filePath(f), startMs: Math.max(0, Math.round(ms)), seq: 0 }], turn: `pod:${s.overviewId}`, flush: true });
 }
 
 async function explain(s: Session, question: string) {

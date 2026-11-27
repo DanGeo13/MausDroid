@@ -327,6 +327,8 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
                 val a = engine("/api/assistant", null, 5000)
                 botId = a.optString("botId").ifBlank { null }
                 speak = a.optBoolean("speak", true)
+                // The speech service chosen in Settings (else Google's first).
+                voice.chosen = a.optString("recognizer").takeIf { it.isNotBlank() }?.let { android.content.ComponentName.unflattenFromString(it) }
                 ui { title.text = "${a.optString("emoji")} ${a.optString("botName", "MausDroid")}"; listen() }
             } catch (e: Exception) {
                 ui { statusLine.text = "MausDroid is still starting. Try again in a moment." }
@@ -342,7 +344,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         }
         statusLine.text = "Listening…"
         mic.text = "🎤  Listening…"
-        voice.listen(object : Voice.Listener {
+        voice.listenWithFallback(object : Voice.Listener {
             override fun onPartial(text: String) { heard.text = "“$text”" }
             override fun onFinal(text: String) {
                 heard.text = "“$text”"
@@ -394,7 +396,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     }
 
     /** Delivery cues ("{pause 300}") are for the voice only. */
-    private fun hideCues(t: String) = t.replace(Regex("\\{\\s*(?:pause\\s+\\d+(?:ms)?|faster|slower|higher|lower|laugh|chuckle|sigh|breath|(?:rate|speed|pitch)\\s+[\\d.]+|react\\s+[a-z-]+|source\\s+[^{}]*)\\s*\\}", RegexOption.IGNORE_CASE), "").replace(Regex(" {2,}"), " ")
+    private fun hideCues(t: String) = t.replace(Regex("\\{\\s*(?:pause\\s+\\d+(?:ms)?|faster|slower|higher|lower|warm|excited|gentle|serious|laugh|chuckle|sigh|breath|(?:rate|speed|pitch)\\s+[\\d.]+|react\\s+[a-z-]+|source\\s+[^{}]*)\\s*\\}", RegexOption.IGNORE_CASE), "").replace(Regex(" {2,}"), " ")
 
     private fun speakable(t: String) = t.replace(Regex("```[\\s\\S]*?```"), " (code) ").replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)"), "$1")
         .replace(Regex("https?://\\S+"), "a link").replace(Regex("[*_#>`|]"), "").replace(Regex("\\s+"), " ").trim()

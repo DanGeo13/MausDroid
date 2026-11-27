@@ -171,7 +171,8 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
   const [canCall, setCanCall] = useState(false);
   useEffect(() => {
     if (!voiceOk) return;
-    void api("calls").then((c) => setCanCall(Boolean(c.settings.enabled && c.bot?.id === bot.id))).catch(() => {});
+    // Every bot can be called from its chat.
+    void api("calls").then((c) => setCanCall(Boolean(c.settings.enabled))).catch(() => {});
   }, [bot.id, voiceOk]);
   const [skills, setSkills] = useState<{ name: string; description: string }[]>([]);
   useEffect(() => {

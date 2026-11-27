@@ -293,7 +293,7 @@ function Home({ poll }: { poll: boolean }) {
             }}
           />
         ) : view.kind === "call" ? (
-          <CallScreen callId={view.callId} onEnd={() => setView({ kind: "list" })} />
+          <CallScreen callId={view.callId} botId={view.botId} onEnd={() => setView(view.botId ? { kind: "chat", botId: view.botId } : { kind: "list" })} />
         ) : view.kind === "improve" ? (
           <Improve onBack={() => setView({ kind: "list" })} openBot={(id) => setView({ kind: "chat", botId: id })} />
         ) : view.kind === "briefing" ? (

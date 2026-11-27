@@ -1,3 +1,4 @@
+import { enqueueSpeech } from "./speech-queue.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
 import { onTurnEnd, sendToBot } from "./agent.ts";
 import { getBot, listBots } from "./bots.ts";
@@ -58,7 +59,7 @@ export async function speak(text: string, wait = false, voiceOverride?: { engine
   if (speechPrefs().natural && (await hasPlayer())) {
     const items = speechItems(text);
     if (!items.length) return;
-    const ok = await bridge("/speech/enqueue", { items, turn: "read", flush: true, ...vp }, 10_000).then(() => true).catch(() => false);
+    const ok = await enqueueSpeech({ items, turn: "read", flush: true, ...vp }).then(() => true).catch(() => false);
     if (ok) {
       if (wait) for (let i = 0; i < 900; i++) {
         await new Promise((r) => setTimeout(r, 200));

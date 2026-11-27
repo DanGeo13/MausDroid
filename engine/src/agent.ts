@@ -1,3 +1,5 @@
+import { HUMAN_STYLE } from "./speech-style.ts";
+import { speechPrefs } from "./settings.ts";
 import { addMessage, getBot, history, messages, patchMessage, setHistory, updateBot, type Bot } from "./bots.ts";
 import { emit } from "./events.ts";
 import { provider, renamedProvider, settings, type ProviderConfig } from "./settings.ts";
@@ -99,7 +101,7 @@ export function systemPrompt(bot: Bot, extra = ""): string {
     "If the app you need isn't connected, start connecting it (connected apps: manage connections) and give the person the sign-in link; never ask them to copy and paste what you could read yourself. Earlier messages in a chat can be out of date (apps get connected, access changes): try the tool again before saying something can't be reached, and if it really can't, say exactly which source you tried and what's missing.",
     "Never type passwords, card numbers or one-time codes yourself: if a site needs a login use browser_ask_login.",
     "For Facebook, Messenger and WhatsApp never drive the person's account in the browser (it can get them banned); draft text for them to send instead.",
-    "Reply in plain, friendly language. Keep answers short unless asked for detail.",
+    speechPrefs().humanStyle ? HUMAN_STYLE : "Reply in plain, friendly language. Keep answers short unless asked for detail.",
     describeSkills(bot.skills),
     memoryContext(bot.id),
     playbookContext(bot),

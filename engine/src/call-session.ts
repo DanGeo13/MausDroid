@@ -1,3 +1,4 @@
+import { enqueueSpeech } from "./speech-queue.ts";
 import { bridge } from "./bridge.ts";
 import { emit, subscribe } from "./events.ts";
 import { currentRunTags, onTurnEnd, sendToBot, stopBot } from "./agent.ts";
@@ -237,7 +238,7 @@ export async function play(l: Pick<Live, "player">, turnId: string, phrases: Phr
   // The beat before answering is a timed silence at the front of the queue: the first phrase is
   // made during it, and if you start talking again it's cancelled with everything else.
   if (opts.leadMs && opts.leadMs > 30 && prefs.smartWaiting) items.unshift({ kind: "pause", ms: Math.round(Math.min(opts.leadMs, 1500)), seq: phrases[0].seq });
-  await bridge("/speech/enqueue", { items, turn: turnId, flush: Boolean(opts.flush), ...voiceParams() }, 10_000).catch(async () => {
+  await enqueueSpeech({ items, turn: turnId, flush: Boolean(opts.flush), ...voiceParams() }).catch(async () => {
     for (const p of phrases) await say(p.text);
   });
 }
@@ -407,7 +408,7 @@ async function finishThought(l: Live, text: string): Promise<string> {
     // A long thought with a pause: a soft "mm-hmm" now and then, as a listener would (once per turn).
     if (!nodded && l.player && speechPrefs().reactions && full.split(/\s+/).length >= 8) {
       nodded = true;
-      void bridge("/speech/enqueue", { items: [{ kind: "clip", name: "mm-hmm", seq: 0 }], turn: "nod", ...voiceParams() }).catch(() => {});
+      void enqueueSpeech({ items: [{ kind: "clip", name: "mm-hmm", seq: 0 }], turn: "nod", ...voiceParams() }).catch(() => {});
     }
     const more = await listen(l, { preroll: 300, silenceMs: 1200, timeoutSec: 8 });
     const t = (more.text ?? "").trim();

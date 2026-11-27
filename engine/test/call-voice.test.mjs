@@ -70,6 +70,8 @@ async function newPhone() {
         case "/secret/encrypt": return send({ cipher: Buffer.from(body.plain).toString("base64") });
         case "/secret/decrypt": return send({ plain: Buffer.from(body.cipher, "base64").toString() });
         case "/speech/enqueue": {
+          // The first request of a burst can be slow to arrive (a busy phone): order must still hold.
+          if (st.slowFirst && !st.slowDone && body.turn?.startsWith("callturn")) { st.slowDone = true; await wait(150); }
           if (body.flush) st.speakingUntil = 0;
           st.enq.push({ ...body, at: Date.now() });
           st.speakingUntil = Math.max(Date.now(), st.speakingUntil) + 150 * body.items.length;
@@ -430,6 +432,36 @@ test("call: a slow job says 'let me check', keeps working when you talk, gives p
     await wait(6500);
     assert.ok(!(await live(e, c.id)).lines.some((x) => /Dell/.test(x.text)), "the cancelled job's answer never came");
     assert.equal(asked.length, 3, "cancel isn't sent to the AI");
+  } finally {
+    await done();
+  }
+});
+
+test("speech reaches the phone in order even when a request is slow; emotional tone cues; human style for every bot; call any bot", async () => {
+  const s = await load("src/speech-style.ts");
+  assert.deepEqual(s.planPhrase("{excited}We got it!"), [{ kind: "speech", text: "We got it!", rate: 1.1, pitch: 1.07 }]);
+  assert.deepEqual(s.planPhrase("{gentle}I'm sorry, that's hard."), [{ kind: "speech", text: "I'm sorry, that's hard.", rate: 0.93, pitch: 0.97 }]);
+  assert.match(s.HUMAN_STYLE, /silently check your first instinct/);
+  const { ph, e, m, done } = await callWith((last) => (last.includes("long one") ? { chunks: ["One two three four five six seven", " eight. Then nine.", " And ten."], chunkDelay: 5 } : { text: "ok" }));
+  try {
+    ph.st.slowFirst = true;
+    ph.st.heard.push("give me a long one");
+    const c = (await e.call("/api/calls/start", "POST", {})).data;
+    await e.call(`/api/calls/${c.id}/run`, "POST", {});
+    await e.until(async () => ph.st.enq.some((q) => q.items.some((i) => /ten/.test(i.text ?? ""))), "all spoken", 15000);
+    const said = ph.st.enq.filter((q) => q.turn?.startsWith("callturn")).flatMap((q) => q.items.filter((i) => i.kind === "speech").map((i) => i.text)).join(" ");
+    assert.match(said, /^One two three four five six seven eight\. Then nine\. And ten\.$|^One two three four five six seven eight\. Then nine\.\s+And ten\.$/, `in order: ${said}`);
+    await e.call(`/api/calls/${c.id}/end`, "POST", {});
+    // Every bot gets the human style in its instructions.
+    const bots = (await e.call("/api/state")).data.bots;
+    const researcher = bots.find((b) => b.name !== "Maus" && !b.hidden);
+    await e.call(`/api/bots/${researcher.id}/messages`, "POST", { text: "hello there" });
+    const req = await e.until(async () => m.seen.find((b) => JSON.stringify(b.messages).includes("hello there")), "researcher asked");
+    assert.match(JSON.stringify(req), /silently check your first instinct/);
+    // Calls with any bot, from its chat.
+    const c2 = (await e.call("/api/calls/start", "POST", { botId: researcher.id })).data;
+    assert.equal(c2.botId, researcher.id);
+    await e.call(`/api/calls/${c2.id}/end`, "POST", {});
   } finally {
     await done();
   }

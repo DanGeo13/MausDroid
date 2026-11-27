@@ -1079,7 +1079,7 @@ function NaturalSpeech({ s, save }: { s: any; save: (b: object) => void }) {
   useEffect(() => {
     api("voice/engines").then((r) => setEngines(r.engines ?? [])).catch(() => setEngines([]));
   }, []);
-  const sp = { natural: true, reactions: true, smartWaiting: true, beat: "normal", interruptByVoice: true, holdByVoice: true, delegate: true, ...(s.voice?.speech ?? {}) };
+  const sp = { natural: true, reactions: true, smartWaiting: true, beat: "normal", interruptByVoice: true, holdByVoice: true, delegate: true, humanStyle: true, ...(s.voice?.speech ?? {}) };
   const set = (patch: object) => save({ speech: { ...sp, ...patch } });
   const phonon = (engines ?? []).find((e) => /phonon/i.test(`${e.name} ${e.label}`));
   const usingPhonon = Boolean(phonon && s.voice?.ttsEngine === phonon.name);
@@ -1133,6 +1133,7 @@ function NaturalSpeech({ s, save }: { s: any; save: (b: object) => void }) {
           ))}
         </div>
       ) : null}
+      {row("humanStyle", "Human-sounding replies", "Every bot writes and speaks like a warm, direct person: no filler or fake empathy, matches your mood, has a view when you ask. Lists and steps only when they help. (Based on the Humanizer and behuman guides.)")}
       {row("natural", "Natural delivery", "Speaks phrase by phrase as replies arrive, with small changes in speed and pitch, and pauses where a person would pause. Calls, read-aloud replies and the assistant.")}
       {row("reactions", "Expressive sounds", "Now and then, like a person: “mm-hmm”, a short laugh, a sigh or a breath, written by the AI where they fit and made in the same voice.")}
       {row("smartWaiting", "Wait when I pause mid-thought", "On calls, “the other thing is…” keeps listening instead of answering.")}

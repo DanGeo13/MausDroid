@@ -107,6 +107,7 @@ class SpeechPlayer(private val synth: PhraseSynth, private val sink: AudioSink) 
     }, "speech-play").apply { isDaemon = true; start() }
 
     /** Adds items to play (flush = replace whatever is playing or waiting). */
+    @Synchronized
     fun enqueue(items: List<Item>, voice: Voice, flush: Boolean = false) {
         if (flush) stop()
         val g = gen.get()

@@ -12,7 +12,7 @@ type Phase = "connecting" | "listening" | "thinking" | "speaking" | "on-hold" | 
  * The engine runs the conversation (it keeps going with the screen off);
  * this screen shows it live. Just start talking to interrupt Maus.
  */
-export function CallScreen({ callId, onEnd }: { callId?: string; onEnd: () => void }) {
+export function CallScreen({ callId, botId, onEnd }: { callId?: string; botId?: string; onEnd: () => void }) {
   const [phase, setPhase] = useState<Phase>("connecting");
   const [lines, setLines] = useState<{ who: "you" | "maus"; text: string; interrupted?: boolean }[]>([]);
   const [bot, setBot] = useState<{ name: string; emoji: string } | null>(null);
@@ -24,8 +24,11 @@ export function CallScreen({ callId, onEnd }: { callId?: string; onEnd: () => vo
     (async () => {
       try {
         const info = await api("calls");
-        setBot(info.bot);
-        if (!id.current) id.current = (await api("calls/start", { body: {} })).id;
+        if (!id.current) id.current = (await api("calls/start", { body: botId ? { botId } : {} })).id;
+        // The bot on this call (any bot can be called from its chat).
+        const call = await api(`calls/${id.current}`).catch(() => null);
+        const bots = (await api("state").catch(() => ({ bots: [] }))).bots ?? [];
+        setBot(bots.find((b: any) => b.id === call?.botId) ?? info.bot);
         await api(`calls/${id.current}/run`, { body: {} });
         const poll = async () => {
           try {

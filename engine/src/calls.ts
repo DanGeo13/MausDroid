@@ -155,9 +155,10 @@ export function answerCall(id: string, answer: boolean) {
   return getCall(id);
 }
 
-/** You start a call with Maus from its chat. */
-export function startOutgoing() {
-  const bot = callBot();
+/** You start a call from a bot's chat (any bot; only the call bot can ring you). */
+export function startOutgoing(botId?: string) {
+  const chosen = botId ? getBot(botId) : undefined;
+  const bot = chosen && !chosen.hidden ? chosen : callBot();
   if (!bot) throw new Error("No bot to call.");
   if (!callSettings().enabled) throw new Error("Calls are switched off (Settings → Voice & assistant).");
   return record({ direction: "outgoing", botId: bot.id, reason: "You called", state: "active" });
