@@ -29,6 +29,28 @@ class BridgeServer(
     private val voice by lazy { Voice(ctx) }
     private val watch by lazy { VoiceWatch(ctx, voice) }
     private val recorder by lazy { VoiceRecorder(ctx) }
+    private val phraseSynth by lazy { TtsPhraseSynth(ctx, VoiceRecorder(ctx)) }
+    @Volatile private var lastStopped: SpeechPlayer.Tag? = null
+    /** Live replies and podcasts: phrases, pauses and reactions in one cancellable queue. */
+    private val player by lazy {
+        SpeechPlayer(phraseSynth, AudioTrackSink { voice.inCallMode() }).also { p ->
+            watch.otherSpeaking = { p.isSpeaking() }
+            watch.stopOther = { p.stop()?.let { lastStopped = it } }
+        }
+    }
+    private fun speechVoice(b: JSONObject) = SpeechPlayer.Voice(b.optString("engine").ifBlank { null }, b.optString("voice").ifBlank { null }, b.optDouble("pitch", 1.0).toFloat(), b.optDouble("rate", 1.0).toFloat())
+    private fun tagJson(t: SpeechPlayer.Tag?) = t?.let { JSONObject().put("turn", it.turn).put("seq", it.seq) } ?: JSONObject.NULL
+    private fun items(arr: org.json.JSONArray, turn: String?): List<SpeechPlayer.Item> = (0 until arr.length()).mapNotNull { i ->
+        val o = arr.optJSONObject(i) ?: return@mapNotNull null
+        val tag = if (turn != null) SpeechPlayer.Tag(turn, o.optInt("seq", i)) else null
+        when (o.optString("kind")) {
+            "speech" -> o.optString("text").takeIf { it.isNotBlank() }?.let { SpeechPlayer.Item.Speech(it, o.optDouble("rate", 1.0).toFloat(), o.optDouble("pitch", 1.0).toFloat(), tag) }
+            "pause" -> SpeechPlayer.Item.Pause(o.optInt("ms", 300), tag)
+            "clip" -> SpeechPlayer.Item.Clip(o.optString("name"), tag)
+            "audio" -> java.io.File(o.optString("path")).takeIf { it.isFile && it.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath) }?.let { SpeechPlayer.Item.Audio(it.path, o.optLong("startMs", 0), tag) }
+            else -> null
+        }
+    }
 
     private fun ok(o: Any = JSONObject().put("ok", true)) = newFixedLengthResponse(Response.Status.OK, "application/json", o.toString())
     private fun err(status: Response.Status, msg: String) = newFixedLengthResponse(status, "application/json", JSONObject().put("error", msg).toString())
@@ -99,7 +121,7 @@ class BridgeServer(
                     voice.say(body.optString("text"), body.optDouble("rate", 1.0).toFloat())
                     ok()
                 }
-                "/voice/state" -> ok(JSONObject().put("speaking", voice.isSpeaking()))
+                "/voice/state" -> ok(JSONObject().put("speaking", voice.isSpeaking() || player.isSpeaking()))
                 "/voice/await-speech" -> {
                     val (heard, speaking, problem) = watch.awaitSpeech(body.optLong("maxMs", 300), body.optBoolean("bargeIn", true))
                     ok(JSONObject().put("speech", heard).put("speaking", speaking).put("level", watch.level()).apply { if (problem != null) put("error", problem) })
@@ -110,7 +132,15 @@ class BridgeServer(
                     val out = java.io.File(body.getString("out"))
                     // Only into MausDroid's own storage.
                     if (!out.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Not allowed there")
-                    val size = recorder.record(body.getString("text"), body.optString("engine"), body.optString("voice"), body.optDouble("pitch", 1.0).toFloat(), body.optDouble("rate", 1.0).toFloat(), out)
+                    var size = recorder.record(body.getString("text"), body.optString("engine"), body.optString("voice"), body.optDouble("pitch", 1.0).toFloat(), body.optDouble("rate", 1.0).toFloat(), out)
+                    // A delivery cue for this phrase: speed and pitch changed independently (Sonic).
+                    val sr = body.optDouble("sonicRate", 1.0).toFloat()
+                    val sp = body.optDouble("sonicPitch", 1.0).toFloat()
+                    if (sr != 1f || sp != 1f) {
+                        val changed = SpeechPlayer.applySonic(SpeechPlayer.readWav(out.readBytes()), sr, sp)
+                        out.writeBytes(SpeechPlayer.writeWav(changed))
+                        size = out.length()
+                    }
                     ok(JSONObject().put("ok", true).put("bytes", size))
                 }
                 "/files/save-download" -> {
@@ -118,11 +148,45 @@ class BridgeServer(
                     if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only MausDroid's own files")
                     ok(Downloads.save(ctx, src.path, body.optString("name", src.name), body.optString("mime"), body.optString("folder", "MausDroid")))
                 }
+                "/speech/enqueue" -> {
+                    val list = items(body.optJSONArray("items") ?: org.json.JSONArray(), body.optString("turn").ifBlank { null })
+                    player.enqueue(list, speechVoice(body), body.optBoolean("flush"))
+                    ok(JSONObject().put("queued", list.size))
+                }
+                "/speech/stop" -> { player.stop()?.let { lastStopped = it }; ok(JSONObject().put("stopped", tagJson(lastStopped))) }
+                "/speech/state" -> ok(JSONObject().put("speaking", player.isSpeaking()).put("current", tagJson(player.current())).put("lastStopped", tagJson(lastStopped)).put("firstAudioMs", player.lastFirstAudioMs).put("positionMs", player.positionMs()).put("stoppedAtMs", player.stoppedAtMs))
+                "/speech/clear-stopped" -> { lastStopped = null; ok() }
+                "/speech/warm" -> { val v = speechVoice(body); Thread { runCatching { phraseSynth.warmClips(v) } }.start(); ok() }
+                "/voice/local-available" -> ok(JSONObject().put("onDevice", voice.onDeviceAvailable()))
+                "/voice/listen-local" -> {
+                    // On-device only, fed from the call microphone with a short pre-roll (your first word is kept).
+                    val pfd = watch.openFeed(body.optInt("prerollMs", 500)) ?: return err(Response.Status.INTERNAL_ERROR, "The microphone couldn't be opened.")
+                    try {
+                        val (text, error, code) = voice.listenOnDevice(pfd, body.optLong("silenceMs", 700), body.optLong("timeoutSec", 30))
+                        if (text != null) ok(JSONObject().put("text", text).put("missed", text.isBlank()))
+                        else ok(JSONObject().put("text", "").put("error", error ?: "No speech").put("code", code))
+                    } finally { watch.closeFeeds(); runCatching { pfd.close() } }
+                }
+                "/voice/hold-listen" -> {
+                    // On hold: only the held bot's name is let through. Everything else said here stays on the phone
+                    // and is dropped (on-device recognition only; never a transcript, never sent anywhere).
+                    if (!voice.onDeviceAvailable()) return err(Response.Status.CONFLICT, "On-device speech recognition isn't available, so I can't listen for my name privately.")
+                    val name = body.optString("name").trim().lowercase()
+                    val until = System.currentTimeMillis() + body.optLong("timeoutSec", 25) * 1000
+                    var heard = ""
+                    while (heard.isEmpty() && System.currentTimeMillis() < until && name.isNotEmpty()) {
+                        val pfd = watch.openFeed(300) ?: break
+                        val (text, _, _) = try { voice.listenOnDevice(pfd, 600, maxOf(1, (until - System.currentTimeMillis()) / 1000)) } finally { watch.closeFeeds(); runCatching { pfd.close() } }
+                        val t = text.orEmpty()
+                        if (Regex("(^|\\W)${Regex.escape(name)}(\\W|$)", RegexOption.IGNORE_CASE).containsMatchIn(t)) heard = t
+                    }
+                    ok(JSONObject().put("text", heard))
+                }
                 "/voice/engines" -> ok(JSONObject().put("engines", voice.engines()))
                 "/voice/voices" -> ok(voice.voices(body.optString("engine").takeIf { it.isNotBlank() }))
                 "/call/ring" -> { CallRinger.ring(ctx, body.getString("callId"), body.optString("name", "Maus"), body.optString("emoji", "🐭"), body.optString("reason")); ok() }
                 "/call/stop-ring" -> { CallRinger.stop(ctx); ok() }
-                "/voice/stop" -> { voice.stopSpeaking(); voice.stopListening(); watch.stop(); ok() }
+                "/voice/stop" -> { voice.stopSpeaking(); player.stop()?.let { lastStopped = it }; voice.stopListening(); watch.stop(); ok() }
                 "/location/get" -> ok(DeviceLocation.get(ctx, body.optLong("maxAgeMs", 120_000), body.optLong("timeoutMs", 20_000)))
                 "/location/permission" -> ok(JSONObject().put("permission", DeviceLocation.permissionState(ctx)))
                 "/device/info" -> ok(DeviceSettings.info(ctx))

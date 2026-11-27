@@ -539,8 +539,8 @@ function mediaTools(): Tool[] {
       spec: {
         name: "audio_overview_record",
         description:
-          "Record a two-host audio overview (like a short podcast) from a script you write, with the phone's own voices. Always under 10 minutes (lines that don't fit are left out and a closing line is added). Records in the background: the person gets a notification with a link when it's ready, and it shows on the Morning Brief screen. Script: one line per turn, each starting with A: or B:, under 1,300 words, plain sentences only.",
-        inputSchema: obj({ title: str("e.g. 'Week 8 audio overview'"), week: str("e.g. 'Term 4 Week 8'"), staff_update_name: str("Source document name"), staff_update_link: str("Source document link"), script: str("The conversation: lines starting A: or B:") }, ["title", "script"]),
+          "Record a two-host audio overview (like a short podcast) from a script you write, with the phone's own voices (host A female, host B male, chosen on the Morning Brief screen). Always under 10 minutes (lines that don't fit are left out and a closing line is added). Records in the background: the person gets a notification with a link when it's ready, and it shows on the Morning Brief screen with a tappable transcript. Script: one line per turn, each starting with A: or B:, under 1,300 words; optional delivery cues ({pause 300}, {faster}, {slower}, {higher}, {lower}, {react mm-hmm}) and {source \"short exact quote\"} after a line based on the source.",
+        inputSchema: obj({ title: str("e.g. 'Week 8 audio overview'"), week: str("e.g. 'Term 4 Week 8'"), staff_update_name: str("Source document name"), staff_update_link: str("Source document link"), source_text: str("The source's text (kept on the phone so the person can ask about it while listening)"), script: str("The conversation: lines starting A: or B:") }, ["title", "script"]),
       },
       run: async (_c, i) => {
         const o = audio.createOverview(i);

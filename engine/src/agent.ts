@@ -202,6 +202,9 @@ async function drain(botId: string) {
       const m = addMessage(botId, { role: "note", text: "Stopped.", status: "stopped" });
       emit("message", { botId, message: m });
     }
+    // A message sent while this turn was being stopped (e.g. you interrupted a call reply with a new
+    // question) is answered now instead of waiting forever.
+    if ((queues.get(botId) ?? []).length) void drain(botId);
   }
 }
 

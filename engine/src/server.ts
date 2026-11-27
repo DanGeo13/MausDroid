@@ -39,6 +39,7 @@ import * as files from "./files.ts";
 import * as calendar from "./calendar.ts";
 import * as brief from "./brief.ts";
 import * as audio from "./audio-overview.ts";
+import * as podcast from "./podcast-session.ts";
 import { saveToDownloads } from "./downloads.ts";
 import * as audit from "./audit.ts";
 import * as location from "./location.ts";
@@ -428,6 +429,7 @@ route("POST", "/api/calls/:id/turn", async (req, [id]) => {
   }
 });
 route("POST", "/api/calls/:id/end", async (_r, [id]) => (await callSession.hangUp(id), json(calls.getCall(id) ?? {})));
+route("POST", "/api/calls/:id/resume", (_r, [id]) => json(callSession.resumeHold(id) ?? {}));
 route("POST", "/api/calls/:id/run", (_r, [id]) => json(badRequest(() => callSession.runCall(id))));
 route("GET", "/api/calls/:id/live", (_r, [id]) => json(callSession.liveCall(id) ?? { callId: id, phase: "ended", lines: [], note: "", active: false }));
 route("POST", "/api/calls/test", async (req) => json(await calls.ringUser(String(req.body?.reason ?? "Test call"), "Hi, this is a test call from MausDroid.")));
@@ -443,6 +445,10 @@ route("GET", "/api/briefings", () => json(brief.listBriefings()));
 // Weekly audio overviews (Morning Brief screen)
 route("GET", "/api/audio-overviews", () => json({ overviews: audio.listOverviews(), settings: audio.audioSettings(), routine: routines.listRoutines().find((r) => r.system === audio.AUDIO_SYSTEM) ?? null }));
 route("PUT", "/api/audio-overviews/settings", (req) => json(audio.saveAudioSettings(req.body ?? {})));
+// Hands-free listening: "pause, explain that last bit", "continue"; tap a line to jump there.
+route("POST", "/api/audio-overviews/:id/listen", (req, [id]) => json(badRequest(() => podcast.startPodcast(id, Number(req.body?.fromMs ?? 0)))));
+route("GET", "/api/audio-overviews/:id/listen", (_r, [id]) => json(podcast.podcastSession(id) ?? { overviewId: id, state: "ended", active: false }));
+route("POST", "/api/audio-overviews/:id/listen/stop", async (_r, [id]) => json((await podcast.stopPodcast(id)) ?? {}));
 route("DELETE", "/api/audio-overviews/:id", (_r, [id]) => (audio.deleteOverview(id), json({ ok: true })));
 // Make one now from this week's Staff Update (runs the routine, even if this update already had one).
 route("POST", "/api/audio-overviews/make", async () => {

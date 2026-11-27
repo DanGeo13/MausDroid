@@ -3,7 +3,8 @@ import { emit, subscribe } from "./events.ts";
 import { currentRunTags, onTurnEnd, sendToBot, stopBot } from "./agent.ts";
 import { getBot } from "./bots.ts";
 import { readMemory } from "./memory.ts";
-import { say } from "./voice.ts";
+import { say, speakable, voiceParams } from "./voice.ts";
+import { CUE_GUIDE, SPOKEN_STYLE, beatMs, isHoldRequest, openCue, planPhrase, stripCues, turnFinished, wakeFrom, type PlayItem } from "./speech-style.ts";
 import { callSettings, endCall, getCall } from "./calls.ts";
 import { id as newId, sleep } from "./util.ts";
 
@@ -15,7 +16,14 @@ import { id as newId, sleep } from "./util.ts";
  *    by piece, instead of waiting for the whole answer,
  *  - keeps listening in 20 ms slices while it thinks or talks: when you
  *    start speaking it stops at once (and drops the rest of that answer),
- *    then hears what you say.
+ *    then hears what you say — from your first word (a short microphone
+ *    pre-roll goes to on-device recognition),
+ *  - waits if you paused mid-thought ("the other thing is…"), and leaves a
+ *    natural beat before answering,
+ *  - "hold on a sec" puts it on hold: it then listens on the phone only for
+ *    its own name ("Maus", "Maus, continue", "Maus, what about…").
+ * Speech goes through the phone's voice engine (e.g. Phonon) phrase by
+ * phrase, with optional delivery cues (speed, pitch, pauses, reactions).
  */
 
 // ---------------- Greeting ----------------
@@ -93,6 +101,12 @@ export class SpeechChunker {
         cut = sp > 40 ? sp : 160;
       }
       if (cut < 0) break;
+      // Never split a delivery cue ("{pause 300}"): wait for its closing brace.
+      if (openCue(this.buf.slice(0, cut))) {
+        const close = this.buf.indexOf("}", cut);
+        if (close < 0) break;
+        cut = close + 1;
+      }
       const piece = this.buf.slice(0, cut).trim();
       this.buf = this.buf.slice(cut);
       if (SPEAKABLE.test(piece)) {
@@ -111,7 +125,13 @@ export class SpeechChunker {
 
 // ---------------- The call ----------------
 
-type Phase = "connecting" | "listening" | "thinking" | "speaking" | "ended";
+type Phase = "connecting" | "listening" | "thinking" | "speaking" | "on-hold" | "ended";
+/** One spoken phrase of a reply: what's shown (no cues) and what's played. */
+interface Phrase {
+  seq: number;
+  text: string;
+  items: (PlayItem & { seq: number })[];
+}
 interface Turn {
   id: string;
   botId: string;
@@ -120,6 +140,16 @@ interface Turn {
   spoke: boolean;
   line: number;
   off: () => void;
+  phrases: Phrase[];
+  /** Interrupted or on hold: new phrases are kept but not played. */
+  muted: boolean;
+}
+/** A bot on hold: its reply and where it was interrupted. */
+interface Hold {
+  botId: string;
+  name: string;
+  turn: Turn | null;
+  resumeSeq: number;
 }
 export interface Live {
   callId: string;
@@ -129,12 +159,24 @@ export interface Live {
   active: boolean;
   interruptions: number;
   turn: Turn | null;
+  /** Per bot. */
+  holds: Map<string, Hold>;
+  /** The phone has the phrase player (newer app). */
+  player: boolean;
+  /** The phone can recognise speech on the device (pre-roll, private hold listening). */
+  local: boolean;
+  /** Don't start playing a reply before this (the beat after you finish). */
+  beatUntil: number;
+  /** Woken by name alone: the next thing said may be "continue". */
+  woke: Hold | null;
+  resumeAsked: boolean;
+  firstAudioMs: number[];
 }
 
 const live = new Map<string, Live>();
 export const liveCall = (callId: string) => {
   const l = live.get(callId);
-  return l ? { callId, phase: l.phase, lines: l.lines.slice(-12), note: l.note, active: l.active, interruptions: l.interruptions } : null;
+  return l ? { callId, phase: l.phase, lines: l.lines.slice(-12), note: l.note, active: l.active, interruptions: l.interruptions, onHold: l.phase === "on-hold", canResumeByVoice: l.local, firstAudioMs: l.firstAudioMs.slice(-5) } : null;
 };
 
 const changed = (l: Live) => emit("call.live", { callId: l.callId, phase: l.phase });
@@ -151,7 +193,7 @@ export function runCall(callId: string) {
   if (existing?.active) return existing;
   const c = getCall(callId);
   if (!c || c.state !== "active") throw new Error("This call isn't active.");
-  const l: Live = { callId, phase: "connecting", lines: [], note: "", active: true, interruptions: 0, turn: null };
+  const l: Live = { callId, phase: "connecting", lines: [], note: "", active: true, interruptions: 0, turn: null, holds: new Map(), player: false, local: false, beatUntil: 0, woke: null, resumeAsked: false, firstAudioMs: [] };
   live.set(callId, l);
   void conversation(l, c.botId, c.direction === "incoming" ? c.openingLine || c.reason : "")
     .catch((e) => (l.note = (e as Error).message))
@@ -171,30 +213,70 @@ export async function hangUp(callId: string) {
   return liveCall(callId);
 }
 
+/** Resume a held call from the screen (only needed where the phone can't listen for the name privately). */
+export function resumeHold(callId: string) {
+  const l = live.get(callId);
+  if (l) l.resumeAsked = true;
+  return liveCall(callId);
+}
+
 async function finish(l: Live) {
   l.active = false;
   cancelTurn(l);
+  for (const h of l.holds.values()) if (h.turn) dropTurn(h.turn);
+  l.holds.clear();
   setPhase(l, "ended");
   await bridge("/voice/call-mode", { on: false }).catch(() => {});
   endCall(l.callId);
   setTimeout(() => live.delete(l.callId), 10 * 60_000);
 }
 
-function cancelTurn(l: Live) {
-  const t = l.turn;
-  if (!t || t.done) return;
+function dropTurn(t: Turn) {
+  if (t.done && t.cancelled) return;
   t.cancelled = true;
   t.done = true;
   t.off();
   if (currentRunTags(t.botId).includes(t.id)) stopBot(t.botId);
-  if (l.lines[t.line]) l.lines[t.line].interrupted = true;
+}
+
+function cancelTurn(l: Live) {
+  const t = l.turn;
+  if (!t) return;
+  if (!t.cancelled) {
+    dropTurn(t);
+    if (l.lines[t.line]) l.lines[t.line].interrupted = true;
+  }
   l.turn = null;
+  // Nothing stale keeps playing: what's queued for that reply is cleared.
+  if (l.player) void bridge("/speech/stop", {}).catch(() => {});
+}
+
+/** Plays phrases through the phone's phrase player (or plain speech on an older app). */
+export async function play(l: Pick<Live, "player">, turnId: string, phrases: Phrase[], opts: { flush?: boolean; leadMs?: number } = {}) {
+  if (!phrases.length) return;
+  if (!l.player) {
+    for (const [i, p] of phrases.entries()) await say(p.text, Boolean(opts.flush) && i === 0);
+    return;
+  }
+  const items: (PlayItem & { seq: number })[] = phrases.flatMap((p) => p.items);
+  // The beat before answering is a timed silence at the front of the queue: the first phrase is
+  // made during it, and if you start talking again it's cancelled with everything else.
+  if (opts.leadMs && opts.leadMs > 30) items.unshift({ kind: "pause", ms: Math.round(Math.min(opts.leadMs, 1500)), seq: phrases[0].seq });
+  await bridge("/speech/enqueue", { items, turn: turnId, flush: Boolean(opts.flush), ...voiceParams() }, 10_000).catch(async () => {
+    for (const p of phrases) await say(p.text);
+  });
+}
+
+export function makePhrase(seq: number, raw: string, cues: boolean): Phrase {
+  const clean = speakable(raw);
+  const items = (cues ? planPhrase(clean) : [{ kind: "speech" as const, text: stripCues(clean) }]).map((it) => ({ ...it, seq }));
+  return { seq, text: stripCues(raw), items };
 }
 
 async function speakLine(l: Live, text: string, flush = false) {
   l.lines.push({ who: "maus", text });
   setPhase(l, "speaking");
-  await say(text, flush);
+  await play(l, newId("line"), [makePhrase(0, text, false)], { flush });
 }
 
 /** Waits while Maus thinks or talks; returns "speech" the moment you start talking. */
@@ -220,18 +302,25 @@ async function waitWhileBusy(l: Live): Promise<"speech" | "idle"> {
 function startTurn(l: Live, botId: string, text: string, name: string) {
   const id = newId("callturn");
   const chunker = new SpeechChunker();
-  const turn: Turn = { id, botId, done: false, cancelled: false, spoke: false, line: -1, off: () => {} };
+  const turn: Turn = { id, botId, done: false, cancelled: false, spoke: false, line: -1, off: () => {}, phrases: [], muted: false };
   l.turn = turn;
   setPhase(l, "thinking");
   const speakPiece = (piece: string) => {
     if (turn.cancelled) return;
-    if (turn.line < 0) {
-      l.lines.push({ who: "maus", text: piece });
-      turn.line = l.lines.length - 1;
-    } else l.lines[turn.line].text += ` ${piece}`;
+    const ph = makePhrase(turn.phrases.length, piece, l.player);
+    if (!ph.text && !ph.items.length) return;
+    turn.phrases.push(ph);
+    if (ph.text) {
+      if (turn.line < 0) {
+        l.lines.push({ who: "maus", text: ph.text });
+        turn.line = l.lines.length - 1;
+      } else l.lines[turn.line].text += ` ${ph.text}`;
+    }
     turn.spoke = true;
+    if (turn.muted) return; // interrupted or on hold: kept for "continue", not played
     setPhase(l, "speaking");
-    void say(piece);
+    void play(l, id, [ph], { leadMs: ph.seq === 0 ? l.beatUntil - Date.now() : 0 });
+    if (ph.seq === 0 && l.player) void trackFirstAudio(l, id);
   };
   const unsub = subscribe((e) => {
     if (turn.cancelled || e.type !== "message.delta" || e.botId !== botId) return;
@@ -245,8 +334,12 @@ function startTurn(l: Live, botId: string, text: string, name: string) {
     if (turn.cancelled) return;
     const rest = chunker.flush();
     if (rest) speakPiece(rest);
-    // A reply that didn't stream (some AIs) is spoken whole.
-    if (!turn.spoke) speakPiece(reply?.trim() || (info?.failed ? "Sorry, something went wrong there." : "Done."));
+    // A reply that didn't stream (some AIs) is spoken in phrases.
+    if (!turn.spoke) {
+      const whole = reply?.trim() || (info?.failed ? "Sorry, something went wrong there." : "Done.");
+      const c = new SpeechChunker();
+      for (const p of [...c.push(`${whole}\n`), c.flush()].filter(Boolean)) speakPiece(p);
+    }
   });
   const timer = setTimeout(() => {
     if (turn.done) return;
@@ -261,32 +354,156 @@ function startTurn(l: Live, botId: string, text: string, name: string) {
   };
   sendToBot(
     botId,
-    `${text}\n\n(Said aloud during a phone call with ${name || "you"}. Reply like natural spoken conversation: start with the answer in a short first sentence, one to three short sentences in all, no lists, links or formatting.)`,
+    `${text}\n\n(Said aloud during a phone call with ${name || "you"}. Reply like natural spoken conversation: start with the answer in a short first sentence, one to three short sentences in all.\n${SPOKEN_STYLE}${l.player ? `\n${CUE_GUIDE}` : ""})`,
     "call",
     [],
     id,
   );
 }
 
+/** How long from queuing the first phrase until it was heard (shown on the call screen). */
+async function trackFirstAudio(l: Live, turnId: string) {
+  for (let i = 0; i < 40 && l.active; i++) {
+    await sleep(150);
+    const st = await bridge<{ current?: { turn: string } | null; firstAudioMs?: number }>("/speech/state", {}).catch(() => null);
+    if (st?.current?.turn === turnId && (st.firstAudioMs ?? -1) >= 0) {
+      l.firstAudioMs.push(st.firstAudioMs!);
+      return;
+    }
+  }
+}
+
+/** The first phrase of the sentence that was playing, so "continue" starts that sentence again. */
+export function sentenceStart(phrases: { seq: number; text: string }[], seq: number): number {
+  let i = phrases.findIndex((p) => p.seq === seq);
+  if (i < 0) return phrases.length ? phrases[0].seq : 0;
+  while (i > 0 && !/[.!?…]["')\]]*$/.test(phrases[i - 1].text.trim())) i--;
+  return phrases[i].seq;
+}
+
+type Heard = { text?: string; missed?: boolean; error?: string };
+/** One listen: after an interruption, on-device with a pre-roll so the first word is kept. */
+export async function listen(l: Pick<Live, "local">, opts: { preroll?: number; silenceMs?: number; timeoutSec?: number } = {}): Promise<Heard> {
+  const silenceMs = opts.silenceMs ?? 700;
+  const timeoutSec = opts.timeoutSec ?? 30;
+  if (l.local && opts.preroll) {
+    const r = await bridge<Heard>("/voice/listen-local", { prerollMs: opts.preroll, silenceMs, timeoutSec }, (timeoutSec + 10) * 1000).catch((e) => ({ error: (e as Error).message }) as Heard);
+    if (!r.error) return r;
+  }
+  return bridge<Heard>("/voice/listen", { soft: true, silenceMs, timeoutSec }, (timeoutSec + 10) * 1000).catch((e) => ({ text: "", missed: false, error: (e as Error).message }));
+}
+
+/** Waits for a thought that trailed off ("the other thing is…") to finish. */
+async function finishThought(l: Live, text: string): Promise<string> {
+  let full = text;
+  for (let k = 0; k < 3 && l.active && !turnFinished(full); k++) {
+    setPhase(l, "listening");
+    const more = await listen(l, { preroll: 300, silenceMs: 1200, timeoutSec: 8 });
+    const t = (more.text ?? "").trim();
+    if (!t) break;
+    full = `${full} ${t}`;
+  }
+  return full;
+}
+
+/** "Hold on a sec": stop, keep this bot's reply and place, then wait for its name. */
+async function holdOn(l: Live, botId: string, botName: string) {
+  const turn = l.turn && !l.turn.cancelled ? l.turn : null;
+  let resumeSeq = 0;
+  if (turn) {
+    turn.muted = true;
+    // Where it was stopped (when you started talking, or now).
+    const st = l.player ? await bridge<{ stopped?: { turn: string; seq: number } | null }>("/speech/stop", {}).catch(() => null) : null;
+    const where = st?.stopped?.turn === turn.id ? st.stopped : null;
+    // Not started yet: from the beginning. Interrupted: from the start of that sentence.
+    resumeSeq = where ? sentenceStart(turn.phrases, where.seq) : turn.phrases.length && turn.spoke ? turn.phrases[0].seq : 0;
+    l.turn = null;
+  }
+  const hold: Hold = { botId, name: botName, turn, resumeSeq };
+  l.holds.set(botId, hold);
+  await bridge("/speech/clear-stopped", {}).catch(() => {});
+  await speakLine(l, l.local ? `Sure, take your time. Just say "${botName}" when you're ready.` : "Sure. Tap Resume when you're ready.", true);
+  await waitWhileBusy(l);
+  setPhase(l, "on-hold");
+  // On hold: only this bot's name is listened for, on the phone itself. Anything else said is dropped
+  // there and never reaches the transcript, a speech service or any bot.
+  while (l.active && l.holds.get(botId) === hold) {
+    if (l.resumeAsked) {
+      l.resumeAsked = false;
+      return resume(l, hold, "continue");
+    }
+    if (!l.local) {
+      await sleep(400);
+      continue;
+    }
+    const r = await bridge<{ text?: string }>("/voice/hold-listen", { name: botName, timeoutSec: 20 }, 35_000).catch((e) => {
+      l.note = (e as Error).message;
+      return { text: "" };
+    });
+    const heard = (r.text ?? "").trim();
+    if (!heard) continue;
+    const w = wakeFrom(heard, botName);
+    if (!w) continue; // its name in passing ("I told Maus…"): still on hold
+    l.lines.push({ who: "you", text: heard });
+    changed(l);
+    return resume(l, hold, w.action, w.question);
+  }
+}
+
+/** Off hold: continue the interrupted reply, answer a new question, or just listen. */
+async function resume(l: Live, hold: Hold, action: "wake" | "continue" | "ask", question?: string) {
+  l.holds.delete(hold.botId);
+  const t = hold.turn;
+  if (action === "continue" && t && !t.cancelled) {
+    t.muted = false;
+    l.turn = t;
+    const rest = t.phrases.filter((p) => p.seq >= hold.resumeSeq);
+    setPhase(l, rest.length || !t.done ? (rest.length ? "speaking" : "thinking") : "listening");
+    if (rest.length) await play(l, t.id, rest, { flush: true });
+    else if (t.done) await speakLine(l, "That was everything I had.", true);
+    return;
+  }
+  if (action === "wake") {
+    // Just the name: listen; "continue" next picks the reply up again (the turn is kept until then).
+    l.woke = t && !t.cancelled ? hold : null;
+    await speakLine(l, "Yes?", true);
+    return;
+  }
+  if (t) dropTurn(t); // a new question: the rest of the interrupted reply is dropped
+  if (action === "continue") return void (await speakLine(l, "Sorry, I'd finished that one. What's next?", true));
+  if (question) {
+    l.beatUntil = Date.now() + beatMs(question);
+    startTurn(l, hold.botId, question, userName());
+  }
+}
+
 async function conversation(l: Live, botId: string, reason: string) {
   const bot = getBot(botId);
+  const botName = bot?.name ?? "Maus";
   const name = userName();
   await bridge("/voice/call-mode", { on: true }).catch(() => {});
-  await speakLine(l, reason ? `${shortGreeting(name)}, it's ${bot?.name ?? "Maus"}. ${reason}` : greeting(name), true);
+  // Newer app: phrase player and on-device listening.
+  l.player = Boolean(await bridge("/speech/state", {}).then(() => true).catch(() => false));
+  l.local = l.player && Boolean(await bridge<{ onDevice?: boolean }>("/voice/local-available", {}).then((r) => r.onDevice).catch(() => false));
+  if (l.player) void bridge("/speech/warm", voiceParams()).catch(() => {});
+  await speakLine(l, reason ? `${shortGreeting(name)}, it's ${botName}. ${reason}` : greeting(name), true);
   let silences = 0;
   let failures = 0;
   while (l.active) {
     const w = await waitWhileBusy(l);
     if (!l.active) break;
+    let interrupted: Turn | null = null;
     if (w === "speech") {
-      if (l.turn && !l.turn.done) cancelTurn(l);
+      // Stop and keep quiet, but keep the reply until we know what you said ("hold on" keeps it).
+      if (l.turn && !l.turn.cancelled) (interrupted = l.turn).muted = true;
       else if (l.lines.at(-1)?.who === "maus") l.lines[l.lines.length - 1].interrupted = true;
       l.interruptions++;
     }
     setPhase(l, "listening");
-    const r = await bridge<{ text?: string; missed?: boolean; error?: string }>("/voice/listen", { soft: true, silenceMs: 700, timeoutSec: 30 }, 40_000).catch((e) => ({ text: "", missed: false, error: (e as Error).message }));
+    const r = await listen(l, { preroll: w === "speech" ? 500 : 0 });
     if (!l.active) break;
     if (r.error && !r.missed) {
+      if (interrupted) cancelTurn(l);
       l.note = r.error;
       changed(l);
       failures++;
@@ -298,8 +515,9 @@ async function conversation(l: Live, botId: string, reason: string) {
       continue;
     }
     failures = 0;
-    const text = (r.text ?? "").trim();
+    let text = (r.text ?? "").trim();
     if (!text) {
+      if (interrupted) cancelTurn(l);
       if (++silences >= 3) {
         await speakLine(l, `I'll let you go${name ? `, ${name}` : ""}. Talk soon!`);
         await waitWhileBusy(l);
@@ -310,6 +528,24 @@ async function conversation(l: Live, botId: string, reason: string) {
     }
     silences = 0;
     l.note = "";
+    if (isHoldRequest(text)) {
+      l.lines.push({ who: "you", text });
+      changed(l);
+      await holdOn(l, botId, botName);
+      continue;
+    }
+    // Woken by name alone: "continue" picks the reply up again; anything else is a new turn.
+    const woke = l.woke;
+    l.woke = null;
+    if (woke?.turn && /^(?:please\s+)?(?:continue|carry on|go on|keep going|go ahead|resume|where were we|you were saying)\b/i.test(text)) {
+      l.lines.push({ who: "you", text });
+      await resume(l, woke, "continue");
+      continue;
+    }
+    if (woke?.turn) dropTurn(woke.turn);
+    if (interrupted) cancelTurn(l);
+    text = await finishThought(l, text);
+    if (!l.active) break;
     l.lines.push({ who: "you", text });
     changed(l);
     if (isGoodbye(text)) {
@@ -317,6 +553,7 @@ async function conversation(l: Live, botId: string, reason: string) {
       await waitWhileBusy(l);
       break;
     }
+    l.beatUntil = Date.now() + beatMs(text);
     startTurn(l, botId, text, name);
   }
 }

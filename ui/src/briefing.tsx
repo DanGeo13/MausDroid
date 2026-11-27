@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
 import { IconBack } from "./icons.tsx";
@@ -156,6 +156,10 @@ const mmss = (n: number) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, 
 /** The weekly audio overview: latest recording, its status, and its settings. */
 function AudioCard({ focusId }: { focusId?: string }) {
   const [d, setD] = useState<any | null>(null);
+  const [voices, setVoices] = useState<any[] | null>(null);
+  const [live, setLive] = useState<any | null>(null);
+  const [openTx, setOpenTx] = useState(false);
+  const audioEl = useRef<HTMLAudioElement | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const load = () => void api("audio-overviews").then(setD).catch(() => setD(null));
@@ -163,6 +167,13 @@ function AudioCard({ focusId }: { focusId?: string }) {
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
+  }, []);
+  // The voice engine's voices (e.g. Phonon) for the two hosts.
+  useEffect(() => {
+    void api("settings")
+      .then((st) => api("voice/voices", { body: { engine: st.voice?.ttsEngine ?? "" } }))
+      .then((r) => setVoices((r.voices ?? []).filter((x: any) => !x.notInstalled)))
+      .catch(() => setVoices([]));
   }, []);
   if (!d) return null;
   const list: any[] = d.overviews ?? [];
@@ -190,6 +201,67 @@ function AudioCard({ focusId }: { focusId?: string }) {
       toast(`⚠️ ${(e as Error).message}`);
     }
   };
+  const pollLive = (id: string) => {
+    const tick = () =>
+      void api(`audio-overviews/${id}/listen`).then((l) => {
+        setLive(l.state === "ended" ? null : l);
+        if (l.state !== "ended") setTimeout(tick, 600);
+      });
+    tick();
+  };
+  const listen = async (o: any, fromMs = 0) => {
+    try {
+      audioEl.current?.pause();
+      await api(`audio-overviews/${o.id}/listen`, { body: { fromMs } });
+      pollLive(o.id);
+      toast("Listening hands-free: say “pause, explain that last bit” or “continue”.");
+    } catch (e) {
+      toast(`⚠️ ${(e as Error).message}`);
+    }
+  };
+  // A transcript line: jump there (in the hands-free session, or in the player).
+  const jump = (o: any, ms: number) => {
+    if (live?.overviewId === o.id) return void listen(o, ms);
+    const a = audioEl.current;
+    if (a) {
+      a.currentTime = ms / 1000;
+      void a.play();
+    }
+  };
+  const fmt = (ms: number) => mmss(Math.floor(ms / 1000));
+  const transcript = (o: any) =>
+    o.segments?.length ? (
+      <div style={{ marginTop: ".4rem" }}>
+        <button class="btn secondary small" onClick={() => setOpenTx(!openTx)}>
+          {openTx ? "Hide transcript" : "Transcript"}
+        </button>
+        {openTx ? (
+          <div class="transcript" style={{ marginTop: ".4rem" }}>
+            {o.segments.map((sg: any) => {
+              const now = live?.overviewId === o.id && live.positionMs >= sg.startMs && live.positionMs < sg.endMs + 350;
+              return (
+                <div class="toggle" style={{ alignItems: "flex-start", cursor: "pointer", fontWeight: now ? 600 : undefined }} onClick={() => jump(o, sg.startMs)} title="Play from here">
+                  <span style={{ minWidth: "3.2rem" }} class="muted">
+                    {fmt(sg.startMs)}
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    <strong>{sg.host === "female" ? "A" : "B"}:</strong> {sg.text}
+                    {sg.source?.url ? (
+                      <>
+                        {" "}
+                        <a href={sg.source.url} target="_blank" onClick={(e) => e.stopPropagation()} title={`“${sg.source.quote}”`}>
+                          source ↗
+                        </a>
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    ) : null;
   const item = (o: any) => (
     <div style={{ margin: ".5rem 0" }}>
       <div>
@@ -197,7 +269,23 @@ function AudioCard({ focusId }: { focusId?: string }) {
       </div>
       {o.status === "ready" ? (
         <>
-          <audio src={`api/files/${o.fileId}`} controls preload="metadata" style={{ width: "100%", marginTop: ".4rem" }} />
+          <audio ref={o === latest ? audioEl : undefined} src={`api/files/${o.fileId}`} controls preload="metadata" style={{ width: "100%", marginTop: ".4rem" }} />
+          <div class="inline" style={{ gap: ".5rem", marginTop: ".3rem" }}>
+            {live?.overviewId === o.id ? (
+              <>
+                <span class="pill ok">🎙️ {live.state === "playing" ? "Listening — say “pause” to ask" : live.state === "explaining" ? "Explaining…" : "Paused — say “continue”"}</span>
+                <button class="btn secondary small" onClick={() => void api(`audio-overviews/${o.id}/listen/stop`, { body: {} }).then(() => setLive(null))}>
+                  Stop
+                </button>
+              </>
+            ) : (
+              <button class="btn secondary small" onClick={() => listen(o, Math.round((audioEl.current?.currentTime ?? 0) * 1000))}>
+                🎙️ Listen hands-free
+              </button>
+            )}
+          </div>
+          {live?.overviewId === o.id && live.answer ? <p class="help">{live.answer}</p> : null}
+          {transcript(o)}
           <div class="muted" style={{ fontSize: ".8rem" }}>
             {mmss(o.seconds ?? 0)} · {new Date(o.createdAt).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
             {o.linesLeftOut ? ` · shortened to stay under ${d.settings.maxMinutes} min` : ""}
@@ -250,7 +338,29 @@ function AudioCard({ focusId }: { focusId?: string }) {
           <input type="checkbox" checked={d.settings.saveToDownloads} onChange={(e) => set({ saveToDownloads: (e.target as HTMLInputElement).checked })} /> Also save to Downloads
         </label>
       </div>
-      <p class="help">Uses your voice from Settings → Voice for one host and another voice of the same engine (e.g. Kokoro) for the other.</p>
+      {voices && voices.length ? (
+        <div class="inline" style={{ gap: ".5rem", flexWrap: "wrap", marginTop: ".4rem" }}>
+          <label style={{ fontSize: ".85rem" }}>
+            Female host{" "}
+            <select value={d.settings.voiceFemale ?? ""} onChange={(e) => set({ voiceFemale: (e.target as HTMLSelectElement).value })}>
+              <option value="">Automatic</option>
+              {voices.map((x) => (
+                <option value={x.name}>{x.name}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ fontSize: ".85rem" }}>
+            Male host{" "}
+            <select value={d.settings.voiceMale ?? ""} onChange={(e) => set({ voiceMale: (e.target as HTMLSelectElement).value })}>
+              <option value="">Automatic</option>
+              {voices.map((x) => (
+                <option value={x.name}>{x.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
+      <p class="help">The hosts use the voice engine chosen in Settings → Voice (e.g. Phonon). Pick one female and one male voice; with Automatic, your Settings voice is host A and another voice is host B.</p>
     </div>
   );
 }

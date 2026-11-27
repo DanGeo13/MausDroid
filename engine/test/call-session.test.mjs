@@ -45,7 +45,10 @@ async function fakePhone() {
         }
         case "/voice/stop": st.stops++; st.speakingUntil = 0; return send({});
         case "/voice/call-mode": st.callMode.push(body.on); return send({});
-        default: return send({});
+        default:
+          // An app before the phrase player: these don't exist (Android answers 404).
+          if (/^\/speech\/|^\/voice\/(local-available|listen-local|hold-listen)$/.test(req.url)) return (res.writeHead(404, { "content-type": "application/json" }), res.end(JSON.stringify({ error: `unknown ${req.url}` })));
+          return send({});
       }
     });
   });

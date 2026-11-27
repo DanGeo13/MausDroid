@@ -9,6 +9,7 @@ import { saveToDownloads, type SavedDownload } from "./downloads.ts";
 import { settings } from "./settings.ts";
 import { join, readWav, seconds, writeWav, type Pcm } from "./wav.ts";
 import { clip, errorText, id as newId, now } from "./util.ts";
+import { CUE_GUIDE, SPOKEN_STYLE, planPhrase, stripCues } from "./speech-style.ts";
 import { localParts } from "./time.ts";
 
 /**
@@ -33,6 +34,20 @@ export interface AudioOverview {
   linesLeftOut?: number;
   downloads?: SavedDownload;
   error?: string;
+  /** Who says what, when (ms from the start), and where in the source it comes from. */
+  segments?: Segment[];
+  /** The source the hosts discussed is kept on the phone (for "explain that last bit"). */
+  hasSource?: boolean;
+}
+
+export interface Segment {
+  speaker: "A" | "B";
+  host: "female" | "male";
+  text: string;
+  startMs: number;
+  endMs: number;
+  /** A short quote from the source this line is based on; url jumps to it where the source supports that. */
+  source?: { quote: string; url?: string };
 }
 
 export interface AudioSettings {
@@ -40,6 +55,9 @@ export interface AudioSettings {
   /** Voice names for the two hosts (blank = your chosen voice / another voice of the same engine). */
   voiceA: string;
   voiceB: string;
+  /** The podcast hosts: one female and one male voice of the voice engine (e.g. Phonon). Host A is female, host B male. */
+  voiceFemale: string;
+  voiceMale: string;
   maxMinutes: number;
   saveToDownloads: boolean;
 }
@@ -51,7 +69,7 @@ interface State {
   seen: string[];
 }
 
-const DEFAULTS: AudioSettings = { enabled: true, voiceA: "", voiceB: "", maxMinutes: 10, saveToDownloads: true };
+const DEFAULTS: AudioSettings = { enabled: true, voiceA: "", voiceB: "", voiceFemale: "", voiceMale: "", maxMinutes: 10, saveToDownloads: true };
 const store = collection<State>("audio-overviews", { settings: DEFAULTS, overviews: [], seen: [] });
 store.update((s) => (s.settings = { ...DEFAULTS, ...s.settings }));
 
@@ -142,8 +160,8 @@ function pieces(text: string, max = 600): string[] {
 /** The two hosts' voices: your chosen voice, and a different voice of the same engine. */
 async function hostVoices(s: AudioSettings) {
   const base = voiceParams();
-  let a = s.voiceA || base.voice;
-  let b = s.voiceB;
+  let a = s.voiceFemale || s.voiceA || base.voice;
+  let b = s.voiceMale || s.voiceB;
   let pitchB = base.pitch;
   if (!a || !b) {
     try {
@@ -167,10 +185,11 @@ async function hostVoices(s: AudioSettings) {
   return { engine: base.engine, rate: base.rate, A: { voice: a, pitch: base.pitch }, B: { voice: b || a, pitch: pitchB } };
 }
 
-async function synth(text: string, v: { voice: string; pitch: number }, engine: string, rate: number, out: string): Promise<Pcm> {
+async function synth(text: string, v: { voice: string; pitch: number }, engine: string, rate: number, out: string, cue: { rate?: number; pitch?: number } = {}): Promise<Pcm> {
   fs.rmSync(out, { force: true });
   try {
-    await bridge("/voice/synthesize", { text, engine, voice: v.voice, pitch: v.pitch, rate, out }, 180_000);
+    // A phrase's delivery cue (speed / pitch) is applied on the phone with Sonic.
+    await bridge("/voice/synthesize", { text, engine, voice: v.voice, pitch: v.pitch, rate, out, ...(cue.rate ? { sonicRate: cue.rate } : {}), ...(cue.pitch ? { sonicPitch: cue.pitch } : {}) }, 180_000);
   } catch (e) {
     if (/unknown \/voice\/synthesize/.test(errorText(e))) throw new Error("Recording audio needs the newer MausDroid app (0.11.0 or later): Settings → Updates → install the app update.");
     throw e;
@@ -180,12 +199,33 @@ async function synth(text: string, v: { voice: string; pitch: number }, engine: 
 }
 
 const running = new Set<string>();
+const sourcePath = (oid: string) => dataPath("audio-sources", `${oid}.txt`);
+export const overviewSource = (oid: string) => {
+  try {
+    return fs.readFileSync(sourcePath(oid), "utf8");
+  } catch {
+    return "";
+  }
+};
+
+/** "{source "a short quote"}" on a line: where it comes from (not spoken). */
+const SOURCE_CUE = /\{\s*source\s+["“]?([^{}"”]+?)["”]?\s*\}/i;
+export function splitSource(line: string): { text: string; quote?: string } {
+  const m = SOURCE_CUE.exec(line);
+  return m ? { text: line.replace(SOURCE_CUE, " ").replace(/\s{2,}/g, " ").trim(), quote: m[1].trim() } : { text: line };
+}
+/** A link that opens the source at the quote: web pages support text fragments; Google Docs don't (no jump then). */
+export function sourceJump(link: string | undefined, quote: string | undefined): string | undefined {
+  if (!link || !quote || !/^https?:\/\//.test(link) || /docs\.google\.com|drive\.google\.com/.test(link)) return undefined;
+  const q = quote.split(/\s+/).slice(0, 8).join(" ");
+  return `${link.split("#")[0]}#:~:text=${encodeURIComponent(q)}`;
+}
 
 /**
  * Records an overview from a written script (in the background). Returns at
  * once; the person is notified when it's ready (or if it fails).
  */
-export function createOverview(input: { title: string; week?: string; script: string; staff_update_name?: string; staff_update_link?: string }): AudioOverview {
+export function createOverview(input: { title: string; week?: string; script: string; staff_update_name?: string; staff_update_link?: string; source_text?: string }): AudioOverview {
   const lines = parseScript(String(input.script ?? ""));
   if (lines.length < 2) throw new Error("Write the script as a conversation, one line per turn, starting each with A: or B:.");
   const o: AudioOverview = {
@@ -201,6 +241,11 @@ export function createOverview(input: { title: string; week?: string; script: st
     s.overviews.push(o);
     if (s.overviews.length > 30) s.overviews.splice(0, s.overviews.length - 30);
   });
+  if (input.source_text && String(input.source_text).trim().length > 40) {
+    fs.mkdirSync(path.dirname(sourcePath(o.id)), { recursive: true });
+    fs.writeFileSync(sourcePath(o.id), clip(String(input.source_text), 60_000));
+    o.hasSource = true;
+  }
   emit("audio-overview", { id: o.id });
   running.add(o.id);
   void record(o, lines).finally(() => running.delete(o.id));
@@ -218,7 +263,7 @@ async function record(o: AudioOverview, lines: Line[]) {
     let budget = wordsFor(s.maxMinutes);
     const kept: Line[] = [];
     for (const l of lines) {
-      const w = words(l.text);
+      const w = words(stripCues(splitSource(l.text).text));
       if (w > budget) break;
       kept.push(l);
       budget -= w;
@@ -227,23 +272,50 @@ async function record(o: AudioOverview, lines: Line[]) {
     const closing: Line = { speaker: "A", text: "That's the overview for the week. The full Staff Update has all the details." };
     const closingPcm = await synth(closing.text, voices.A, voices.engine, voices.rate, path.join(dir, "closing.wav"));
     const parts: Pcm[] = [];
+    const segments: Segment[] = [];
+    const clips = new Map<string, Pcm>();
     let total = 0;
     let used = 0;
+    const GAP = 0.35;
     for (const [i, l] of kept.entries()) {
       patch(o.id, { progress: `Recording line ${i + 1} of ${kept.length}` });
+      const { text: spoken, quote } = splitSource(l.text);
+      const v = voices[l.speaker];
+      // Words, pauses and reactions in order; each phrase's speed/pitch cue applies to it alone.
       const segs: Pcm[] = [];
-      for (const [j, t] of pieces(l.text).entries()) segs.push(await synth(t, voices[l.speaker], voices.engine, voices.rate, path.join(dir, `${i}-${j}.wav`)));
-      const line = join(segs, 0.15);
+      let k = 0;
+      for (const item of planPhrase(spoken)) {
+        if (item.kind === "pause") segs.push({ sampleRate: segs[0]?.sampleRate ?? 24000, samples: new Int16Array(Math.round(((segs[0]?.sampleRate ?? 24000) * item.ms) / 1000)) });
+        else if (item.kind === "clip") {
+          const key = `${l.speaker}:${item.name}`;
+          if (!clips.has(key)) {
+            const say: Record<string, string> = { "mm-hmm": "Mm-hmm.", "uh-huh": "Uh-huh.", hmm: "Hmm.", oh: "Oh!", right: "Right.", yeah: "Yeah.", ah: "Ah." };
+            const c = await synth(say[item.name] ?? "Mm.", v, voices.engine, voices.rate, path.join(dir, `clip-${key.replace(/\W/g, "")}.wav`)).catch(() => null);
+            // A reaction the voice reads oddly (too long) is left out.
+            if (c && seconds(c) <= 1.2) clips.set(key, c);
+          }
+          const c = clips.get(key);
+          if (c) segs.push(c);
+        } else for (const t of pieces(item.text)) segs.push(await synth(t, v, voices.engine, voices.rate, path.join(dir, `${i}-${k++}.wav`), { rate: item.rate, pitch: item.pitch }));
+      }
+      if (!segs.length) continue;
+      const line = join(segs, 0.08);
       // Keep room for the closing line and pauses: stop before the limit.
-      if (total + seconds(line) + seconds(closingPcm) + 0.35 * (parts.length + 2) > limit - 2) break;
+      if (total + seconds(line) + seconds(closingPcm) + GAP * (parts.length + 2) > limit - 2) break;
+      const startMs = Math.round((total + GAP * parts.length) * 1000);
+      segments.push({ speaker: l.speaker, host: l.speaker === "A" ? "female" : "male", text: stripCues(spoken), startMs, endMs: startMs + Math.round(seconds(line) * 1000), ...(quote ? { source: { quote, url: sourceJump(o.staffUpdate?.link, quote) } } : {}) });
       parts.push(line);
       total += seconds(line);
       used++;
     }
     if (!parts.length) throw new Error("Nothing could be recorded within the time limit.");
     const leftOut = lines.length - used;
-    if (leftOut > 0) parts.push(closingPcm);
-    const audio = join(parts, 0.35);
+    if (leftOut > 0) {
+      const startMs = Math.round((total + GAP * parts.length) * 1000);
+      segments.push({ speaker: "A", host: "female", text: closing.text, startMs, endMs: startMs + Math.round(seconds(closingPcm) * 1000) });
+      parts.push(closingPcm);
+    }
+    const audio = join(parts, GAP);
     const len = seconds(audio);
     if (len > limit) throw new Error("The recording came out longer than the limit."); // can't happen; never publish one that's too long
     const fileName = `${o.title.replace(/[\\/:*?"<>|]+/g, " ").trim()}.wav`;
@@ -257,7 +329,7 @@ async function record(o: AudioOverview, lines: Line[]) {
         dlNote = ` (Couldn't also save it to Downloads: ${errorText(e)})`;
       }
     }
-    patch(o.id, { status: "ready", progress: undefined, fileId: file.id, seconds: Math.round(len), linesLeftOut: leftOut || undefined, downloads });
+    patch(o.id, { status: "ready", progress: undefined, fileId: file.id, seconds: Math.round(len), linesLeftOut: leftOut || undefined, downloads, segments });
     const mins = `${Math.floor(len / 60)}:${String(Math.round(len % 60)).padStart(2, "0")}`;
     await notifyUser({
       title: `🎧 ${o.title} is ready`,
@@ -286,11 +358,19 @@ export const overviewFile = (o: AudioOverview) => (o.fileId ? getFile(o.fileId) 
 
 // ---------------- Watching for a new Staff Update ----------------
 
+export const PODCAST_STYLE = `Write it as one real conversation between two hosts — host A (a woman) and host B (a man) — grounded only in the source:
+- They respond to each other: follow-up questions, quick clarifications, the odd "wait, so…" or gentle challenge, short reactions. Vary who leads each topic; don't alternate mechanically.
+- Clean handoffs: one line per turn, starting with "A:" or "B:".
+- After a line based on a specific part of the source, add {source "a short exact quote from it"} (it's not spoken; it lets the listener jump to that spot).
+${SPOKEN_STYLE}
+${CUE_GUIDE}`;
+
 export const AUDIO_PROMPT = `A new Staff Update has been published and shared with me (details below). Make this week's audio overview.
 1. Read the whole Staff Update (Google Docs/Drive through connected apps, or web_fetch its link).
-2. Write a friendly two-host conversation about what's taking place NEXT WEEK: day by day, key dates and times, deadlines, events, duties and anything I need to do or bring. Only facts from the update — never guess.
-3. Keep it under 1,300 words (it must stay under 10 minutes). One line per turn, starting each line with "A:" or "B:". No headings, lists or links.
-4. Call audio_overview_record with: title like "Week 8 audio overview", week (e.g. "Term 4 Week 8"), staff_update_name, staff_update_link and the script.
+2. Cover what's taking place NEXT WEEK: day by day, key dates and times, deadlines, events, duties and anything I need to do or bring. Only facts from the update — never guess.
+${PODCAST_STYLE}
+3. Keep it under 1,300 words (it must stay under 10 minutes). No headings, lists or links.
+4. Call audio_overview_record with: title like "Week 8 audio overview", week (e.g. "Term 4 Week 8"), staff_update_name, staff_update_link, source_text (the update's text, so I can ask about it while listening) and the script.
 It records in the background and notifies me with a link when it's ready. If you can't read the update, say so plainly instead.`;
 
 /** Checks Drive for a Staff Update not handled yet; raises a (silent) alert that starts the routine. */

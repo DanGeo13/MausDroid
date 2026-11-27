@@ -26,6 +26,63 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
     @Volatile private var level = -90.0
     private var thread: Thread? = null
     @Volatile var bargeIn = true
+    /** Other speech that counts as MausDroid talking (the phrase player), and how to stop it. */
+    @Volatile var otherSpeaking: () -> Boolean = { false }
+    @Volatile var stopOther: () -> Unit = {}
+    private fun anySpeaking() = voice.isSpeaking() || otherSpeaking()
+
+    // The last half second of microphone audio, so the start of what you say isn't lost.
+    private val ring = ShortArray(RATE / 2)
+    private var ringPos = 0
+    private var ringFull = false
+    /** A pipe to a recognizer, written by its own thread so the microphone never waits on it. */
+    private class Feed(val out: java.io.OutputStream) {
+        val q = java.util.concurrent.LinkedBlockingQueue<ByteArray>(500)
+        @Volatile var open = true
+        val t = Thread({
+            try { while (open) { val b = q.poll(200, java.util.concurrent.TimeUnit.MILLISECONDS) ?: continue; out.write(b) } } catch (_: Exception) {}
+            runCatching { out.close() }
+        }, "mic-feed").apply { isDaemon = true; start() }
+        fun close() { open = false }
+    }
+    private val feeds = java.util.concurrent.CopyOnWriteArrayList<Feed>()
+
+    /**
+     * Audio for on-device speech recognition: the last [prerollMs] of the
+     * microphone, then live audio, as 16 kHz mono 16-bit PCM through a pipe.
+     * Close the returned read side's counterpart with [closeFeeds].
+     */
+    fun openFeed(prerollMs: Int = 500): android.os.ParcelFileDescriptor? {
+        if (start() != null) return null
+        val (read, write) = android.os.ParcelFileDescriptor.createPipe()
+        val out = android.os.ParcelFileDescriptor.AutoCloseOutputStream(write)
+        synchronized(ring) {
+            val want = (RATE * prerollMs.coerceIn(0, 500) / 1000)
+            val have = if (ringFull) ring.size else ringPos
+            val n = minOf(want, have)
+            val bytes = java.nio.ByteBuffer.allocate(n * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            for (i in 0 until n) bytes.putShort(ring[(ringPos - n + i + ring.size) % ring.size])
+            val f = Feed(out)
+            f.q.offer(bytes.array())
+            feeds.add(f)
+        }
+        return read
+    }
+
+    fun closeFeeds() {
+        for (f in feeds) f.close()
+        feeds.clear()
+    }
+
+    private fun feed(buf: ShortArray, n: Int) {
+        synchronized(ring) {
+            for (i in 0 until n) { ring[ringPos] = buf[i]; ringPos = (ringPos + 1) % ring.size; if (ringPos == 0) ringFull = true }
+            if (feeds.isEmpty()) return
+            val bytes = java.nio.ByteBuffer.allocate(n * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            for (i in 0 until n) bytes.putShort(buf[i])
+            for (f in feeds) if (!f.open || !f.q.offer(bytes.array())) { f.close(); feeds.remove(f) }
+        }
+    }
 
     private companion object {
         const val RATE = 16_000
@@ -36,12 +93,12 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
     fun awaitSpeech(maxMs: Long, interrupt: Boolean): Triple<Boolean, Boolean, String?> {
         bargeIn = interrupt
         val err = start()
-        if (err != null) return Triple(false, voice.isSpeaking(), err)
+        if (err != null) return Triple(false, anySpeaking(), err)
         synchronized(lock) {
             if (!speech) lock.wait(maxMs.coerceIn(20, 5000))
             val heard = speech
             speech = false
-            return Triple(heard, voice.isSpeaking(), null)
+            return Triple(heard, anySpeaking(), null)
         }
     }
 
@@ -72,11 +129,12 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
                 while (running) {
                     val n = rec.read(buf, 0, FRAME)
                     if (n <= 0) continue
+                    feed(buf, n)
                     var sum = 0.0
                     for (i in 0 until n) { val s = buf[i] / 32768.0; sum += s * s }
                     val db = 20 * log10(sqrt(sum / n) + 1e-9)
                     level = db
-                    val speaking = voice.isSpeaking()
+                    val speaking = anySpeaking()
                     // Louder and longer while Maus is talking, so its own voice doesn't count.
                     val margin = if (speaking) 18.0 else 11.0
                     val need = if (speaking) 9 else 7 // frames of 20 ms
@@ -86,7 +144,7 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
                     }
                     if (loud >= need) {
                         loud = 0
-                        if (speaking && bargeIn) voice.stopSpeaking()
+                        if (speaking && bargeIn) { voice.stopSpeaking(); stopOther() }
                         synchronized(lock) { speech = true; lock.notifyAll() }
                     }
                 }
@@ -103,6 +161,7 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
 
     /** Frees the microphone (speech recognition needs it). */
     fun stop() {
+        closeFeeds()
         running = false
         thread?.join(500)
         thread = null

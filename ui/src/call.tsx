@@ -6,7 +6,7 @@ import { api } from "./api.ts";
  * listens again until you hang up. Works for calls you start and for
  * answered calls from Maus.
  */
-type Phase = "connecting" | "listening" | "thinking" | "speaking" | "ended";
+type Phase = "connecting" | "listening" | "thinking" | "speaking" | "on-hold" | "ended";
 
 /**
  * The engine runs the conversation (it keeps going with the screen off);
@@ -33,6 +33,7 @@ export function CallScreen({ callId, onEnd }: { callId?: string; onEnd: () => vo
             setPhase(l.phase);
             setLines(l.lines);
             setNote(l.note ?? "");
+            setHoldTap(Boolean(l.onHold && !l.canResumeByVoice));
             if (l.phase === "ended") return void (ended.current = true);
           } catch {
             /* keep trying */
@@ -47,13 +48,14 @@ export function CallScreen({ callId, onEnd }: { callId?: string; onEnd: () => vo
     })();
     return () => clearTimeout(timer);
   }, []);
+  const [holdTap, setHoldTap] = useState(false);
   const hangUp = () => {
     if (ended.current) return;
     ended.current = true;
     setPhase("ended");
     if (id.current) void api(`calls/${id.current}/end`, { body: {} }).catch(() => {});
   };
-  const label: Record<Phase, string> = { connecting: "Connecting…", listening: "Listening…", thinking: "Thinking… (talk to interrupt)", speaking: "Speaking… (talk to interrupt)", ended: "Call ended" };
+  const label: Record<Phase, string> = { connecting: "Connecting…", listening: "Listening…", thinking: "Thinking… (talk to interrupt)", speaking: "Speaking… (talk to interrupt)", "on-hold": "On hold", ended: "Call ended" };
   return (
     <div class="call">
       <div class="call-top">
@@ -75,6 +77,11 @@ export function CallScreen({ callId, onEnd }: { callId?: string; onEnd: () => vo
           </p>
         ))}
       </div>
+      {holdTap ? (
+        <button class="btn call-btn" onClick={() => void api(`calls/${id.current}/resume`, { body: {} })}>
+          Resume
+        </button>
+      ) : null}
       {phase === "ended" ? (
         <button class="btn secondary call-btn" onClick={onEnd}>
           Back to chat

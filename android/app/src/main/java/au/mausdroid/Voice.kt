@@ -132,6 +132,8 @@ class Voice(private val ctx: Context) {
         return JSONObject().put("engine", enginePkg ?: "").put("ready", ttsReady).put("voices", out)
     }
 
+    fun inCallMode() = callMode
+
     /** Calls: route audio like a phone call so the echo canceller hears Maus's voice and ignores it. */
     fun setCallMode(on: Boolean) {
         callMode = on
@@ -220,6 +222,62 @@ class Voice(private val ctx: Context) {
     }
 
     fun stopListening() = main.post { recognizer?.stopListening() }
+
+    /** True when this phone can recognise speech on the device itself (nothing sent anywhere). */
+    fun onDeviceAvailable(): Boolean =
+        android.os.Build.VERSION.SDK_INT >= 33 && runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(ctx) }.getOrDefault(false)
+
+    /**
+     * Listens with the phone's on-device recognizer, fed from [audio] (the
+     * call microphone, starting with a short pre-roll so your first word is
+     * kept). Nothing leaves the phone. Returns (words, error, code); partial
+     * words go to [partial] as they come.
+     */
+    fun listenOnDevice(audio: android.os.ParcelFileDescriptor, silenceMs: Long, timeoutSec: Long, partial: (String) -> Unit = {}): Triple<String?, String?, Int> {
+        if (!onDeviceAvailable()) return Triple(null, "On-device speech recognition isn't available on this phone.", -3)
+        val latch = CountDownLatch(1)
+        var text: String? = null
+        var err: String? = null
+        var code = -1
+        main.post {
+            recognizer?.destroy()
+            val r = runCatching { SpeechRecognizer.createOnDeviceSpeechRecognizer(ctx) }.getOrElse { e -> err = "On-device recognition couldn't start: ${e.message}"; latch.countDown(); return@post }
+            recognizer = r
+            r.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {}
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() {}
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+                override fun onPartialResults(p: Bundle?) { p?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let(partial) }
+                override fun onResults(results: Bundle?) {
+                    text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    if (text.isNullOrBlank()) code = SpeechRecognizer.ERROR_NO_MATCH
+                    latch.countDown()
+                }
+                override fun onError(error: Int) { code = error; err = "On-device listening failed (code $error)."; latch.countDown() }
+            })
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, ctx.packageName)
+                .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, audio)
+                .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
+                .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, android.media.AudioFormat.ENCODING_PCM_16BIT)
+                .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, 16_000)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+            if (silenceMs > 0) {
+                intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs)
+                intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs)
+            }
+            r.startListening(intent)
+        }
+        if (!latch.await(timeoutSec, TimeUnit.SECONDS)) { stopListening(); return Triple(null, "Listening timed out.", -2) }
+        if (code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) return Triple("", null, code)
+        return Triple(text, err, code)
+    }
 
     /**
      * Listens once and returns (words, error, errorCode). "Didn't catch that" is
