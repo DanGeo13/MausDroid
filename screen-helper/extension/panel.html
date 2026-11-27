@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Screen Helper</title>
 <style>
-  :root { --bg:#fff; --fg:#1a1a1a; --muted:#666; --card:#f3f3f5; --accent:#10a37f; }
+  :root { --bg:#fff; --fg:#1a1a1a; --muted:#666; --card:#f3f3f5; --accent:#f55036; }
   @media (prefers-color-scheme: dark) { :root { --bg:#1c1c1e; --fg:#eee; --muted:#999; --card:#2c2c2e; } }
   body { margin:0; font:14px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--fg); display:flex; flex-direction:column; height:100vh; }
   header, form { display:flex; gap:8px; padding:12px; }
@@ -22,19 +22,20 @@
 <body>
   <header>
     <button class="primary" id="look">Look at this tab</button>
-    <button id="account">Sign in with ChatGPT</button>
+    <button id="key">API key</button>
   </header>
   <div class="opts">
     <label>Model <select id="model"></select></label>
-    <label>Effort <select id="effort"><option value="">Default</option></select></label>
   </div>
+  <form id="keyform" hidden>
+    <input id="keyinput" type="password" placeholder="Paste Groq API key (gsk_…)" autocomplete="off">
+    <button>Save</button>
+  </form>
   <div id="log"></div>
   <form id="form">
     <input id="input" placeholder="Ask a follow-up…" autocomplete="off">
     <button>Ask</button>
   </form>
-  <script src="auth.js"></script>
-  <script src="models.js"></script>
   <script src="prompt.js"></script>
   <script src="panel.js"></script>
 </body>
