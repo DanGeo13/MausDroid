@@ -1,12 +1,13 @@
+const GROQ_API = "https://api.groq.com/openai/v1";
+const DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const SEES_IMAGES = /llama-4|vision|scout|maverick|-vl\b|vl-/i;
+
 const log = document.getElementById("log");
 const input = document.getElementById("input");
-const accountButton = document.getElementById("account");
+const keyForm = document.getElementById("keyform");
+const keyInput = document.getElementById("keyinput");
 const modelSelect = document.getElementById("model");
-const effortSelect = document.getElementById("effort");
 
-const EFFORT_LABELS = { low: "Quick", medium: "Normal", high: "Careful", xhigh: "Very careful", max: "Maximum", ultra: "Ultra" };
-
-let models = FALLBACK_MODELS;
 let conversation = [];
 let busy = false;
 
@@ -19,87 +20,73 @@ function addBubble(cls, text) {
   return el;
 }
 
-async function showAccount() {
-  const { session } = await chrome.storage.local.get("session");
-  accountButton.textContent = session ? "Sign out" : "Sign in with ChatGPT";
-  accountButton.title = session?.email ? `Signed in as ${session.email}` : "";
-  return session;
+async function getApiKey() {
+  const { groqKey } = await chrome.storage.local.get("groqKey");
+  return groqKey;
 }
 
-accountButton.onclick = async () => {
-  if (await showAccount()) {
-    await chrome.storage.local.remove("session");
-    await showAccount();
-    addBubble("a", "Signed out.");
+function showKeyForm() {
+  keyForm.hidden = false;
+  keyInput.focus();
+}
+
+document.getElementById("key").onclick = showKeyForm;
+
+keyForm.onsubmit = async (e) => {
+  e.preventDefault();
+  const key = keyInput.value.trim();
+  if (!key) return;
+  if (!key.startsWith("gsk_")) {
+    addBubble("a", "That doesn't look like a Groq key. Groq keys start with gsk_. Get one at console.groq.com/keys.");
     return;
   }
-  chrome.runtime.sendMessage({ type: "sign-in" });
-  addBubble("a", "A ChatGPT sign-in tab opened. Sign in there, then come back here.");
+  await chrome.storage.local.set({ groqKey: key });
+  keyInput.value = "";
+  keyForm.hidden = true;
+  addBubble("a", "Key saved. Click 'Look at this tab'.");
+  loadModels();
 };
 
-chrome.runtime.onMessage.addListener(async (msg) => {
-  if (msg.type !== "signed-in") return;
-  await showAccount();
-  if (!msg.ok) return addBubble("a", `Sign-in didn't work: ${msg.error}`);
-  addBubble("a", `Signed in${msg.email ? ` as ${msg.email}` : ""}. Click 'Look at this tab'.`);
-  loadModels();
-});
-
-function fillModels(savedModel) {
-  modelSelect.innerHTML = "";
-  for (const m of models) modelSelect.add(new Option(m.name, m.id));
-  if (models.some((m) => m.id === savedModel)) modelSelect.value = savedModel;
-}
-
-function fillEfforts(savedEffort) {
-  const model = models.find((m) => m.id === modelSelect.value);
-  effortSelect.innerHTML = "";
-  for (const e of model?.efforts ?? []) {
-    const label = EFFORT_LABELS[e] ?? e;
-    effortSelect.add(new Option(e === model.defaultEffort ? `${label} (default)` : label, e));
-  }
-  effortSelect.value = model?.efforts.includes(savedEffort) ? savedEffort : model?.defaultEffort ?? "";
+function friendlyError(status, body) {
+  const message = (() => {
+    try { return JSON.parse(body).error?.message ?? body; } catch { return body; }
+  })();
+  if (status === 401) return "Groq didn't accept that API key. Click 'API key' and paste it again (it starts with gsk_).";
+  if (status === 429) return "Groq's free limit was reached for now. Wait a minute and try again.";
+  if (/image|vision|multimodal|content.*type/i.test(message)) return `The model "${modelSelect.value}" can't read images. Pick one marked 👁 in the Model menu.`;
+  if (/too large|size|exceed/i.test(message)) return "The screenshot was too big for Groq. Make the browser window smaller and try again.";
+  return `Groq said ${status}: ${message.slice(0, 300)}`;
 }
 
 async function loadModels() {
-  const { model, effort } = await chrome.storage.local.get(["model", "effort"]);
-  try {
-    const session = await getSession();
-    if (session) {
-      const res = await fetch(`${CODEX_API}/models?client_version=${AUTH.clientVersion}`, {
-        credentials: "omit",
-        headers: await codexHeaders(session),
-      });
+  const key = await getApiKey();
+  const { model: saved } = await chrome.storage.local.get("model");
+  let ids = [DEFAULT_MODEL];
+  if (key) {
+    try {
+      const res = await fetch(`${GROQ_API}/models`, { headers: { authorization: `Bearer ${key}` } });
       if (res.ok) {
-        const live = (await res.json()).models
-          ?.filter((m) => m.visibility === "list" && (m.input_modalities ?? ["image"]).includes("image"))
-          .map((m) => ({
-            id: m.slug,
-            name: m.display_name ?? m.slug,
-            efforts: (m.supported_reasoning_levels ?? []).map((r) => r.effort),
-            defaultEffort: m.default_reasoning_level,
-            instructions: m.base_instructions,
-          }));
-        if (live?.length) models = live;
+        const live = (await res.json()).data
+          .filter((m) => m.active !== false && !/whisper|tts|guard|playai|orpheus|embed/i.test(m.id))
+          .map((m) => m.id);
+        if (live.length) ids = live;
       }
-    }
-  } catch {}
-  fillModels(model);
-  fillEfforts(effort);
+    } catch {}
+  }
+  ids.sort((a, b) => Number(SEES_IMAGES.test(b)) - Number(SEES_IMAGES.test(a)) || a.localeCompare(b));
+  modelSelect.innerHTML = "";
+  for (const id of ids) modelSelect.add(new Option(SEES_IMAGES.test(id) ? `👁 ${id}` : id, id));
+  modelSelect.value = ids.includes(saved) ? saved : ids.includes(DEFAULT_MODEL) ? DEFAULT_MODEL : ids[0];
 }
 
-modelSelect.onchange = () => {
-  fillEfforts(effortSelect.value);
-  chrome.storage.local.set({ model: modelSelect.value, effort: effortSelect.value });
-};
-effortSelect.onchange = () => chrome.storage.local.set({ effort: effortSelect.value });
+modelSelect.onchange = () => chrome.storage.local.set({ model: modelSelect.value });
 
 async function captureTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  return chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+  return chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 80 });
 }
 
-async function* sseEvents(res) {
+async function* sseData(res) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -108,70 +95,54 @@ async function* sseEvents(res) {
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     let i;
-    while ((i = buffer.indexOf("\n\n")) >= 0) {
-      const chunk = buffer.slice(0, i);
-      buffer = buffer.slice(i + 2);
-      const data = chunk.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("\n");
-      if (!data || data === "[DONE]") continue;
+    while ((i = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, i).trim();
+      buffer = buffer.slice(i + 1);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (data === "[DONE]") return;
       try { yield JSON.parse(data); } catch {}
     }
   }
 }
 
 async function ask(content) {
-  const session = await getSession().catch((err) => {
-    addBubble("a", err.message);
-    return undefined;
-  });
-  if (session === undefined) return;
-  if (!session) {
-    addBubble("a", "Click 'Sign in with ChatGPT' first.");
+  const key = await getApiKey();
+  if (!key) {
+    addBubble("a", "Click 'API key' and paste your Groq key first (from console.groq.com/keys).");
+    showKeyForm();
     return;
   }
   busy = true;
   const bubble = addBubble("a", "Thinking…");
-  const model = models.find((m) => m.id === modelSelect.value);
-  const userMessage = { type: "message", role: "user", content };
+  const userMessage = { role: "user", content };
   let answer = "";
 
   try {
-    const res = await fetch(`${CODEX_API}/responses`, {
+    const res = await fetch(`${GROQ_API}/chat/completions`, {
       method: "POST",
-      credentials: "omit",
-      headers: { ...(await codexHeaders(session)), "content-type": "application/json", accept: "text/event-stream", session_id: crypto.randomUUID() },
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify({
         model: modelSelect.value,
-        instructions: model?.instructions ?? PROMPT,
-        input: [...conversation, userMessage],
-        tools: [],
-        tool_choice: "auto",
-        parallel_tool_calls: false,
-        reasoning: effortSelect.value ? { effort: effortSelect.value } : undefined,
-        store: false,
+        messages: [{ role: "system", content: PROMPT }, ...conversation, userMessage],
         stream: true,
       }),
     });
-    if (res.status === 401) {
-      await chrome.storage.local.remove("session");
-      await showAccount();
-      throw new Error("Your ChatGPT sign-in expired. Click 'Sign in with ChatGPT' again.");
-    }
-    if (!res.ok) throw new Error(`ChatGPT said ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) throw new Error(friendlyError(res.status, await res.text()));
 
-    for await (const ev of sseEvents(res)) {
-      if (ev.type === "response.output_text.delta") {
-        answer += ev.delta;
+    for await (const ev of sseData(res)) {
+      if (ev.error) throw new Error(friendlyError(0, JSON.stringify(ev)));
+      const delta = ev.choices?.[0]?.delta?.content;
+      if (delta) {
+        answer += delta;
         bubble.textContent = answer;
         log.scrollTop = log.scrollHeight;
       }
-      if (ev.type === "response.failed" || ev.type === "error") {
-        throw new Error(ev.response?.error?.message ?? ev.error?.message ?? ev.message ?? "ChatGPT error");
-      }
     }
     if (!answer) throw new Error("No answer came back. Try again.");
-    conversation.push(userMessage, { type: "message", role: "assistant", content: [{ type: "output_text", text: answer }] });
+    conversation.push(userMessage, { role: "assistant", content: answer });
   } catch (err) {
-    bubble.textContent = `Error: ${err.message}`;
+    bubble.textContent = err instanceof TypeError ? "Couldn't reach Groq. Check your internet connection." : `Error: ${err.message}`;
   }
   busy = false;
 }
@@ -188,8 +159,8 @@ async function lookAtTab() {
     return;
   }
   await ask([
-    { type: "input_text", text: PROMPT },
-    { type: "input_image", image_url: imageUrl },
+    { type: "text", text: "Answer the questions in this screenshot." },
+    { type: "image_url", image_url: { url: imageUrl } },
   ]);
 }
 
@@ -205,12 +176,14 @@ document.getElementById("form").onsubmit = (e) => {
     return;
   }
   addBubble("q", q);
-  ask([{ type: "input_text", text: q }]);
+  ask(q);
 };
 
 (async () => {
-  const session = await showAccount();
   await loadModels();
-  if (session) lookAtTab();
-  else addBubble("a", "Click 'Sign in with ChatGPT' to get started.");
+  if (await getApiKey()) lookAtTab();
+  else {
+    addBubble("a", "Click 'API key' and paste your Groq key (from console.groq.com/keys) to get started.");
+    showKeyForm();
+  }
 })();

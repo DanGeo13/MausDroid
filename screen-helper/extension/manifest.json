@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Screen Helper",
-  "version": "0.5.0",
-  "description": "Sign in with ChatGPT, then ChatGPT reads the current tab and answers the questions on it.",
-  "permissions": ["sidePanel", "storage", "tabs", "declarativeNetRequest"],
+  "version": "0.6.0",
+  "description": "Groq AI reads the current tab and answers the questions on it.",
+  "permissions": ["sidePanel", "storage", "tabs"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
   "side_panel": { "default_path": "panel.html" },
