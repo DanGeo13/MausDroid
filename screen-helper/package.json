@@ -1,0 +1,15 @@
+{
+  "name": "screen-helper",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Chrome extension: Claude reads the current tab and answers the questions on it.",
+  "scripts": {
+    "build": "esbuild src/panel.js --bundle --format=iife --outfile=extension/panel.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
