@@ -1079,7 +1079,7 @@ function NaturalSpeech({ s, save }: { s: any; save: (b: object) => void }) {
   useEffect(() => {
     api("voice/engines").then((r) => setEngines(r.engines ?? [])).catch(() => setEngines([]));
   }, []);
-  const sp = { natural: true, reactions: true, smartWaiting: true, beat: "normal", interruptByVoice: true, holdByVoice: true, ...(s.voice?.speech ?? {}) };
+  const sp = { natural: true, reactions: true, smartWaiting: true, beat: "normal", interruptByVoice: true, holdByVoice: true, delegate: true, ...(s.voice?.speech ?? {}) };
   const set = (patch: object) => save({ speech: { ...sp, ...patch } });
   const phonon = (engines ?? []).find((e) => /phonon/i.test(`${e.name} ${e.label}`));
   const usingPhonon = Boolean(phonon && s.voice?.ttsEngine === phonon.name);
@@ -1137,7 +1137,7 @@ function NaturalSpeech({ s, save }: { s: any; save: (b: object) => void }) {
       {row("reactions", "Expressive sounds", "Now and then, like a person: “mm-hmm”, a short laugh, a sigh or a breath, written by the AI where they fit and made in the same voice.")}
       {row("smartWaiting", "Wait when I pause mid-thought", "On calls, “the other thing is…” keeps listening instead of answering.")}
       <div class="field">
-        <label>Pause before answering</label>
+        <label>Pause before answering (and how long it waits through your pauses)</label>
         <div class="seg">
           {(
             [
@@ -1152,7 +1152,8 @@ function NaturalSpeech({ s, save }: { s: any; save: (b: object) => void }) {
           ))}
         </div>
       </div>
-      {row("interruptByVoice", "Interrupt by talking", "On calls, just start talking: it stops at once and hears you from your first word.")}
+      {row("interruptByVoice", "Interrupt by talking", "On calls, just start talking: it stops at once and hears you from your first word. “Yeah” or “go on” lets it carry on; “wait, wait” stops it; it knows exactly what you'd heard.")}
+      {row("delegate", "“Let me check” and keep working", "On calls, slow jobs (email, calendar, research) get a quick “let me check”, a short progress update now and then, and keep running while you talk. Say “cancel that” to stop one.")}
       {row("holdByVoice", "“Hold on a sec”", "Puts the call on hold. It then listens on the phone only for the bot's name: “Maus, continue” or “Maus, what about…”. Side conversations stay private.")}
     </div>
   );

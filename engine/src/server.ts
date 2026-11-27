@@ -365,7 +365,7 @@ route("PUT", "/api/settings/voice", (req) => {
     if ("assistantSpeak" in b) st.assistant.speak = Boolean(b.assistantSpeak);
     if (b.speech && typeof b.speech === "object") {
       const cur = { ...(st.voice.speech ?? {}) } as Record<string, unknown>;
-      for (const k of ["natural", "reactions", "smartWaiting", "interruptByVoice", "holdByVoice"]) if (k in b.speech) cur[k] = Boolean(b.speech[k]);
+      for (const k of ["natural", "reactions", "smartWaiting", "interruptByVoice", "holdByVoice", "delegate"]) if (k in b.speech) cur[k] = Boolean(b.speech[k]);
       if (["quick", "normal", "relaxed"].includes(b.speech.beat)) cur.beat = b.speech.beat;
       st.voice.speech = cur;
     }

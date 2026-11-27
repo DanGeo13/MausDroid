@@ -181,4 +181,13 @@ class SpeechPlayerTest {
         assertTrue(peak(s) in 301..2600)
         assertTrue(kotlin.math.abs(s.samples.last().toInt()) < 50)
     }
+
+    @Test fun knowsHowMuchOfThePhraseWasHeardWhenStopped() {
+        val sink = FakeSink(realTime = true)
+        val p = SpeechPlayer(FakeSynth({ tone(1.0) }), sink)
+        p.enqueue(listOf(SpeechPlayer.Item.Speech("a long phrase", tag = SpeechPlayer.Tag("t", 0))), v)
+        Thread.sleep(500)
+        p.stop()
+        assertTrue("heard ${p.stoppedFraction}", p.stoppedFraction in 0.3..0.7)
+    }
 }

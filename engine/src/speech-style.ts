@@ -114,6 +114,8 @@ const TRAILING = /\b(and|but|or|so|because|cause|like|um+|uh+|er+|the|a|an|to|of
 export function turnFinished(text: string): boolean {
   const t = text.trim();
   if (!t) return true;
+  // "Actually, no, make it Friday." — a correction with its content is complete.
+  if (/^(actually|no|sorry)\b.*\b\w{3,}[.!?]?$/i.test(t) && !/(\.\.\.|…|,)$/.test(t) && !TRAILING.test(t.replace(/[.!?]+$/, ""))) return true;
   if (/(\.\.\.|…|,|-|–|—)$/.test(t)) return false;
   if (TRAILING.test(t.replace(/[.!?]+$/, ""))) return false;
   return true;
@@ -136,7 +138,56 @@ export function beatMs(heard: string): number {
 
 const HOLD = /^(?:ok(?:ay)?[, ]+|sorry[, ]+|um+[, ]+)?(?:hold on|hang on|wait|one sec|just a sec|give me a (?:sec|second|minute|moment)|hold that thought|one moment|bear with me)\b(?:[\s,]*(?:a|one|just)?\s*(?:sec(?:ond)?|minute|moment|tick|bit)s?)?(?:[\s,]*(?:please|mate|maus))?[.!]*$/i;
 /** "Hold on a sec", "hang on", "one moment please"… (short, clear requests only). */
-export const isHoldRequest = (t: string) => t.trim().split(/\s+/).length <= 8 && HOLD.test(t.trim());
+export const isHoldRequest = (t: string) => t.trim().split(/\s+/).length <= 8 && HOLD.test(t.trim()) && !/^\W*wait\W*(?:wait\W*)*$/i.test(t.trim());
+
+// ---------------- What an interruption means ----------------
+
+export type Interruption = "backchannel" | "yield" | "cancel" | "content";
+/**
+ * You spoke while the bot was talking or working. Like a person, it tells:
+ *  - "backchannel": "yeah", "mm-hmm", "go on" — just listening; carry on.
+ *  - "yield": "wait, wait", "stop", "hang on" (bare) — stop talking and listen.
+ *  - "cancel": "cancel that", "never mind", "forget it" — drop what it's doing.
+ *  - "content": anything else — a correction or a new request.
+ */
+export function interruptionKind(text: string): Interruption {
+  const t = text.trim().toLowerCase().replace(/[.!?,-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) return "backchannel";
+  if (/^(cancel( that| it)?|never ?mind|forget (it|that|about it)|don't worry( about it)?|scrap that|stop (that|it|searching|looking))( please)?$/.test(t)) return "cancel";
+  if (/^((wait|stop|no|hang on|hold up|whoa)( |$))+$/.test(t)) return "yield";
+  if (/^((yeah|yep|yes|yup|mm+ ?hmm+|mhm+|uh ?huh|right|ok(ay)?|sure|go on|keep going|i see|got it|cool|totally|exactly|true|nice|ah|oh|wow)( |$))+$/.test(t)) return "backchannel";
+  return "content";
+}
+
+/**
+ * What the person actually heard of an interrupted reply: every phrase before
+ * the one playing, plus the played share of that one's words.
+ */
+export function heardText(phrases: { seq: number; text: string }[], stopped: { seq: number; fraction?: number } | null): { heard: string; unheard: string } {
+  if (!stopped) return { heard: "", unheard: phrases.map((p) => p.text).join(" ").trim() };
+  const before = phrases.filter((p) => p.seq < stopped.seq).map((p) => p.text);
+  const cur = phrases.find((p) => p.seq === stopped.seq)?.text ?? "";
+  const words = cur.split(/\s+/).filter(Boolean);
+  const k = Math.round(words.length * Math.min(1, Math.max(0, stopped.fraction ?? 0)));
+  const after = phrases.filter((p) => p.seq > stopped.seq).map((p) => p.text);
+  return { heard: [...before, words.slice(0, k).join(" ")].join(" ").trim(), unheard: [words.slice(k).join(" "), ...after].join(" ").trim() };
+}
+
+/** How long a silence ends your turn (OpenAI's guidance: fast 100–350, balanced 350–750, patient 750–1500 ms). */
+export const silenceFor = (beat: "quick" | "normal" | "relaxed") => (beat === "quick" ? 450 : beat === "relaxed" ? 1000 : 700);
+
+/** Plain words for what a tool is doing (for "still checking your calendar…"). */
+export function toolWords(name: string): string {
+  const n = name.toLowerCase();
+  if (/calendar|event/.test(n)) return "checking your calendar";
+  if (/gmail|mail|email|outlook/.test(n)) return "looking through your email";
+  if (/drive|doc|sheet|file|pdf/.test(n)) return "going through your files";
+  if (/web|search|fetch|browser/.test(n)) return "looking that up";
+  if (/brief/.test(n)) return "pulling your brief together";
+  if (/routine/.test(n)) return "checking your routines";
+  if (/memory|wiki|playbook/.test(n)) return "checking my notes";
+  return "working on it";
+}
 
 /**
  * While a bot is on hold: did this local transcript wake it? Only its own
@@ -201,6 +252,17 @@ export class SpeechChunker {
     }
     return out;
   }
+  /** The very first piece after a few words, even with no punctuation yet (speech starts while the rest is written). */
+  early(minWords = 4): string {
+    if (!this.first || openCue(this.buf)) return "";
+    const m = /^(\s*(?:\S+\s+){4,7})/.exec(this.buf);
+    if (!m || m[1].trim().split(/\s+/).length < minWords) return "";
+    const piece = m[1].trim();
+    this.buf = this.buf.slice(m[1].length);
+    this.first = false;
+    return SPEAKABLE.test(piece) ? piece : "";
+  }
+
   flush(): string {
     const rest = this.buf.trim();
     this.buf = "";

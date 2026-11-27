@@ -179,7 +179,14 @@ test("podcast: chosen hosts, per-phrase cues, segments; hands-free explain and c
     // Segments: speaker, timestamps in order, clean text, source quote + jump link.
     const sg = o.segments;
     assert.deepEqual(sg.map((x) => x.host), ["female", "male", "female", "male"]);
-    for (let i = 1; i < sg.length; i++) assert.ok(sg[i].startMs >= sg[i - 1].endMs + 300, "a pause at each handoff");
+    // Natural handoffs (Dia2-style pacing): quicker after a question, a pause at every change of speaker.
+    for (let i = 1; i < sg.length; i++) assert.ok(sg[i].startMs - sg[i - 1].endMs >= 140, "a pause at each handoff");
+    assert.ok(Math.abs(sg[2].startMs - sg[1].endMs - 220) <= 30, "a quick answer after a question");
+    assert.ok(Math.abs(sg[3].startMs - sg[2].endMs - 350) <= 30, "an ordinary handoff");
+    // Word timings across each line.
+    assert.equal(sg[2].words.map((w) => w.w).join(" "), sg[2].text);
+    assert.equal(sg[2].words[0].ms, sg[2].startMs);
+    assert.ok(sg[2].words.every((w, i, a) => i === 0 || w.ms > a[i - 1].ms) && sg[2].words.at(-1).ms < sg[2].endMs);
     assert.equal(sg[2].text, "Yep, Tuesday at the oval. Bring a hat.");
     assert.equal(sg[3].source.quote, "Reports due Friday 4pm");
     assert.match(sg[3].source.url, /^https:\/\/school\.example\/news\/week-8#:~:text=Reports%20due%20Friday%204pm$/);
@@ -197,6 +204,7 @@ test("podcast: chosen hosts, per-phrase cues, segments; hands-free explain and c
     assert.ok(saved >= sg[2].startMs + 1600);
     // It explained from the segment just heard and the source.
     assert.match(asked[0], /Yep, Tuesday at the oval\. Bring a hat\./);
+    assert.match(asked[0], /The last words heard before pausing: \\"…[^\\]*\w/, "the exact words heard before the pause");
     assert.match(asked[0], /all staff on duty from 9am/);
     await e.until(async () => ph.st.enq.some((q) => q.items.some((i) => /all staff are on duty/.test(i.text ?? ""))), "answer spoken");
     const ans = ph.st.enq.find((q) => q.items.some((i) => /all staff are on duty/.test(i.text ?? "")));

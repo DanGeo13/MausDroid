@@ -154,8 +154,8 @@ class BridgeServer(
                     player.enqueue(list, speechVoice(body), body.optBoolean("flush"))
                     ok(JSONObject().put("queued", list.size))
                 }
-                "/speech/stop" -> { player.stop()?.let { lastStopped = it }; ok(JSONObject().put("stopped", tagJson(lastStopped))) }
-                "/speech/state" -> ok(JSONObject().put("speaking", player.isSpeaking()).put("current", tagJson(player.current())).put("lastStopped", tagJson(lastStopped)).put("firstAudioMs", player.lastFirstAudioMs).put("positionMs", player.positionMs()).put("stoppedAtMs", player.stoppedAtMs))
+                "/speech/stop" -> { player.stop()?.let { lastStopped = it }; ok(JSONObject().put("stopped", tagJson(lastStopped)).put("fraction", player.stoppedFraction)) }
+                "/speech/state" -> ok(JSONObject().put("speaking", player.isSpeaking()).put("current", tagJson(player.current())).put("lastStopped", tagJson(lastStopped)).put("firstAudioMs", player.lastFirstAudioMs).put("positionMs", player.positionMs()).put("stoppedAtMs", player.stoppedAtMs).put("stoppedFraction", player.stoppedFraction).put("interruptMs", watch.lastInterruptMs))
                 "/speech/clear-stopped" -> { lastStopped = null; ok() }
                 "/speech/warm" -> { val v = speechVoice(body); Thread { runCatching { phraseSynth.warmClips(v) } }.start(); ok() }
                 "/voice/local-available" -> ok(JSONObject().put("onDevice", voice.onDeviceAvailable()))

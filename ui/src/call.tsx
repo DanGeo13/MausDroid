@@ -34,6 +34,7 @@ export function CallScreen({ callId, onEnd }: { callId?: string; onEnd: () => vo
             setLines(l.lines);
             setNote(l.note ?? "");
             setHoldTap(Boolean(l.onHold && !l.canResumeByVoice));
+            setStats(l);
             if (l.phase === "ended") return void (ended.current = true);
           } catch {
             /* keep trying */
@@ -49,6 +50,7 @@ export function CallScreen({ callId, onEnd }: { callId?: string; onEnd: () => vo
     return () => clearTimeout(timer);
   }, []);
   const [holdTap, setHoldTap] = useState(false);
+  const [stats, setStats] = useState<any>(null);
   const hangUp = () => {
     if (ended.current) return;
     ended.current = true;
@@ -62,6 +64,14 @@ export function CallScreen({ callId, onEnd }: { callId?: string; onEnd: () => vo
         <div class={`call-avatar ${phase}`}>{bot?.emoji ?? "🐭"}</div>
         <h2>{bot?.name ?? "Maus"}</h2>
         <div class="muted">{label[phase]}</div>
+        {stats?.working ? <div class="muted" style={{ fontSize: ".8rem" }}>Working on {stats.working === 1 ? "a job" : `${stats.working} jobs`} in the background</div> : null}
+        {stats?.firstAudioMs?.length || stats?.interruptMs?.length ? (
+          <div class="muted" style={{ fontSize: ".72rem", opacity: 0.7 }}>
+            {stats.firstAudioMs?.length ? `first audio ${stats.firstAudioMs.at(-1)} ms` : ""}
+            {stats.firstAudioMs?.length && stats.interruptMs?.length ? " · " : ""}
+            {stats.interruptMs?.length ? `interrupt ${stats.interruptMs.at(-1)} ms` : ""}
+          </div>
+        ) : null}
         {note ? <p style={{ color: "var(--danger)" }}>{note}</p> : null}
         {/microphone/i.test(note) ? (
           <button class="btn secondary small" onClick={() => void api("system/microphone", { body: {} }).catch(() => {})}>

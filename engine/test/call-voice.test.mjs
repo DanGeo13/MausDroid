@@ -77,7 +77,7 @@ async function newPhone() {
           st.current = body.turn ? { turn: body.turn, seq: last?.seq ?? 0 } : null;
           return send({ queued: body.items.length });
         }
-        case "/speech/stop": { st.stops++; const was = speaking() ? st.current : st.lastStopped ?? null; st.speakingUntil = 0; if (was) st.lastStopped = was; return send({ stopped: st.lastStopped ?? null }); }
+        case "/speech/stop": { st.stops++; const was = speaking() ? st.current : st.lastStopped ?? null; st.speakingUntil = 0; if (was) st.lastStopped = was; return send({ stopped: st.lastStopped ?? null, fraction: st.fraction ?? 1 }); }
         case "/speech/clear-stopped": st.lastStopped = null; return send({});
         case "/speech/state": return send({ speaking: speaking(), current: speaking() ? st.current : null, lastStopped: st.lastStopped ?? null, firstAudioMs: 140 });
         case "/speech/warm": return send({});
@@ -118,7 +118,7 @@ async function newPhone() {
   return { url: `http://127.0.0.1:${server.address().port}`, st, close: () => server.close() };
 }
 
-async function callWith(script) {
+async function callWith(script, env = {}) {
   const ph = await newPhone();
   const asked = [];
   const m = await fakeModel((body) => {
@@ -127,13 +127,15 @@ async function callWith(script) {
     asked.push(last);
     return script(last, ph);
   });
-  const e = await startEngine({ env: { MAUSDROID_BRIDGE_URL: ph.url, MAUSDROID_BRIDGE_TOKEN: "x" } });
+  const e = await startEngine({ env: { MAUSDROID_BRIDGE_URL: ph.url, MAUSDROID_BRIDGE_TOKEN: "x", ...env } });
   await useModel(e, m.url);
   await e.call("/api/calls/settings", "PUT", { userName: "Dan" });
   await e.call("/api/settings/voice", "PUT", { ttsEngine: "ai.gradium.phonon.tts", voiceName: "alba", pitch: 1 });
   const done = async () => {
     if (process.env.DEBUG_CALL) {
       const calls = (await e.call("/api/calls")).data;
+      const lv = (await e.call("/api/calls")).data;
+      console.log("CALLS", JSON.stringify(lv).slice(0, 600));
       console.log("LISTENS", JSON.stringify(ph.st.listens), "\nENQ", JSON.stringify(ph.st.enq.map((q) => [q.turn, q.flush, q.items.map((i) => i.text ?? i.kind)])), "\nINTERRUPTED", ph.st.interrupted, "\nASKED", asked.length, "\nLOG", e.log().slice(-1500));
     }
     await e.stop();
@@ -154,7 +156,9 @@ test("call: cues are playback-only, beat before speaking, unfinished thoughts wa
     ph.st.heard.push("I need the room, and the other thing is…", "when does the exam start?");
     const c = (await e.call("/api/calls/start", "POST", {})).data;
     await e.call(`/api/calls/${c.id}/run`, "POST", {});
-    await e.until(async () => ph.st.enq.some((q) => q.items.some((i) => i.kind === "clip")), "reply queued", 15000);
+    await e.until(async () => ph.st.enq.some((q) => q.turn?.startsWith("callturn") && q.items.some((i) => i.kind === "clip")), "reply queued", 15000);
+    // While they paused mid-thought (a long one), a soft "mm-hmm", as a listener would.
+    assert.ok(ph.st.enq.some((q) => q.turn === "nod" && q.items[0].name === "mm-hmm"));
     const l = await live(e, c.id);
     // The trailing thought was waited for and joined.
     const mine = l.lines.filter((x) => x.who === "you").map((x) => x.text);
@@ -185,6 +189,7 @@ test("call: cues are playback-only, beat before speaking, unfinished thoughts wa
 
 test("call: talking over Maus stops it, keeps your first word, drops the stale reply", async () => {
   const { ph, e, asked, done } = await callWith((last, p) => {
+    if (last.includes("book Friday")) return { text: "Fine, Friday then." };
     if (last.includes("weather")) return { chunks: ["Well, the weather is a long story.", " First the clouds.", " Then the wind.", " Then the rain.", " Then more."], chunkDelay: 250, onChunk: (i) => i === 1 && (p.st.interruptAt = () => true) };
     return { text: "Fine, Friday then." };
   });
@@ -208,6 +213,9 @@ test("call: talking over Maus stops it, keeps your first word, drops the stale r
     const l = await live(e, c.id);
     assert.ok(l.lines.find((x) => /weather is a long story/.test(x.text)).interrupted);
     assert.equal(asked.length, 2);
+    // Playback-aware: the AI was told what was actually heard, and what wasn't.
+    assert.match(asked[1], /They heard: \\"Well, the weather is a long story\./);
+    assert.doesNotMatch(asked[1], /They heard: \\"[^\\]*Then more/, "only what was really heard");
   } finally {
     await done();
   }
@@ -340,6 +348,88 @@ test("call: with voice hold off, 'hold on' is just a question", async () => {
     // The speech service chosen in Settings is the one asked to listen (not the phone's default, e.g. Grok).
     assert.equal(ph.st.listens[0].route, "/voice/listen");
     assert.match(ph.st.listens[0].service, /^com\.google\.android\.googlequicksearchbox\//);
+  } finally {
+    await done();
+  }
+});
+
+test("methodology: interruption intent, what was heard, patience, corrections, early start", async () => {
+  const s = await load("src/speech-style.ts");
+  for (const t of ["yeah", "Mm-hmm.", "uh huh", "go on", "right, okay", "yep yep"]) assert.equal(s.interruptionKind(t), "backchannel", t);
+  for (const t of ["Wait, wait, wait.", "stop", "no no", "hang on"]) assert.equal(s.interruptionKind(t), "yield", t);
+  for (const t of ["cancel that", "Never mind.", "forget it"]) assert.equal(s.interruptionKind(t), "cancel", t);
+  for (const t of ["Under $300, please", "Actually, no, make it Friday."]) assert.equal(s.interruptionKind(t), "content", t);
+  assert.ok(!s.isHoldRequest("Wait, wait, wait."), "wait wait means stop and listen, not hold");
+  assert.ok(s.isHoldRequest("hang on a sec"));
+  assert.equal(s.turnFinished("Actually, no, make it Friday."), true);
+  assert.equal(s.turnFinished("Can you organise my"), false);
+  assert.equal(s.turnFinished("I was thinking, umm..."), false);
+  const ph = [{ seq: 0, text: "The best card is the 4070." }, { seq: 1, text: "It costs about eight hundred dollars and runs cool." }];
+  assert.deepEqual(s.heardText(ph, { seq: 1, fraction: 0.5 }), { heard: "The best card is the 4070. It costs about eight hundred", unheard: "dollars and runs cool." });
+  assert.deepEqual([s.silenceFor("quick"), s.silenceFor("normal"), s.silenceFor("relaxed")], [450, 700, 1000]);
+  assert.equal(s.toolWords("composio__GOOGLECALENDAR_EVENTS_LIST"), "checking your calendar");
+  const c = new s.SpeechChunker();
+  assert.deepEqual(c.push("So the main thing to remember about"), []);
+  // The first words before any punctuation; the last word waits until it's complete (more letters may follow).
+  assert.equal(c.early(), "So the main thing to remember");
+});
+
+test("call: 'yeah' while it talks carries on (no new AI request); 'wait, wait' stops and listens", async () => {
+  const { ph, e, asked, done } = await callWith((last, p) => {
+    if (last.includes("timetable")) return { chunks: ["Monday is maths.", " Tuesday is science.", " Wednesday is art.", " Thursday is sport."], chunkDelay: 220, onChunk: (i) => i === 1 && (p.st.interruptAt = () => p.st.current?.seq === 1) };
+    if (last.includes("Friday")) return { text: "Friday is a free day." };
+    return { text: "ok" };
+  });
+  try {
+    ph.st.heard.push("Read me my timetable", "yeah");
+    const c = (await e.call("/api/calls/start", "POST", {})).data;
+    await e.call(`/api/calls/${c.id}/run`, "POST", {});
+    await e.until(async () => ph.st.enq.some((q) => q.flush && q.turn?.startsWith("callturn") && q.items.some((i) => /Tuesday is science/.test(i.text ?? ""))), "carried on after 'yeah'", 15000);
+    assert.equal(asked.length, 1, "a backchannel isn't a new request");
+    assert.ok(!(await live(e, c.id)).lines.some((x) => x.who === "you" && x.text === "yeah"), "not added as a request");
+    // "Wait, wait, wait": stop and listen (no hold, no AI); what they say next gets the context.
+    ph.st.interruptAt = () => true;
+    ph.st.heard.push("Wait, wait, wait.", "What about Friday?");
+    await e.until(async () => asked.length === 2, "next request", 15000);
+    assert.notEqual((await live(e, c.id)).phase, "on-hold");
+    assert.match(asked[1], /What about Friday\?/);
+    assert.match(asked[1], /You were interrupted mid-reply/);
+  } finally {
+    await done();
+  }
+});
+
+test("call: a slow job says 'let me check', keeps working when you talk, gives progress, and 'cancel that' stops it", async () => {
+  const { ph, e, asked, done } = await callWith((last) => {
+    if (last.includes("monitor")) return { text: "The best monitor is the Dell.", delay: 6000 };
+    if (last.includes("GPU")) return { text: "The best one under $300 is the 4060.", delay: 4500 };
+    if (last.includes("$300")) return { text: "Got it, under $300." };
+    return { text: "ok" };
+  }, { MAUSDROID_CALL_PROGRESS_MS: "1500" });
+  try {
+    ph.st.heard.push("Find me a good GPU");
+    const c = (await e.call("/api/calls/start", "POST", {})).data;
+    await e.call(`/api/calls/${c.id}/run`, "POST", {});
+    await e.until(async () => (await live(e, c.id)).lines.some((x) => x.who === "maus" && /check|look|On it/i.test(x.text)), "acknowledged quickly", 8000);
+    await e.until(async () => (await live(e, c.id)).lines.some((x) => x.who === "maus" && /^Still /.test(x.text)), "a progress update", 8000);
+    // You talk while it works: the job isn't cancelled; your words go with the context.
+    ph.st.interruptAt = () => true;
+    ph.st.speakingUntil = Date.now() + 2000;
+    ph.st.heard.push("Under $300, please");
+    await e.until(async () => asked.length === 2, "your update was passed on", 15000);
+    assert.match(asked[1], /still working in the background on: \\"Find me a good GPU\\"/);
+    await e.until(async () => (await live(e, c.id)).lines.some((x) => /4060/.test(x.text)), "the job's answer still came", 15000);
+    // "Cancel that" while a job runs: it's stopped and its answer never comes.
+    ph.st.heard.push("And a monitor too");
+    await e.until(async () => asked.length === 3, "monitor job", 15000);
+    await e.until(async () => (await live(e, c.id)).lines.filter((x) => x.who === "maus" && /check|look|On it/i.test(x.text)).length >= 2, "acknowledged", 8000);
+    ph.st.interruptAt = () => true;
+    ph.st.speakingUntil = Date.now() + 2000;
+    ph.st.heard.push("cancel that");
+    await e.until(async () => (await live(e, c.id)).lines.some((x) => x.text === "Okay, I've stopped that."), "stopped", 15000);
+    await wait(6500);
+    assert.ok(!(await live(e, c.id)).lines.some((x) => /Dell/.test(x.text)), "the cancelled job's answer never came");
+    assert.equal(asked.length, 3, "cancel isn't sent to the AI");
   } finally {
     await done();
   }

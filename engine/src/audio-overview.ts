@@ -71,6 +71,8 @@ export interface Segment {
   endMs: number;
   /** A short quote from the source this line is based on; url jumps to it where the source supports that. */
   source?: { quote: string; url?: string; pdf?: string; page?: number };
+  /** When each word is said (ms from the start; estimated from the line's length, Dia2-style word timing). */
+  words?: { w: string; ms: number }[];
 }
 
 export interface AudioSettings {
@@ -231,6 +233,32 @@ export const overviewSource = (oid: string) => {
   }
 };
 
+/**
+ * The pause before a line, like real conversation: quicker after a question,
+ * a quick lead-in for a short reaction, longer after a long point, short when
+ * the same host carries on.
+ */
+export function handoffGap(prev: { speaker: string; text: string }, cur: { speaker: string; text: string }): number {
+  const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
+  if (prev.speaker === cur.speaker) return 0.2;
+  if (/\?["')\]]*$/.test(prev.text.trim())) return 0.22;
+  if (words(cur.text) <= 4) return 0.15;
+  if (words(prev.text) >= 30) return 0.5;
+  return 0.35;
+}
+
+/** Word times across a line, by each word's length (an estimate; the voice engine doesn't report timings). */
+export function wordTimes(text: string, startMs: number, durMs: number): { w: string; ms: number }[] {
+  const ws = text.split(/\s+/).filter(Boolean);
+  const total = ws.reduce((n, w) => n + w.length + 1, 0) || 1;
+  let acc = 0;
+  return ws.map((w) => {
+    const ms = startMs + Math.round((acc / total) * durMs);
+    acc += w.length + 1;
+    return { w, ms };
+  });
+}
+
 /** "{source "a short quote"}" on a line: where it comes from (not spoken). */
 const SOURCE_CUE = /\{\s*source\s+["“]?([^{}"”]+?)["”]?\s*\}/i;
 export function splitSource(line: string): { text: string; quote?: string } {
@@ -364,9 +392,10 @@ async function record(o: AudioOverview, lines: Line[], input: PodcastInput = { t
     const parts: Pcm[] = [];
     const segments: Segment[] = [];
     const clips = new Map<string, Pcm>();
-    let total = 0;
+    let cursor = 0; // seconds: where the next part starts
     let used = 0;
-    const GAP = 0.35;
+    let prevLine: { speaker: string; text: string } | null = null;
+    const silence = (rate: number, sec: number): Pcm => ({ sampleRate: rate, samples: new Int16Array(Math.round(rate * sec)) });
     for (const [i, l] of kept.entries()) {
       patch(o.id, { progress: `Recording line ${i + 1} of ${kept.length}` });
       const { text: spoken, quote } = splitSource(l.text);
@@ -393,21 +422,28 @@ async function record(o: AudioOverview, lines: Line[], input: PodcastInput = { t
       if (!segs.length) continue;
       const line = join(segs, 0.08);
       // Keep room for the closing line and pauses: stop before the limit.
-      if (total + seconds(line) + seconds(closingPcm) + GAP * (parts.length + 2) > limit - 2) break;
-      const startMs = Math.round((total + GAP * parts.length) * 1000);
-      segments.push({ speaker: l.speaker, host: l.speaker === "A" ? "female" : "male", text: stripCues(spoken), startMs, endMs: startMs + Math.round(seconds(line) * 1000), ...(quote ? { source: { quote, url: sourceJump(o.staffUpdate?.link, quote) } } : {}) });
+      const said = stripCues(spoken);
+      const gap = prevLine ? handoffGap(prevLine, { speaker: l.speaker, text: said }) : 0;
+      // Keep room for the closing line: stop before the limit.
+      if (cursor + gap + seconds(line) + 0.45 + seconds(closingPcm) > limit - 2) break;
+      const startMs = Math.round((cursor + gap) * 1000);
+      const durMs = Math.round(seconds(line) * 1000);
+      segments.push({ speaker: l.speaker, host: l.speaker === "A" ? "female" : "male", text: said, startMs, endMs: startMs + durMs, words: wordTimes(said, startMs, durMs), ...(quote ? { source: { quote, url: sourceJump(o.staffUpdate?.link, quote) } } : {}) });
+      if (gap > 0) parts.push(silence(line.sampleRate, gap));
       parts.push(line);
-      total += seconds(line);
+      cursor += gap + seconds(line);
+      prevLine = { speaker: l.speaker, text: said };
       used++;
     }
     if (!parts.length) throw new Error("Nothing could be recorded within the time limit.");
     const leftOut = lines.length - used;
     if (leftOut > 0) {
-      const startMs = Math.round((total + GAP * parts.length) * 1000);
-      segments.push({ speaker: "A", host: "female", text: closing.text, startMs, endMs: startMs + Math.round(seconds(closingPcm) * 1000) });
-      parts.push(closingPcm);
+      const startMs = Math.round((cursor + 0.45) * 1000);
+      const durMs = Math.round(seconds(closingPcm) * 1000);
+      segments.push({ speaker: "A", host: "female", text: closing.text, startMs, endMs: startMs + durMs, words: wordTimes(closing.text, startMs, durMs) });
+      parts.push(silence(closingPcm.sampleRate, 0.45), closingPcm);
     }
-    const audio = join(parts, GAP);
+    const audio = join(parts, 0);
     const len = seconds(audio);
     if (len > limit) throw new Error("The recording came out longer than the limit."); // can't happen; never publish one that's too long
     const fileName = `${o.title.replace(/[\\/:*?"<>|]+/g, " ").trim()}.wav`;

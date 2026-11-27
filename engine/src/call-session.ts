@@ -4,7 +4,7 @@ import { currentRunTags, onTurnEnd, sendToBot, stopBot } from "./agent.ts";
 import { getBot } from "./bots.ts";
 import { readMemory } from "./memory.ts";
 import { say, speakable, voiceParams } from "./voice.ts";
-import { CUE_GUIDE, SPOKEN_STYLE, beatMs, isHoldRequest, planPhrase, stripCues, turnFinished, wakeFrom, type PlayItem } from "./speech-style.ts";
+import { CUE_GUIDE, SPOKEN_STYLE, beatMs, heardText, interruptionKind, isHoldRequest, planPhrase, silenceFor, toolWords, stripCues, turnFinished, wakeFrom, type PlayItem } from "./speech-style.ts";
 import { callSettings, endCall, getCall } from "./calls.ts";
 import { settings, speechPrefs } from "./settings.ts";
 import { id as newId, sleep } from "./util.ts";
@@ -103,6 +103,13 @@ interface Turn {
   phrases: Phrase[];
   /** Interrupted or on hold: new phrases are kept but not played. */
   muted: boolean;
+  /** What you asked (for background work and context). */
+  asked: string;
+  startedAt: number;
+  /** It said "let me check" and is working in the background: talking doesn't cancel it. */
+  working: boolean;
+  /** The tool it's using now (for progress updates). */
+  tool?: string;
 }
 /** A bot on hold: its reply and where it was interrupted. */
 interface Hold {
@@ -114,7 +121,8 @@ interface Hold {
 export interface Live {
   callId: string;
   phase: Phase;
-  lines: { who: "you" | "maus"; text: string; interrupted?: boolean }[];
+  /** Each line with when it was said, so overlapping speech keeps its order. */
+  lines: { who: "you" | "maus"; text: string; interrupted?: boolean; at?: number }[];
   note: string;
   active: boolean;
   interruptions: number;
@@ -129,14 +137,20 @@ export interface Live {
   beatUntil: number;
   /** Woken by name alone: the next thing said may be "continue". */
   woke: Hold | null;
+  /** "Wait, wait": what they'd heard, kept for whatever they say next. */
+  carryNote?: string;
   resumeAsked: boolean;
   firstAudioMs: number[];
+  /** Voice to quiet, per interruption (ms). */
+  interruptMs: number[];
+  /** Jobs still running in the background while you talk. */
+  background: Turn[];
 }
 
 const live = new Map<string, Live>();
 export const liveCall = (callId: string) => {
   const l = live.get(callId);
-  return l ? { callId, phase: l.phase, lines: l.lines.slice(-12), note: l.note, active: l.active, interruptions: l.interruptions, onHold: l.phase === "on-hold", canResumeByVoice: l.local, firstAudioMs: l.firstAudioMs.slice(-5) } : null;
+  return l ? { callId, phase: l.phase, lines: l.lines.slice(-12), note: l.note, active: l.active, interruptions: l.interruptions, onHold: l.phase === "on-hold", canResumeByVoice: l.local, firstAudioMs: l.firstAudioMs.slice(-5), interruptMs: l.interruptMs.slice(-5), working: l.background.filter((t) => !t.done).length } : null;
 };
 
 const changed = (l: Live) => emit("call.live", { callId: l.callId, phase: l.phase });
@@ -153,7 +167,7 @@ export function runCall(callId: string) {
   if (existing?.active) return existing;
   const c = getCall(callId);
   if (!c || c.state !== "active") throw new Error("This call isn't active.");
-  const l: Live = { callId, phase: "connecting", lines: [], note: "", active: true, interruptions: 0, turn: null, holds: new Map(), player: false, local: false, beatUntil: 0, woke: null, resumeAsked: false, firstAudioMs: [] };
+  const l: Live = { callId, phase: "connecting", lines: [], note: "", active: true, interruptions: 0, turn: null, holds: new Map(), player: false, local: false, beatUntil: 0, woke: null, resumeAsked: false, firstAudioMs: [], interruptMs: [], background: [] };
   live.set(callId, l);
   void conversation(l, c.botId, c.direction === "incoming" ? c.openingLine || c.reason : "")
     .catch((e) => (l.note = (e as Error).message))
@@ -235,7 +249,7 @@ export function makePhrase(seq: number, raw: string, cues: boolean): Phrase {
 }
 
 async function speakLine(l: Live, text: string, flush = false) {
-  l.lines.push({ who: "maus", text });
+  l.lines.push({ at: Date.now(), who: "maus", text });
   setPhase(l, "speaking");
   await play(l, newId("line"), [makePhrase(0, text, false)], { flush });
 }
@@ -261,10 +275,10 @@ async function waitWhileBusy(l: Live): Promise<"speech" | "idle"> {
   return "idle";
 }
 
-function startTurn(l: Live, botId: string, text: string, name: string) {
+function startTurn(l: Live, botId: string, text: string, name: string, note = "") {
   const id = newId("callturn");
   const chunker = new SpeechChunker();
-  const turn: Turn = { id, botId, done: false, cancelled: false, spoke: false, line: -1, off: () => {}, phrases: [], muted: false };
+  const turn: Turn = { id, botId, done: false, cancelled: false, spoke: false, line: -1, off: () => {}, phrases: [], muted: false, asked: text, startedAt: Date.now(), working: false };
   l.turn = turn;
   setPhase(l, "thinking");
   const speakPiece = (piece: string) => {
@@ -274,7 +288,7 @@ function startTurn(l: Live, botId: string, text: string, name: string) {
     turn.phrases.push(ph);
     if (ph.text) {
       if (turn.line < 0) {
-        l.lines.push({ who: "maus", text: ph.text });
+        l.lines.push({ at: Date.now(), who: "maus", text: ph.text });
         turn.line = l.lines.length - 1;
       } else l.lines[turn.line].text += ` ${ph.text}`;
     }
@@ -284,11 +298,33 @@ function startTurn(l: Live, botId: string, text: string, name: string) {
     void play(l, id, [ph], { leadMs: ph.seq === 0 ? l.beatUntil - Date.now() : 0 });
     if (ph.seq === 0 && l.player) void trackFirstAudio(l, id);
   };
+  let earlyTimer: NodeJS.Timeout | null = null;
   const unsub = subscribe((e) => {
-    if (turn.cancelled || e.type !== "message.delta" || e.botId !== botId) return;
-    if (!currentRunTags(botId).includes(id)) return;
+    if (turn.cancelled || e.botId !== botId || !currentRunTags(botId).includes(id)) return;
+    // The tool it's using, for progress updates ("still checking your calendar…").
+    const msg = (e as any).message;
+    if (e.type === "message" && msg?.role === "tool") turn.tool = String(msg.tool?.name ?? "");
+    if (e.type !== "message.delta") return;
     for (const piece of chunker.push(String(e.delta ?? ""))) speakPiece(piece);
+    // Start talking after the first few words, even before a comma or full stop arrives.
+    if (!turn.spoke && !earlyTimer) earlyTimer = setTimeout(() => {
+      if (turn.spoke || turn.cancelled) return;
+      const first = chunker.early();
+      if (first) speakPiece(first);
+    }, 300);
   });
+  // A slow job: say so quickly, keep working, and give a short progress update now and then.
+  const prefs0 = speechPrefs();
+  const ackLines = ["Let me check.", "One sec, I'll look.", "Sure, checking now.", "On it."];
+  const ack = setTimeout(() => {
+    if (turn.spoke || turn.done || turn.cancelled || turn.muted || !prefs0.delegate) return;
+    turn.working = true;
+    void sayAside(l, ackLines[Math.floor(Math.random() * ackLines.length)]);
+  }, 2500);
+  const progress = setInterval(() => {
+    if (turn.spoke || turn.done || turn.cancelled || turn.muted || !turn.working) return;
+    void sayAside(l, `Still ${toolWords(turn.tool ?? "")}.`);
+  }, Number(process.env.MAUSDROID_CALL_PROGRESS_MS ?? 15_000));
   const offEnd = onTurnEnd((b, reply, info) => {
     if (b !== botId || !(info?.tags ?? []).includes(id) || turn.done) return;
     turn.done = true;
@@ -313,8 +349,19 @@ function startTurn(l: Live, botId: string, text: string, name: string) {
     unsub();
     offEnd();
     clearTimeout(timer);
+    clearTimeout(ack);
+    clearInterval(progress);
+    if (earlyTimer) clearTimeout(earlyTimer);
   };
-  sendToBot(botId, text, "call", [], id, `(Said aloud during a phone call with ${name || "you"}. Reply like natural spoken conversation: start with the answer in a short first sentence, one to three short sentences in all.\n${SPOKEN_STYLE}${l.player ? `\n${CUE_GUIDE}` : ""})`);
+  sendToBot(botId, text, "call", [], id, `(Said aloud during a phone call with ${name || "you"}. Reply like natural spoken conversation: start with the answer in a short first sentence, one to three short sentences in all.${note ? `\n${note}` : ""}\n${SPOKEN_STYLE}${l.player ? `\n${CUE_GUIDE}` : ""})`);
+}
+
+/** A short aside ("let me check", "still looking…"): spoken, shown, not part of the reply. */
+async function sayAside(l: Live, text: string) {
+  if (!l.active || l.phase === "on-hold") return;
+  l.lines.push({ at: Date.now(), who: "maus", text });
+  changed(l);
+  await play(l, newId("aside"), [makePhrase(0, text, false)]);
 }
 
 /** How long from queuing the first phrase until it was heard (shown on the call screen). */
@@ -340,7 +387,7 @@ export function sentenceStart(phrases: { seq: number; text: string }[], seq: num
 type Heard = { text?: string; missed?: boolean; error?: string };
 /** One listen: after an interruption, on-device with a pre-roll so the first word is kept. */
 export async function listen(l: Pick<Live, "local">, opts: { preroll?: number; silenceMs?: number; timeoutSec?: number } = {}): Promise<Heard> {
-  const silenceMs = opts.silenceMs ?? 700;
+  const silenceMs = opts.silenceMs ?? silenceFor(speechPrefs().beat);
   const timeoutSec = opts.timeoutSec ?? 30;
   // On-device recognition from MausDroid's own microphone whenever the phone has it: it doesn't depend on
   // the phone's default speech app (which can be an assistant like Grok that won't listen) and makes no beeps.
@@ -354,8 +401,14 @@ export async function listen(l: Pick<Live, "local">, opts: { preroll?: number; s
 /** Waits for a thought that trailed off ("the other thing is…") to finish. */
 async function finishThought(l: Live, text: string): Promise<string> {
   let full = text;
+  let nodded = false;
   for (let k = 0; k < 3 && l.active && !turnFinished(full); k++) {
     setPhase(l, "listening");
+    // A long thought with a pause: a soft "mm-hmm" now and then, as a listener would (once per turn).
+    if (!nodded && l.player && speechPrefs().reactions && full.split(/\s+/).length >= 8) {
+      nodded = true;
+      void bridge("/speech/enqueue", { items: [{ kind: "clip", name: "mm-hmm", seq: 0 }], turn: "nod", ...voiceParams() }).catch(() => {});
+    }
     const more = await listen(l, { preroll: 300, silenceMs: 1200, timeoutSec: 8 });
     const t = (more.text ?? "").trim();
     if (!t) break;
@@ -402,7 +455,7 @@ async function holdOn(l: Live, botId: string, botName: string) {
     if (!heard) continue;
     const w = wakeFrom(heard, botName);
     if (!w) continue; // its name in passing ("I told Maus…"): still on hold
-    l.lines.push({ who: "you", text: heard });
+    l.lines.push({ at: Date.now(), who: "you", text: heard });
     changed(l);
     return resume(l, hold, w.action, w.question);
   }
@@ -452,11 +505,26 @@ async function conversation(l: Live, botId: string, reason: string) {
     const w = await waitWhileBusy(l);
     if (!l.active) break;
     let interrupted: Turn | null = null;
+    let stoppedAt: { seq: number; fraction: number } | null = null;
     if (w === "speech") {
-      // Stop and keep quiet, but keep the reply until we know what you said ("hold on" keeps it).
-      if (l.turn && !l.turn.cancelled) (interrupted = l.turn).muted = true;
-      else if (l.lines.at(-1)?.who === "maus") l.lines[l.lines.length - 1].interrupted = true;
+      // A background job that's now speaking its answer counts as the reply being interrupted.
+      const speakingJob = [...l.background].reverse().find((b) => b.spoke && !b.cancelled);
+      if (!(l.turn && !l.turn.cancelled) && speakingJob) {
+        l.background = l.background.filter((b) => b !== speakingJob);
+        l.turn = speakingJob;
+      }
+      const t = l.turn && !l.turn.cancelled ? l.turn : null;
+      if (t && t.working && !t.spoke) {
+        // It's working on a job in the background: talking doesn't cancel it.
+        l.background.push(t);
+        l.turn = null;
+      } else if (t) {
+        // Stop and keep quiet, but keep the reply until we know what you said.
+        (interrupted = t).muted = true;
+        stoppedAt = await stopInfo(l, t);
+      } else if (l.lines.at(-1)?.who === "maus") l.lines[l.lines.length - 1].interrupted = true;
       l.interruptions++;
+      void bridge<{ interruptMs?: number }>("/speech/state", {}).then((st) => (st.interruptMs ?? -1) >= 0 && l.interruptMs.push(st.interruptMs!)).catch(() => {});
     }
     setPhase(l, "listening");
     const r = await listen(l, { preroll: w === "speech" ? 500 : 0 });
@@ -488,16 +556,47 @@ async function conversation(l: Live, botId: string, reason: string) {
     silences = 0;
     l.note = "";
     if (speechPrefs().holdByVoice && isHoldRequest(text)) {
-      l.lines.push({ who: "you", text });
+      l.lines.push({ at: Date.now(), who: "you", text });
       changed(l);
       await holdOn(l, botId, botName);
       continue;
     }
+    // What talking over it meant: just listening ("yeah", "go on"), stop and listen ("wait, wait"),
+    // drop it ("cancel that"), or something new (a correction or request).
+    const working = l.background.filter((t) => !t.done && !t.cancelled);
+    const kind = interrupted || working.length ? interruptionKind(text) : "content";
+    if (kind === "backchannel") {
+      if (interrupted && !interrupted.cancelled) await resume(l, { botId, name: botName, turn: interrupted, resumeSeq: stoppedAt ? sentenceStart(interrupted.phrases, stoppedAt.seq) : 0 }, "continue");
+      continue; // no new request to the AI
+    }
+    let note = "";
+    if (interrupted) {
+      const { heard, unheard } = heardText(interrupted.phrases, stoppedAt);
+      // Playback-aware: the AI knows exactly what you heard before you cut in.
+      note = `(You were interrupted mid-reply. They heard: "${heard || "nothing yet"}". They did NOT hear: "${unheard || "—"}". Don't repeat what they heard; answer what they said now.)`;
+    }
+    if (kind === "yield") {
+      l.lines.push({ at: Date.now(), who: "you", text });
+      changed(l);
+      if (interrupted) cancelTurn(l);
+      l.carryNote = note; // used with whatever they say next
+      continue; // stop talking and listen
+    }
+    if (kind === "cancel") {
+      l.lines.push({ at: Date.now(), who: "you", text });
+      if (interrupted) cancelTurn(l);
+      for (const t of working) dropTurn(t);
+      l.background = [];
+      await speakLine(l, "Okay, I've stopped that.");
+      continue;
+    }
+    if (working.length) note = `${note}${note ? " " : ""}(You're still working in the background on: "${working.map((t) => t.asked).join('", "')}". If this changes that, take it into account.)`;
+    if (l.carryNote) (note = `${l.carryNote} ${note}`.trim()), (l.carryNote = "");
     // Woken by name alone: "continue" picks the reply up again; anything else is a new turn.
     const woke = l.woke;
     l.woke = null;
     if (woke?.turn && /^(?:please\s+)?(?:continue|carry on|go on|keep going|go ahead|resume|where were we|you were saying)\b/i.test(text)) {
-      l.lines.push({ who: "you", text });
+      l.lines.push({ at: Date.now(), who: "you", text });
       await resume(l, woke, "continue");
       continue;
     }
@@ -505,7 +604,7 @@ async function conversation(l: Live, botId: string, reason: string) {
     if (interrupted) cancelTurn(l);
     if (speechPrefs().smartWaiting) text = await finishThought(l, text);
     if (!l.active) break;
-    l.lines.push({ who: "you", text });
+    l.lines.push({ at: Date.now(), who: "you", text });
     changed(l);
     if (isGoodbye(text)) {
       await speakLine(l, `Bye${name ? ` ${name}` : ""}! Talk soon.`);
@@ -513,8 +612,16 @@ async function conversation(l: Live, botId: string, reason: string) {
       break;
     }
     l.beatUntil = Date.now() + beatFor(text);
-    startTurn(l, botId, text, name);
+    l.background = l.background.filter((t) => !t.done && !t.cancelled);
+    startTurn(l, botId, text, name, note);
   }
+}
+
+/** Where the reply was when you cut in: which phrase, and how much of it you'd heard. */
+async function stopInfo(l: Live, t: Turn): Promise<{ seq: number; fraction: number } | null> {
+  if (!l.player) return null;
+  const st = await bridge<{ stopped?: { turn: string; seq: number } | null; fraction?: number }>("/speech/stop", {}).catch(() => null);
+  return st?.stopped?.turn === t.id ? { seq: st.stopped.seq, fraction: Number(st.fraction ?? 0) } : null;
 }
 
 /** The beat before answering, scaled by the setting (quick / normal / relaxed). */

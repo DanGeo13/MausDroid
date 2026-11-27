@@ -57,6 +57,10 @@ class SpeechPlayer(private val synth: PhraseSynth, private val sink: AudioSink) 
     @Volatile private var posItem: Item.Audio? = null
     @Volatile private var posRate = 24_000
     @Volatile private var posSamples = 0L
+    @Volatile private var posTotal = 0L
+    /** How much of the item that was playing had been heard when it was stopped (0–1). */
+    @Volatile var stoppedFraction: Double = 0.0
+        private set
 
     /** While a recorded file plays: where it is, in ms from the file's start (else -1). */
     fun positionMs(): Long = posItem?.let { it.startMs + posSamples * 1000 / posRate } ?: -1
@@ -88,6 +92,7 @@ class SpeechPlayer(private val synth: PhraseSynth, private val sink: AudioSink) 
                 posItem = r.item as? Item.Audio
                 posRate = r.pcm.rate
                 posSamples = 0
+                posTotal = if (r.item is Item.Speech) s.size.toLong() else 0L
                 while (off < s.size && r.gen == gen.get()) {
                     val n = sink.write(r.pcm.rate, s, off, minOf(slice, s.size - off))
                     if (n <= 0) break
@@ -118,6 +123,7 @@ class SpeechPlayer(private val synth: PhraseSynth, private val sink: AudioSink) 
         val was = playing
         val pos = positionMs()
         if (pos >= 0) stoppedAtMs = pos
+        if (was != null) stoppedFraction = if (posTotal > 0) (posSamples.toDouble() / posTotal).coerceIn(0.0, 1.0) else 0.0
         posItem = null
         gen.incrementAndGet()
         waiting.clear()

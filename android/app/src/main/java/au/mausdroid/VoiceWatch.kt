@@ -24,6 +24,9 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
     @Volatile private var running = false
     @Volatile private var speech = false
     @Volatile private var level = -90.0
+    /** Time from the start of your voice to MausDroid going quiet, for the last interruption (ms). */
+    @Volatile var lastInterruptMs: Long = -1
+        private set
     private var thread: Thread? = null
     @Volatile var bargeIn = true
     /** Other speech that counts as MausDroid talking (the phrase player), and how to stop it. */
@@ -124,6 +127,7 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
             val buf = ShortArray(FRAME)
             var floor = -60.0
             var loud = 0
+            var onset = 0L
             try {
                 rec.startRecording()
                 while (running) {
@@ -138,13 +142,13 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
                     // Louder and longer while Maus is talking, so its own voice doesn't count.
                     val margin = if (speaking) 18.0 else 11.0
                     val need = if (speaking) 9 else 7 // frames of 20 ms
-                    if (db > floor + margin && db > -50) loud++ else {
+                    if (db > floor + margin && db > -50) { if (loud == 0) onset = System.currentTimeMillis(); loud++ } else {
                         loud = max(0, loud - 1)
                         floor = if (db < floor) db else floor * 0.98 + db * 0.02 // follow the room's noise
                     }
                     if (loud >= need) {
                         loud = 0
-                        if (speaking && bargeIn) { voice.stopSpeaking(); stopOther() }
+                        if (speaking && bargeIn) { voice.stopSpeaking(); stopOther(); lastInterruptMs = System.currentTimeMillis() - onset }
                         synchronized(lock) { speech = true; lock.notifyAll() }
                     }
                 }

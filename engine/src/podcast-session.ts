@@ -78,6 +78,8 @@ async function explain(s: Session, question: string) {
   const o = getOverview(s.overviewId)!;
   const { seg, prev } = segmentAt(o.segments ?? [], s.positionMs);
   const src = sourceAround(overviewSource(o.id), seg?.source?.quote);
+  // The last words heard before the pause (word timings), so "that last bit" is exact.
+  const heardWords = (seg?.words ?? []).filter((w) => w.ms <= s.positionMs).slice(-14).map((w) => w.w).join(" ");
   const botId = getMainBotId();
   s.state = "explaining";
   changed(s);
@@ -92,7 +94,7 @@ async function explain(s: Session, question: string) {
     setTimeout(() => (off(), resolve("Sorry, that's taking too long — say continue to keep listening.")), 60_000);
     sendToBot(
       botId,
-      `While listening to the podcast "${o.title}", I paused and asked: "${question}"\n\nWhat was just said:\n${prev ? `${prev.host === "female" ? "Host A" : "Host B"}: ${prev.text}\n` : ""}${seg ? `${seg.host === "female" ? "Host A" : "Host B"}: ${seg.text}` : "(start of the episode)"}\n\n${src ? `The source it's based on:\n${src}\n\n` : ""}Answer briefly out loud (one to three short sentences), only from what's above; say so if the source doesn't cover it. I'll say "continue" to resume the episode.\n${SPOKEN_STYLE}`,
+      `While listening to the podcast "${o.title}", I paused and asked: "${question}"\n\n${heardWords ? `The last words heard before pausing: "…${heardWords}"\n` : ""}What was just said:\n${prev ? `${prev.host === "female" ? "Host A" : "Host B"}: ${prev.text}\n` : ""}${seg ? `${seg.host === "female" ? "Host A" : "Host B"}: ${seg.text}` : "(start of the episode)"}\n\n${src ? `The source it's based on:\n${src}\n\n` : ""}Answer briefly out loud (one to three short sentences), only from what's above; say so if the source doesn't cover it. I'll say "continue" to resume the episode.\n${SPOKEN_STYLE}`,
       "voice",
       [],
       tag,

@@ -95,7 +95,8 @@ test("live call: greets by name, streams speech early, can be interrupted, ends 
     const pieces = ph.st.says.slice(1).map((s) => s.text);
     assert.ok(pieces.length >= 2, `spoken in pieces: ${JSON.stringify(pieces)}`);
     let live = (await e.call(`/api/calls/${c.id}/live`)).data;
-    assert.deepEqual(live.lines[1], { who: "you", text: "What's my next class?" });
+    assert.deepEqual({ ...live.lines[1], at: undefined }, { who: "you", text: "What's my next class?", at: undefined });
+    assert.ok(live.lines[1].at > 0, "each line has its time");
     assert.match(live.lines[2].text, /room 4.*lunch/);
 
     // Interrupt: Maus stops at once, drops the rest, and listens.
@@ -103,7 +104,8 @@ test("live call: greets by name, streams speech early, can be interrupted, ends 
     ph.st.heard.push("Never mind, bye");
     await e.until(async () => (await e.call(`/api/calls/${c.id}/live`)).data.phase === "ended", "call ended", 15000);
     live = (await e.call(`/api/calls/${c.id}/live`)).data;
-    const weather = live.lines.find((l) => /weather/.test(l.text) && l.who === "maus");
+    // (Speech now starts after the first few words, so the cut-off line may end before "weather".)
+    const weather = live.lines.find((l) => /^Well, there are lots/.test(l.text) && l.who === "maus");
     assert.ok(weather?.interrupted, "marked interrupted");
     assert.ok(!ph.st.says.some((s) => /rain/.test(s.text)), "the rest of the answer was dropped");
     assert.match(live.lines.at(-1).text, /Bye Dan/);
