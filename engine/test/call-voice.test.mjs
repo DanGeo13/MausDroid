@@ -101,7 +101,7 @@ async function newPhone() {
         case "/voice/listen":
         case "/voice/listen-local": {
           const next = st.heard.shift();
-          st.listens.push({ route: req.url, preroll: body.prerollMs ?? 0, text: next, service: body.service });
+          st.listens.push({ route: req.url, preroll: body.prerollMs ?? 0, text: next, service: body.service, backchannel: body.backchannel });
           await wait(next === undefined ? 300 : 20);
           return send(next === undefined ? { text: "", missed: true } : { text: next });
         }
@@ -462,6 +462,35 @@ test("speech reaches the phone in order even when a request is slow; emotional t
     const c2 = (await e.call("/api/calls/start", "POST", { botId: researcher.id })).data;
     assert.equal(c2.botId, researcher.id);
     await e.call(`/api/calls/${c2.id}/end`, "POST", {});
+  } finally {
+    await done();
+  }
+});
+
+test("protoVoice / talk-normal / sustained-presence: tool preamble, micro-ack, backchannels while you talk, written rules", async () => {
+  const s = await load("src/speech-style.ts");
+  assert.match(s.HUMAN_STYLE, /Don't restate their question/);
+  assert.match(s.HUMAN_STYLE, /Don't end with offer menus/);
+  assert.match(s.HUMAN_STYLE, /Don't loop on "I'm here"/);
+  assert.match(s.HUMAN_STYLE, /crisis support/);
+  const { ph, e, asked, done } = await callWith((last) => (last.includes("slow one") ? { text: "Here it is.", delay: 1500 } : last.includes("quick one") ? { text: "Done." } : { text: "ok" }));
+  try {
+    ph.st.heard.push("give me a slow one");
+    const c = (await e.call("/api/calls/start", "POST", {})).data;
+    await e.call(`/api/calls/${c.id}/run`, "POST", {});
+    await e.until(async () => (await live(e, c.id)).lines.some((x) => /Here it is/.test(x.text)), "slow answer", 15000);
+    // A tiny "mm" while it worked out the answer (it hadn't started speaking yet).
+    assert.ok(ph.st.enq.some((q) => q.turn?.startsWith("micro:") && q.items[0].kind === "clip"));
+    // The AI is asked to say a few words before any tool.
+    assert.match(asked[0], /Before using any tool, first say one short line/);
+    // Listening asks the phone for an occasional "mm-hmm" while you talk at length.
+    assert.equal(ph.st.listens[0].backchannel, true);
+    // A quick answer: no micro-ack.
+    const before = ph.st.enq.filter((q) => q.turn?.startsWith("micro:")).length;
+    ph.st.heard.push("give me a quick one");
+    await e.until(async () => (await live(e, c.id)).lines.some((x) => x.text === "Done."), "quick answer", 15000);
+    await wait(900);
+    assert.equal(ph.st.enq.filter((q) => q.turn?.startsWith("micro:")).length, before, "fast replies never hear it");
   } finally {
     await done();
   }

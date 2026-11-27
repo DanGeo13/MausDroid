@@ -5,7 +5,7 @@ import { currentRunTags, onTurnEnd, sendToBot, stopBot } from "./agent.ts";
 import { getBot } from "./bots.ts";
 import { readMemory } from "./memory.ts";
 import { say, speakable, voiceParams } from "./voice.ts";
-import { CUE_GUIDE, SPOKEN_STYLE, beatMs, heardText, interruptionKind, isHoldRequest, planPhrase, silenceFor, toolWords, stripCues, turnFinished, wakeFrom, type PlayItem } from "./speech-style.ts";
+import { CUE_GUIDE, SPOKEN_STYLE, TOOL_PREAMBLE, beatMs, heardText, interruptionKind, isHoldRequest, planPhrase, silenceFor, toolWords, stripCues, turnFinished, wakeFrom, type PlayItem } from "./speech-style.ts";
 import { callSettings, endCall, getCall } from "./calls.ts";
 import { settings, speechPrefs } from "./settings.ts";
 import { id as newId, sleep } from "./util.ts";
@@ -322,10 +322,21 @@ function startTurn(l: Live, botId: string, text: string, name: string, note = ""
     turn.working = true;
     void sayAside(l, ackLines[Math.floor(Math.random() * ackLines.length)]);
   }, 2500);
-  const progress = setInterval(() => {
-    if (turn.spoke || turn.done || turn.cancelled || turn.muted || !turn.working) return;
-    void sayAside(l, `Still ${toolWords(turn.tool ?? "")}.`);
-  }, Number(process.env.MAUSDROID_CALL_PROGRESS_MS ?? 15_000));
+  // A tiny "mm" shortly after you stop, only if the answer hasn't started yet (cancelled otherwise).
+  const microAck = setTimeout(() => {
+    if (turn.spoke || turn.done || turn.cancelled || turn.muted || !l.player || !prefs0.reactions) return;
+    void enqueueSpeech({ items: [{ kind: "clip", name: Math.random() < 0.5 ? "mm-hmm" : "hmm", seq: 0 }], turn: `micro:${id}`, ...voiceParams() }).catch(() => {});
+  }, Math.max(600, l.beatUntil - Date.now() + 250));
+  const progressMs = Number(process.env.MAUSDROID_CALL_PROGRESS_MS ?? 15_000);
+  let progress: NodeJS.Timeout | null = null;
+  const firstProgress = setTimeout(() => {
+    const tick = () => {
+      if (turn.spoke || turn.done || turn.cancelled || turn.muted || !turn.working) return;
+      void sayAside(l, `Still ${toolWords(turn.tool ?? "")}.`);
+    };
+    tick();
+    progress = setInterval(tick, progressMs);
+  }, Math.round(progressMs / 2) + 2500);
   const offEnd = onTurnEnd((b, reply, info) => {
     if (b !== botId || !(info?.tags ?? []).includes(id) || turn.done) return;
     turn.done = true;
@@ -351,10 +362,12 @@ function startTurn(l: Live, botId: string, text: string, name: string, note = ""
     offEnd();
     clearTimeout(timer);
     clearTimeout(ack);
-    clearInterval(progress);
+    clearTimeout(microAck);
+    clearTimeout(firstProgress);
+    if (progress) clearInterval(progress);
     if (earlyTimer) clearTimeout(earlyTimer);
   };
-  sendToBot(botId, text, "call", [], id, `(Said aloud during a phone call with ${name || "you"}. Reply like natural spoken conversation: start with the answer in a short first sentence, one to three short sentences in all.${note ? `\n${note}` : ""}\n${SPOKEN_STYLE}${l.player ? `\n${CUE_GUIDE}` : ""})`);
+  sendToBot(botId, text, "call", [], id, `(Said aloud during a phone call with ${name || "you"}. Reply like natural spoken conversation: start with the answer in a short first sentence, one to three short sentences in all.${note ? `\n${note}` : ""}\n${TOOL_PREAMBLE}\n${SPOKEN_STYLE}${l.player ? `\n${CUE_GUIDE}` : ""})`);
 }
 
 /** A short aside ("let me check", "still looking…"): spoken, shown, not part of the reply. */
@@ -393,7 +406,8 @@ export async function listen(l: Pick<Live, "local">, opts: { preroll?: number; s
   // On-device recognition from MausDroid's own microphone whenever the phone has it: it doesn't depend on
   // the phone's default speech app (which can be an assistant like Grok that won't listen) and makes no beeps.
   if (l.local) {
-    const r = await bridge<Heard>("/voice/listen-local", { prerollMs: opts.preroll || 300, silenceMs, timeoutSec }, (timeoutSec + 10) * 1000).catch((e) => ({ error: (e as Error).message }) as Heard);
+    const nod = speechPrefs().reactions && speechPrefs().natural ? { backchannel: true, ...voiceParams() } : {};
+    const r = await bridge<Heard>("/voice/listen-local", { prerollMs: opts.preroll || 300, silenceMs, timeoutSec, ...nod }, (timeoutSec + 10) * 1000).catch((e) => ({ error: (e as Error).message }) as Heard);
     if (!r.error) return r;
   }
   return bridge<Heard>("/voice/listen", { soft: true, silenceMs, timeoutSec, service: settings().voice.recognizer ?? "" }, (timeoutSec + 10) * 1000).catch((e) => ({ text: "", missed: false, error: (e as Error).message }));
