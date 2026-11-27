@@ -51,13 +51,14 @@ export function speechItems(text: string) {
 }
 
 /** Speaks text; with wait=true returns only when the phone has finished speaking (for calls). */
-export async function speak(text: string, wait = false) {
+export async function speak(text: string, wait = false, voiceOverride?: { engine?: string; voice?: string }) {
   if (!bridgeAvailable() || !text.trim()) return;
+  const vp = { ...voiceParams(), ...(voiceOverride ?? {}) };
   // Natural speech: phrase by phrase through the voice engine (e.g. Phonon), with delivery cues.
   if (speechPrefs().natural && (await hasPlayer())) {
     const items = speechItems(text);
     if (!items.length) return;
-    const ok = await bridge("/speech/enqueue", { items, turn: "read", flush: true, ...voiceParams() }, 10_000).then(() => true).catch(() => false);
+    const ok = await bridge("/speech/enqueue", { items, turn: "read", flush: true, ...vp }, 10_000).then(() => true).catch(() => false);
     if (ok) {
       if (wait) for (let i = 0; i < 900; i++) {
         await new Promise((r) => setTimeout(r, 200));
@@ -67,7 +68,7 @@ export async function speak(text: string, wait = false) {
       return;
     }
   }
-  await bridge("/voice/speak", { text: speakable(stripCues(text)), ...voiceParams(), wait }, wait ? 180_000 : 60_000).catch(() => {});
+  await bridge("/voice/speak", { text: speakable(stripCues(text)), ...vp, wait }, wait ? 180_000 : 60_000).catch(() => {});
 }
 
 /** Adds a piece to what's being said, without waiting (calls speak replies as they arrive). */

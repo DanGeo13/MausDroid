@@ -7,7 +7,7 @@ import { notifyUser } from "./notify.ts";
 import { deleteFile, filePath, getFile, saveFile } from "./files.ts";
 import { deleteDownload, driveIdFrom, fetchForDownload, saveToDownloads, type SavedDownload } from "./downloads.ts";
 import { settings } from "./settings.ts";
-import { join, readWav, seconds, writeWav, type Pcm } from "./wav.ts";
+import { breath, join, readWav, seconds, writeWav, type Pcm } from "./wav.ts";
 import { clip, errorText, id as newId, now } from "./util.ts";
 import { CUE_GUIDE, SPOKEN_STYLE, planPhrase, stripCues } from "./speech-style.ts";
 import { localParts } from "./time.ts";
@@ -378,9 +378,11 @@ async function record(o: AudioOverview, lines: Line[], input: PodcastInput = { t
         if (item.kind === "pause") segs.push({ sampleRate: segs[0]?.sampleRate ?? 24000, samples: new Int16Array(Math.round(((segs[0]?.sampleRate ?? 24000) * item.ms) / 1000)) });
         else if (item.kind === "clip") {
           const key = `${l.speaker}:${item.name}`;
+          if (!clips.has(key) && (item.name === "breath" || item.name === "sigh")) clips.set(key, breath(item.name, segs[0]?.sampleRate ?? 24000, item.name.length + used));
           if (!clips.has(key)) {
-            const say: Record<string, string> = { "mm-hmm": "Mm-hmm.", "uh-huh": "Uh-huh.", hmm: "Hmm.", oh: "Oh!", right: "Right.", yeah: "Yeah.", ah: "Ah." };
-            const c = await synth(say[item.name] ?? "Mm.", v, voices.engine, voices.rate, path.join(dir, `clip-${key.replace(/\W/g, "")}.wav`)).catch(() => null);
+            const say: Record<string, string> = { "mm-hmm": "Mm-hmm.", "uh-huh": "Uh-huh.", hmm: "Hmm.", oh: "Oh!", right: "Right.", yeah: "Yeah.", ah: "Ah.", laugh: "Ha ha!", chuckle: "Heh." };
+            const lively = item.name === "laugh" || item.name === "chuckle" ? { rate: 1.15, pitch: 1.05 } : {};
+            const c = await synth(say[item.name] ?? "Mm.", v, voices.engine, voices.rate, path.join(dir, `clip-${key.replace(/\W/g, "")}.wav`), lively).catch(() => null);
             // A reaction the voice reads oddly (too long) is left out.
             if (c && seconds(c) <= 1.2) clips.set(key, c);
           }

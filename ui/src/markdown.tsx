@@ -62,7 +62,7 @@ export function renderMarkdown(md: string): string {
 }
 
 /** Delivery cues in spoken replies ("{pause 300}", "{react mm-hmm}"…) are for the voice only, never shown. */
-const CUES = /\{\s*(?:pause\s+\d+(?:ms)?|faster|slower|higher|lower|(?:rate|speed|pitch)\s+[\d.]+|react\s+[a-z-]+|source\s+[^{}]*)\s*\}/gi;
+const CUES = /\{\s*(?:pause\s+\d+(?:ms)?|faster|slower|higher|lower|laugh|chuckle|sigh|breath|(?:rate|speed|pitch)\s+[\d.]+|react\s+[a-z-]+|source\s+[^{}]*)\s*\}|[\[<]\s*(?:laughs?|laughing|chuckles?|sighs?|breath|breathes|inhales)\s*[\]>]/gi;
 export const hideCues = (t: string) => t.replace(CUES, "").replace(/ {2,}/g, " ");
 
 export function Markdown({ text }: { text: string }) {

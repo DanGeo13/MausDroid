@@ -164,6 +164,29 @@ class SpeechPlayer(private val synth: PhraseSynth, private val sink: AudioSink) 
             return Pcm(p.rate, if (n == all.size) all else all.copyOf(maxOf(0, n)))
         }
 
+        /** A soft breath ("breath" = in-breath, "sigh" = out-breath): band-limited noise, breath-shaped, quiet. */
+        fun breath(kind: String, rate: Int, seed: Int = 7): Pcm {
+            val sec = if (kind == "sigh") 0.75 else 0.38
+            val n = (sec * rate).toInt()
+            val out = ShortArray(n)
+            var x = seed.toLong() and 0xffffffffL
+            var lp = 0.0
+            var lp2 = 0.0
+            val a = Math.exp(-2 * Math.PI * (if (kind == "sigh") 1800 else 2600) / rate)
+            val b = Math.exp(-2 * Math.PI * 250 / rate)
+            for (i in 0 until n) {
+                x = (x * 1664525 + 1013904223) and 0xffffffffL
+                val white = x / 2147483648.0 - 1
+                lp = a * lp + (1 - a) * white
+                lp2 = b * lp2 + (1 - b) * lp
+                val band = lp - lp2
+                val t = i.toDouble() / n
+                val env = if (kind == "sigh") minOf(1.0, t / 0.12) * Math.pow(1 - t, 1.6) else Math.pow(Math.sin(Math.PI * minOf(1.0, t * 1.1)), 1.5)
+                out[i] = (maxOf(-1.0, minOf(1.0, band * 9 * env)) * 2600).toInt().toShort()
+            }
+            return Pcm(rate, out)
+        }
+
         /** Drops near-silence at the start and end, so phrases join without gaps. */
         fun trimSilence(p: Pcm, threshold: Int = 300): Pcm {
             val s = p.samples

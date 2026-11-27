@@ -19,14 +19,16 @@ export const SPOKEN_STYLE = `Write for listening, not reading:
 - Keep every fact, name, number, date and time exactly; keep uncertainty ("I think", "probably") where it's real.
 - No lists, headings, links, emoji or formatting: it's heard, not seen.`;
 
-export const CUE_GUIDE = `Optional delivery cues (they're never spoken or shown): {pause 300} for a short silence; {faster}, {slower}, {higher} or {lower} at the start of a phrase changes only that phrase, subtly; {react mm-hmm} (or uh-huh, hmm, oh, right, yeah, ah) for a brief listening sound. Use them rarely and only where a person naturally would — most phrases need none.`;
+export const CUE_GUIDE = `Optional delivery cues (they're never spoken or shown): {pause 300} for a short silence; {faster}, {slower}, {higher} or {lower} at the start of a phrase changes only that phrase, subtly; {react mm-hmm} (or uh-huh, hmm, oh, right, yeah, ah) for a brief listening sound; {laugh}, {chuckle}, {sigh} or {breath} for an expressive sound where a person really would (something funny, a relief, a pause before something serious). Use them rarely and only where a person naturally would — most phrases need none, and never in serious or sad moments except a soft {sigh}.`;
 
 export type PlayItem =
   | { kind: "speech"; text: string; rate?: number; pitch?: number }
   | { kind: "pause"; ms: number }
   | { kind: "clip"; name: string };
 
-export const REACTIONS = ["mm-hmm", "uh-huh", "hmm", "oh", "right", "yeah", "ah"] as const;
+export const REACTIONS = ["mm-hmm", "uh-huh", "hmm", "oh", "right", "yeah", "ah", "laugh", "chuckle", "sigh", "breath"] as const;
+/** Expressive sounds that can be written on their own: {laugh}, {chuckle}, {sigh}, {breath}. */
+const EXPRESSIVE = new Set(["laugh", "chuckle", "sigh", "breath"]);
 const NAMED: Record<string, { rate?: number; pitch?: number }> = {
   faster: { rate: 1.08 },
   slower: { rate: 0.92 },
@@ -38,7 +40,7 @@ const CUE = /\{\s*([a-z-]+)(?:\s+([^{}]*?))?\s*\}/gi;
 
 /** Text with every cue (valid or not) removed: what's spoken and shown. */
 export function stripCues(text: string): string {
-  return text.replace(CUE, " ").replace(/\{[^{}]*$/, "").replace(/\s+([,.!?;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
+  return normalizeTags(text).replace(CUE, " ").replace(/\{[^{}]*$/, "").replace(/\s+([,.!?;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
 }
 
 /**
@@ -46,7 +48,16 @@ export function stripCues(text: string): string {
  * applies to the words after it in this phrase only; the next phrase is
  * back to normal unless it has its own cue.
  */
+/** Sound tags written the way other speech models do ("[laughs]", "<sigh>", "*chuckles*") become cues. */
+export function normalizeTags(t: string): string {
+  return t.replace(/[\[<*(]\s*(laugh|laughs|laughing|chuckle|chuckles|sigh|sighs|breath|breathes|inhales)\s*[\]>*)]/gi, (_, w: string) => {
+    const k = w.toLowerCase();
+    return `{${k.startsWith("laugh") ? "laugh" : k.startsWith("chuckle") ? "chuckle" : k.startsWith("sigh") ? "sigh" : "breath"}}`;
+  });
+}
+
 export function planPhrase(phrase: string): PlayItem[] {
+  phrase = normalizeTags(phrase);
   const out: PlayItem[] = [];
   let rate: number | undefined;
   let pitch: number | undefined;
@@ -76,6 +87,8 @@ export function planPhrase(phrase: string): PlayItem[] {
     } else if (name === "pitch") {
       const v = Number(arg);
       if (Number.isFinite(v) && v > 0) pitch = Math.round(clamp(v, 0.85, 1.15) * 100) / 100;
+    } else if (EXPRESSIVE.has(name)) {
+      out.push({ kind: "clip", name });
     } else if (NAMED[name]) {
       rate = NAMED[name].rate ?? rate;
       pitch = NAMED[name].pitch ?? pitch;

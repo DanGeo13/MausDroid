@@ -26,6 +26,11 @@ test("cues, turn-end, beat, hold and wake words", async () => {
   assert.deepEqual(s.planPhrase("{shout}Hello {pause abc}there {react giggle}friend."), [{ kind: "speech", text: "Hello there friend." }]);
   assert.equal(s.stripCues("It's at 3:15 {pause 300} in room 4. {faster}Bring the form"), "It's at 3:15 in room 4. Bring the form");
   assert.equal(s.stripCues("Half a cue {pau"), "Half a cue");
+  // Expressive sounds, Sophon-style: {laugh} {chuckle} {sigh} {breath}, and tags other models write.
+  assert.deepEqual(s.planPhrase("That's brilliant {laugh} honestly."), [{ kind: "speech", text: "That's brilliant" }, { kind: "clip", name: "laugh" }, { kind: "speech", text: "honestly." }]);
+  assert.deepEqual(s.planPhrase("{sigh}Okay, the bad news."), [{ kind: "clip", name: "sigh" }, { kind: "speech", text: "Okay, the bad news." }]);
+  assert.deepEqual(s.planPhrase("Well [laughs] that's one way. <sigh> *chuckles*").map((i) => i.kind === "clip" ? i.name : i.kind), ["speech", "laugh", "speech", "sigh", "chuckle"]);
+  assert.equal(s.stripCues("Well [laughs] that's one way. {breath}"), "Well that's one way.");
   // Turn-end.
   for (const t of ["The other thing is…", "and then I went to the", "So I was thinking, um", "I need you to,"]) assert.equal(s.turnFinished(t), false, t);
   for (const t of ["What's my next class?", "Book it for Friday.", "Thanks", "no"]) assert.equal(s.turnFinished(t), true, t);
@@ -289,6 +294,11 @@ test("settings: natural speech switches; read-aloud and voice chats use the phra
     assert.deepEqual(q.items.map((i) => i.kind), ["speech", "pause", "speech", "clip"]);
     assert.equal(q.engine, "ai.gradium.phonon.tts");
     assert.ok(!q.items.some((i) => /[{}]/.test(i.text ?? "")));
+    // Compare voices: the sample plays in the chosen engine, with expressive sounds.
+    await e.call("/api/voice/sample", "POST", { engine: "org.example.kokoro" });
+    const sample = ph.st.enq.at(-1);
+    assert.equal(sample.engine, "org.example.kokoro");
+    assert.ok(sample.items.some((i) => i.kind === "clip" && i.name === "chuckle"));
     // Listening sounds off: no clip.
     await e.call("/api/settings/voice", "PUT", { speech: { reactions: false } });
     await e.call("/api/voice/speak", "POST", { text: "Sure. {react mm-hmm}" });

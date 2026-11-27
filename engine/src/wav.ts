@@ -95,3 +95,31 @@ export function writeWav(p: Pcm): Buffer {
   h.writeUInt32LE(data.length, 40);
   return Buffer.concat([h, data]);
 }
+
+/**
+ * A soft breath ("breath" = short in-breath, "sigh" = longer out-breath):
+ * band-limited noise with a breath-shaped envelope, quiet (about -22 dBFS).
+ * Sounds far more natural than a voice engine reading the word.
+ */
+export function breath(kind: "breath" | "sigh", rate = 24000, seed = 7): Pcm {
+  const sec = kind === "sigh" ? 0.75 : 0.38;
+  const n = Math.round(sec * rate);
+  const out = new Int16Array(n);
+  let x = seed >>> 0;
+  let lp = 0;
+  let lp2 = 0;
+  const a = Math.exp((-2 * Math.PI * (kind === "sigh" ? 1800 : 2600)) / rate); // low-pass
+  const b = Math.exp((-2 * Math.PI * 250) / rate); // high-pass corner
+  for (let i = 0; i < n; i++) {
+    x = (x * 1664525 + 1013904223) >>> 0;
+    const white = x / 2147483648 - 1;
+    lp = a * lp + (1 - a) * white;
+    lp2 = b * lp2 + (1 - b) * lp;
+    const band = lp - lp2;
+    const t = i / n;
+    // In-breath swells then stops; a sigh rises fast and fades slowly.
+    const env = kind === "sigh" ? Math.min(1, t / 0.12) * Math.pow(1 - t, 1.6) : Math.sin(Math.PI * Math.min(1, t * 1.1)) ** 1.5;
+    out[i] = Math.round(Math.max(-1, Math.min(1, band * 9 * env)) * 2600);
+  }
+  return { sampleRate: rate, samples: out };
+}

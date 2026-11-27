@@ -378,6 +378,12 @@ route("GET", "/api/voice/recognizers", async () => json(await bridge("/voice/rec
 route("GET", "/api/voice/engines", async () => json(await bridge("/voice/engines", {})));
 route("POST", "/api/voice/voices", async (req) => json(await bridge("/voice/voices", { engine: String(req.body?.engine ?? "") }, 20_000)));
 route("POST", "/api/voice/speak", async (req) => (await voice.speak(String(req.body?.text ?? ""), Boolean(req.body?.wait)), json({ ok: true })));
+// Compare voice engines: the same sample in one engine (and voice), with natural delivery.
+route("POST", "/api/voice/sample", async (req) => {
+  const b = req.body ?? {};
+  await voice.speak(String(b.text || "Hi! {pause 200}This is how I'd sound on a call. {chuckle} Not bad, right? {pause 250}{slower}And this is me being careful with something important."), false, { engine: String(b.engine ?? ""), voice: String(b.voice ?? "") });
+  return json({ ok: true });
+});
 route("POST", "/api/voice/stop", async () => json(await bridge("/voice/stop", {}).catch(() => ({}))));
 route("POST", "/api/bots/:id/voice", (req, [id]) => json(voice.sendByVoice(id, String(req.body?.text ?? ""))));
 route("GET", "/api/assistant", () => {

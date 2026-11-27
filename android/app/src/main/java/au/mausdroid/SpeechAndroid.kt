@@ -25,9 +25,11 @@ class TtsPhraseSynth(private val ctx: Context, private val recorder: VoiceRecord
     }
 
     /** Spoken forms of the reactions (the engine says these naturally in most voices). */
-    private val spoken = mapOf("mm-hmm" to "Mm-hmm.", "uh-huh" to "Uh-huh.", "hmm" to "Hmm.", "oh" to "Oh!", "right" to "Right.", "yeah" to "Yeah.", "ah" to "Ah.")
+    private val spoken = mapOf("mm-hmm" to "Mm-hmm.", "uh-huh" to "Uh-huh.", "hmm" to "Hmm.", "oh" to "Oh!", "right" to "Right.", "yeah" to "Yeah.", "ah" to "Ah.", "laugh" to "Ha ha!", "chuckle" to "Heh.")
 
     override fun clip(name: String, voice: SpeechPlayer.Voice): SpeechPlayer.Pcm? {
+        // Breaths and sighs: shaped breath noise (a voice engine reading the word sounds wrong).
+        if (name == "breath" || name == "sigh") return SpeechPlayer.breath(name, 24_000)
         val say = spoken[name] ?: return null
         val key = MessageDigest.getInstance("SHA-1").digest("${voice.engine}|${voice.name}|${voice.pitch}".toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
         val f = File(ctx.cacheDir, "speech-clips/$key/$name.wav")
@@ -35,7 +37,9 @@ class TtsPhraseSynth(private val ctx: Context, private val recorder: VoiceRecord
             f.parentFile?.mkdirs()
             runCatching { recorder.record(say, voice.engine, voice.name, voice.pitch, voice.rate, f, 30) }.onFailure { return null }
         }
-        val p = runCatching { SpeechPlayer.trimSilence(SpeechPlayer.readWav(f.readBytes())) }.getOrNull() ?: return null
+        var p = runCatching { SpeechPlayer.trimSilence(SpeechPlayer.readWav(f.readBytes())) }.getOrNull() ?: return null
+        // A laugh a little quicker and brighter than speech.
+        if (name == "laugh" || name == "chuckle") p = SpeechPlayer.applySonic(p, 1.15f, 1.05f)
         // Longer than a short reaction (the engine read it oddly): leave it out.
         return if (p.samples.size > p.rate * 1.2) null else p
     }

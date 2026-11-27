@@ -394,7 +394,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     }
 
     /** Delivery cues ("{pause 300}") are for the voice only. */
-    private fun hideCues(t: String) = t.replace(Regex("\\{\\s*(?:pause\\s+\\d+(?:ms)?|faster|slower|higher|lower|(?:rate|speed|pitch)\\s+[\\d.]+|react\\s+[a-z-]+|source\\s+[^{}]*)\\s*\\}", RegexOption.IGNORE_CASE), "").replace(Regex(" {2,}"), " ")
+    private fun hideCues(t: String) = t.replace(Regex("\\{\\s*(?:pause\\s+\\d+(?:ms)?|faster|slower|higher|lower|laugh|chuckle|sigh|breath|(?:rate|speed|pitch)\\s+[\\d.]+|react\\s+[a-z-]+|source\\s+[^{}]*)\\s*\\}", RegexOption.IGNORE_CASE), "").replace(Regex(" {2,}"), " ")
 
     private fun speakable(t: String) = t.replace(Regex("```[\\s\\S]*?```"), " (code) ").replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)"), "$1")
         .replace(Regex("https?://\\S+"), "a link").replace(Regex("[*_#>`|]"), "").replace(Regex("\\s+"), " ").trim()

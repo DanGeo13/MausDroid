@@ -57,6 +57,13 @@ test("source quotes, jumps, segments, commands", async () => {
   assert.equal(p.commandFrom("say that again"), "repeat");
   assert.equal(p.commandFrom("pause"), "pause");
   assert.equal(p.commandFrom("stop listening"), "stop");
+  const w = await load("src/wav.ts");
+  const b = w.breath("breath", 24000);
+  const sg2 = w.breath("sigh", 24000);
+  assert.ok(Math.abs(w.seconds(b) - 0.38) < 0.01 && Math.abs(w.seconds(sg2) - 0.75) < 0.01);
+  const peak = (p2) => p2.samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+  assert.ok(peak(b) > 300 && peak(b) <= 2600, "a soft, audible breath");
+  assert.ok(Math.abs(sg2.samples.at(-1)) < 50, "fades out");
 });
 
 async function fakePhone() {

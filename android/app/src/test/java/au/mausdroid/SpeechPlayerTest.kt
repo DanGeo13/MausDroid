@@ -170,4 +170,15 @@ class SpeechPlayerTest {
         assertTrue("got $got, rest $rest", got >= rest - 1 && got <= rest + rate / 50 + 1)
         f.delete()
     }
+
+    @Test fun breathsAndSighsAreSoftShapedNoise() {
+        val b = SpeechPlayer.breath("breath", rate)
+        val s = SpeechPlayer.breath("sigh", rate)
+        assertEquals((rate * 0.38).toInt(), b.samples.size)
+        assertEquals((rate * 0.75).toInt(), s.samples.size)
+        val peak = { p: SpeechPlayer.Pcm -> p.samples.maxOf { kotlin.math.abs(it.toInt()) } }
+        assertTrue(peak(b) in 301..2600)
+        assertTrue(peak(s) in 301..2600)
+        assertTrue(kotlin.math.abs(s.samples.last().toInt()) < 50)
+    }
 }

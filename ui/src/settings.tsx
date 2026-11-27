@@ -1110,8 +1110,31 @@ function NaturalSpeech({ s, save }: { s: any; save: (b: object) => void }) {
       ) : (
         <p class="help">Phonon isn't installed as a voice engine on this phone. Install the Phonon TTS app, import the Phonon 31M model, then choose it here.</p>
       )}
+      {engines && engines.length > 1 ? (
+        <div class="field">
+          <label>Compare voices</label>
+          <p class="help">The same sample in each voice engine on this phone. Pick the one that sounds most like a real person.</p>
+          {engines.map((x) => (
+            <div class="toggle">
+              <span>
+                {x.label} {s.voice?.ttsEngine === x.name ? <span class="pill ok">in use</span> : null}
+              </span>
+              <span class="inline" style={{ gap: ".4rem" }}>
+                <button class="btn secondary small" onClick={() => void api("voice/sample", { body: { engine: x.name } })}>
+                  ▶ Play
+                </button>
+                {s.voice?.ttsEngine !== x.name ? (
+                  <button class="btn small" onClick={() => save({ ttsEngine: x.name, voiceName: "" })}>
+                    Use
+                  </button>
+                ) : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {row("natural", "Natural delivery", "Speaks phrase by phrase as replies arrive, with small changes in speed and pitch, and pauses where a person would pause. Calls, read-aloud replies and the assistant.")}
-      {row("reactions", "Listening sounds", "An occasional “mm-hmm” or “uh-huh” in the same voice.")}
+      {row("reactions", "Expressive sounds", "Now and then, like a person: “mm-hmm”, a short laugh, a sigh or a breath, written by the AI where they fit and made in the same voice.")}
       {row("smartWaiting", "Wait when I pause mid-thought", "On calls, “the other thing is…” keeps listening instead of answering.")}
       <div class="field">
         <label>Pause before answering</label>
