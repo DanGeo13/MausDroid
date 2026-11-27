@@ -4,4 +4,4 @@ Find the questions or tasks visible on it and answer each one.
 - Short answer: answer in one to three sentences.
 - Ordering/sequencing: give the correct order as a numbered list.
 - Anything else: briefly explain what is on screen and what to do next.
-Only answer from the screenshot; do not run commands or read files. Be concise. Use plain text.`;
+Be concise. Use plain text.`;

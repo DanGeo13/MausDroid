@@ -1,16 +1,13 @@
-const HELPER_URL = "http://127.0.0.1:8791";
-
 const log = document.getElementById("log");
 const input = document.getElementById("input");
-const pairForm = document.getElementById("pairform");
-const pairInput = document.getElementById("pairinput");
-
+const accountButton = document.getElementById("account");
 const modelSelect = document.getElementById("model");
 const effortSelect = document.getElementById("effort");
-let models = [];
 
-let threadId = null;
-let haveScreenshot = false;
+const EFFORT_LABELS = { low: "Quick", medium: "Normal", high: "Careful", xhigh: "Very careful", max: "Maximum", ultra: "Ultra" };
+
+let models = FALLBACK_MODELS;
+let conversation = [];
 let busy = false;
 
 function addBubble(cls, text) {
@@ -22,114 +19,159 @@ function addBubble(cls, text) {
   return el;
 }
 
-async function getPairingCode() {
-  const { pairingCode } = await chrome.storage.local.get("pairingCode");
-  return pairingCode;
+async function showAccount() {
+  const { session } = await chrome.storage.local.get("session");
+  accountButton.textContent = session ? "Sign out" : "Sign in with ChatGPT";
+  accountButton.title = session?.email ? `Signed in as ${session.email}` : "";
+  return session;
 }
 
-function showPairForm() {
-  pairForm.hidden = false;
-  pairInput.focus();
+accountButton.onclick = async () => {
+  if (await showAccount()) {
+    await chrome.storage.local.remove("session");
+    await showAccount();
+    addBubble("a", "Signed out.");
+    return;
+  }
+  chrome.runtime.sendMessage({ type: "sign-in" });
+  addBubble("a", "A ChatGPT sign-in tab opened. Sign in there, then come back here.");
+};
+
+chrome.runtime.onMessage.addListener(async (msg) => {
+  if (msg.type !== "signed-in") return;
+  await showAccount();
+  if (!msg.ok) return addBubble("a", `Sign-in didn't work: ${msg.error}`);
+  addBubble("a", `Signed in${msg.email ? ` as ${msg.email}` : ""}. Click 'Look at this tab'.`);
+  loadModels();
+});
+
+function fillModels(savedModel) {
+  modelSelect.innerHTML = "";
+  for (const m of models) modelSelect.add(new Option(m.name, m.id));
+  if (models.some((m) => m.id === savedModel)) modelSelect.value = savedModel;
 }
 
-const EFFORT_LABELS = { low: "Quick", medium: "Normal", high: "Careful", xhigh: "Very careful", max: "Maximum", ultra: "Ultra" };
-
-function fillEfforts(saved) {
+function fillEfforts(savedEffort) {
   const model = models.find((m) => m.id === modelSelect.value);
-  effortSelect.innerHTML = '<option value="">Default</option>';
+  effortSelect.innerHTML = "";
   for (const e of model?.efforts ?? []) {
     const label = EFFORT_LABELS[e] ?? e;
     effortSelect.add(new Option(e === model.defaultEffort ? `${label} (default)` : label, e));
   }
-  effortSelect.value = model?.efforts.includes(saved) ? saved : "";
+  effortSelect.value = model?.efforts.includes(savedEffort) ? savedEffort : model?.defaultEffort ?? "";
 }
 
 async function loadModels() {
-  const code = await getPairingCode();
-  if (!code) return;
+  const { model, effort } = await chrome.storage.local.get(["model", "effort"]);
   try {
-    const res = await fetch(`${HELPER_URL}/models`, { headers: { authorization: `Bearer ${code}` } });
-    if (!res.ok) return;
-    models = await res.json();
-  } catch {
-    return;
-  }
-  const { model = "", effort = "" } = await chrome.storage.local.get(["model", "effort"]);
-  modelSelect.innerHTML = '<option value="">Codex default</option>';
-  for (const m of models) modelSelect.add(new Option(m.name, m.id));
-  modelSelect.value = models.some((m) => m.id === model) ? model : "";
+    const session = await getSession();
+    if (session) {
+      const res = await fetch(`${CODEX_API}/models?client_version=${AUTH.clientVersion}`, {
+        credentials: "omit",
+        headers: await codexHeaders(session),
+      });
+      if (res.ok) {
+        const live = (await res.json()).models
+          ?.filter((m) => m.visibility === "list" && (m.input_modalities ?? ["image"]).includes("image"))
+          .map((m) => ({
+            id: m.slug,
+            name: m.display_name ?? m.slug,
+            efforts: (m.supported_reasoning_levels ?? []).map((r) => r.effort),
+            defaultEffort: m.default_reasoning_level,
+            instructions: m.base_instructions,
+          }));
+        if (live?.length) models = live;
+      }
+    }
+  } catch {}
+  fillModels(model);
   fillEfforts(effort);
 }
 
 modelSelect.onchange = () => {
-  chrome.storage.local.set({ model: modelSelect.value });
   fillEfforts(effortSelect.value);
-  chrome.storage.local.set({ effort: effortSelect.value });
+  chrome.storage.local.set({ model: modelSelect.value, effort: effortSelect.value });
 };
 effortSelect.onchange = () => chrome.storage.local.set({ effort: effortSelect.value });
 
 async function captureTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
-  return dataUrl.split(",")[1];
+  return chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
 }
 
-function* ndjsonLines(buffer) {
-  let i;
-  while ((i = buffer.text.indexOf("\n")) >= 0) {
-    const line = buffer.text.slice(0, i).trim();
-    buffer.text = buffer.text.slice(i + 1);
-    if (line) yield line;
+async function* sseEvents(res) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let i;
+    while ((i = buffer.indexOf("\n\n")) >= 0) {
+      const chunk = buffer.slice(0, i);
+      buffer = buffer.slice(i + 2);
+      const data = chunk.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("\n");
+      if (!data || data === "[DONE]") continue;
+      try { yield JSON.parse(data); } catch {}
+    }
   }
 }
 
-async function ask(prompt, imageBase64) {
-  const code = await getPairingCode();
-  if (!code) {
-    addBubble("a", "Pair with the helper first: click Pair and paste the code from the helper window.");
-    showPairForm();
+async function ask(content) {
+  const session = await getSession().catch((err) => {
+    addBubble("a", err.message);
+    return undefined;
+  });
+  if (session === undefined) return;
+  if (!session) {
+    addBubble("a", "Click 'Sign in with ChatGPT' first.");
     return;
   }
   busy = true;
   const bubble = addBubble("a", "Thinking…");
-  let answered = false;
+  const model = models.find((m) => m.id === modelSelect.value);
+  const userMessage = { type: "message", role: "user", content };
+  let answer = "";
 
   try {
-    const res = await fetch(`${HELPER_URL}/ask`, {
+    const res = await fetch(`${CODEX_API}/responses`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${code}` },
-      body: JSON.stringify({ prompt, imageBase64, threadId, model: modelSelect.value, effort: effortSelect.value }),
+      credentials: "omit",
+      headers: { ...(await codexHeaders(session)), "content-type": "application/json", accept: "text/event-stream", session_id: crypto.randomUUID() },
+      body: JSON.stringify({
+        model: modelSelect.value,
+        instructions: model?.instructions ?? PROMPT,
+        input: [...conversation, userMessage],
+        tools: [],
+        tool_choice: "auto",
+        parallel_tool_calls: false,
+        reasoning: effortSelect.value ? { effort: effortSelect.value } : undefined,
+        store: false,
+        stream: true,
+      }),
     });
-    if (res.status === 401) throw new Error("The pairing code doesn't match. Click Pair and paste the code from the helper window.");
-    if (!res.ok) throw new Error(await res.text());
+    if (res.status === 401) {
+      await chrome.storage.local.remove("session");
+      await showAccount();
+      throw new Error("Your ChatGPT sign-in expired. Click 'Sign in with ChatGPT' again.");
+    }
+    if (!res.ok) throw new Error(`ChatGPT said ${res.status}: ${(await res.text()).slice(0, 300)}`);
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    const buffer = { text: "" };
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer.text += decoder.decode(value, { stream: true });
-      for (const line of ndjsonLines(buffer)) {
-        let ev;
-        try { ev = JSON.parse(line); } catch { continue; }
-        if (ev.type === "thread.started") threadId = ev.thread_id;
-        if (ev.type === "item.completed" && ev.item?.type === "agent_message") {
-          bubble.textContent = answered ? `${bubble.textContent}\n\n${ev.item.text}` : ev.item.text;
-          answered = true;
-        }
-        if (ev.type === "turn.failed" || ev.type === "error") {
-          throw new Error(ev.error?.message ?? ev.message ?? "ChatGPT (Codex) error");
-        }
+    for await (const ev of sseEvents(res)) {
+      if (ev.type === "response.output_text.delta") {
+        answer += ev.delta;
+        bubble.textContent = answer;
         log.scrollTop = log.scrollHeight;
       }
+      if (ev.type === "response.failed" || ev.type === "error") {
+        throw new Error(ev.response?.error?.message ?? ev.error?.message ?? ev.message ?? "ChatGPT error");
+      }
     }
-    if (!answered) bubble.textContent = "No answer came back. Try again.";
+    if (!answer) throw new Error("No answer came back. Try again.");
+    conversation.push(userMessage, { type: "message", role: "assistant", content: [{ type: "output_text", text: answer }] });
   } catch (err) {
-    const offline = err instanceof TypeError;
-    bubble.textContent = offline
-      ? "Can't reach the helper. Open Terminal and run: node helper.mjs (in the screen-helper folder), then try again."
-      : `Error: ${err.message}`;
+    bubble.textContent = `Error: ${err.message}`;
   }
   busy = false;
 }
@@ -137,44 +179,38 @@ async function ask(prompt, imageBase64) {
 async function lookAtTab() {
   if (busy) return;
   log.innerHTML = "";
-  threadId = null;
-  haveScreenshot = false;
-  let screenshot;
+  conversation = [];
+  let imageUrl;
   try {
-    screenshot = await captureTab();
+    imageUrl = await captureTab();
   } catch {
     addBubble("a", "Couldn't capture this tab. Chrome blocks screenshots of some pages (like chrome:// pages and the Web Store). Try a normal web page.");
     return;
   }
-  haveScreenshot = true;
-  await ask(PROMPT, screenshot);
+  await ask([
+    { type: "input_text", text: PROMPT },
+    { type: "input_image", image_url: imageUrl },
+  ]);
 }
 
 document.getElementById("look").onclick = lookAtTab;
-document.getElementById("pair").onclick = showPairForm;
-
-pairForm.onsubmit = async (e) => {
-  e.preventDefault();
-  const code = pairInput.value.trim();
-  if (!code) return;
-  await chrome.storage.local.set({ pairingCode: code });
-  pairInput.value = "";
-  pairForm.hidden = true;
-  addBubble("a", "Paired. Click 'Look at this tab'.");
-  loadModels();
-};
 
 document.getElementById("form").onsubmit = (e) => {
   e.preventDefault();
   const q = input.value.trim();
   if (!q || busy) return;
   input.value = "";
-  if (!haveScreenshot) {
+  if (!conversation.length) {
     addBubble("a", "Click 'Look at this tab' first.");
     return;
   }
   addBubble("q", q);
-  ask(q);
+  ask([{ type: "input_text", text: q }]);
 };
 
-loadModels().then(lookAtTab);
+(async () => {
+  const session = await showAccount();
+  await loadModels();
+  if (session) lookAtTab();
+  else addBubble("a", "Click 'Sign in with ChatGPT' to get started.");
+})();
