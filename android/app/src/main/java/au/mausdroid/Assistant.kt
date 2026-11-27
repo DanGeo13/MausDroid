@@ -379,8 +379,12 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
                         statusLine.text = "Still working — you'll get a notification when it's done."
                     } else {
                         statusLine.text = ""
-                        answer.text = reply
-                        if (speak) voice.speak(speakable(reply))
+                        answer.text = hideCues(reply)
+                        // Spoken by the engine: your chosen voice engine (e.g. Phonon) and natural delivery.
+                        if (speak) Thread {
+                            try { engine("/api/voice/speak", JSONObject().put("text", reply), 20_000) }
+                            catch (_: Exception) { ui { voice.speak(speakable(hideCues(reply))) } }
+                        }.start()
                     }
                 }
             } catch (e: Exception) {
@@ -389,6 +393,9 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         }.start()
     }
 
+    /** Delivery cues ("{pause 300}") are for the voice only. */
+    private fun hideCues(t: String) = t.replace(Regex("\\{\\s*(?:pause\\s+\\d+(?:ms)?|faster|slower|higher|lower|(?:rate|speed|pitch)\\s+[\\d.]+|react\\s+[a-z-]+|source\\s+[^{}]*)\\s*\\}", RegexOption.IGNORE_CASE), "").replace(Regex(" {2,}"), " ")
+
     private fun speakable(t: String) = t.replace(Regex("```[\\s\\S]*?```"), " (code) ").replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)"), "$1")
         .replace(Regex("https?://\\S+"), "a link").replace(Regex("[*_#>`|]"), "").replace(Regex("\\s+"), " ").trim()
 
@@ -396,6 +403,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         active = false
         voice.stopListening()
         voice.stopSpeaking()
+        Thread { runCatching { engine("/api/voice/stop", JSONObject(), 5_000) } }.start()
         voice.shutdown()
     }
 }

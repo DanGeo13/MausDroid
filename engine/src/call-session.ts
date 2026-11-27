@@ -4,8 +4,9 @@ import { currentRunTags, onTurnEnd, sendToBot, stopBot } from "./agent.ts";
 import { getBot } from "./bots.ts";
 import { readMemory } from "./memory.ts";
 import { say, speakable, voiceParams } from "./voice.ts";
-import { CUE_GUIDE, SPOKEN_STYLE, beatMs, isHoldRequest, openCue, planPhrase, stripCues, turnFinished, wakeFrom, type PlayItem } from "./speech-style.ts";
+import { CUE_GUIDE, SPOKEN_STYLE, beatMs, isHoldRequest, planPhrase, stripCues, turnFinished, wakeFrom, type PlayItem } from "./speech-style.ts";
 import { callSettings, endCall, getCall } from "./calls.ts";
+import { settings, speechPrefs } from "./settings.ts";
 import { id as newId, sleep } from "./util.ts";
 
 /**
@@ -79,49 +80,8 @@ export function userName(): string {
  * the very first piece even earlier, at a comma, so Maus starts talking
  * quickly; long runs at a space.
  */
-/** True when there's something to say (not just spaces or punctuation). Plain ranges: the phone's Node.js has no Unicode tables. */
-const SPEAKABLE = /[^\s!-/:-@[-`{-~\u2013\u2014\u2018\u2019\u201c\u201d\u2026]/;
-
-export class SpeechChunker {
-  private buf = "";
-  private first = true;
-  push(delta: string): string[] {
-    this.buf += delta;
-    const out: string[] = [];
-    for (;;) {
-      let cut = -1;
-      const end = this.buf.search(/[.!?…](?=[\s"')\]]|$)|\n/);
-      if (end >= 0 && (end + 1 < this.buf.length || /\n$/.test(this.buf))) cut = end + 1;
-      if (cut < 0 && this.first) {
-        const m = this.buf.slice(18).search(/[,;:—–](?=\s)/);
-        if (m >= 0) cut = 18 + m + 1;
-      }
-      if (cut < 0 && this.buf.length > 160) {
-        const sp = this.buf.lastIndexOf(" ", 160);
-        cut = sp > 40 ? sp : 160;
-      }
-      if (cut < 0) break;
-      // Never split a delivery cue ("{pause 300}"): wait for its closing brace.
-      if (openCue(this.buf.slice(0, cut))) {
-        const close = this.buf.indexOf("}", cut);
-        if (close < 0) break;
-        cut = close + 1;
-      }
-      const piece = this.buf.slice(0, cut).trim();
-      this.buf = this.buf.slice(cut);
-      if (SPEAKABLE.test(piece)) {
-        out.push(piece);
-        this.first = false;
-      }
-    }
-    return out;
-  }
-  flush(): string {
-    const rest = this.buf.trim();
-    this.buf = "";
-    return SPEAKABLE.test(rest) ? rest : "";
-  }
-}
+export { SpeechChunker } from "./speech-style.ts";
+import { SpeechChunker } from "./speech-style.ts";
 
 // ---------------- The call ----------------
 
@@ -258,10 +218,11 @@ export async function play(l: Pick<Live, "player">, turnId: string, phrases: Phr
     for (const [i, p] of phrases.entries()) await say(p.text, Boolean(opts.flush) && i === 0);
     return;
   }
-  const items: (PlayItem & { seq: number })[] = phrases.flatMap((p) => p.items);
+  const prefs = speechPrefs();
+  const items: (PlayItem & { seq: number })[] = phrases.flatMap((p) => p.items).filter((i) => prefs.reactions || i.kind !== "clip");
   // The beat before answering is a timed silence at the front of the queue: the first phrase is
   // made during it, and if you start talking again it's cancelled with everything else.
-  if (opts.leadMs && opts.leadMs > 30) items.unshift({ kind: "pause", ms: Math.round(Math.min(opts.leadMs, 1500)), seq: phrases[0].seq });
+  if (opts.leadMs && opts.leadMs > 30 && prefs.smartWaiting) items.unshift({ kind: "pause", ms: Math.round(Math.min(opts.leadMs, 1500)), seq: phrases[0].seq });
   await bridge("/speech/enqueue", { items, turn: turnId, flush: Boolean(opts.flush), ...voiceParams() }, 10_000).catch(async () => {
     for (const p of phrases) await say(p.text);
   });
@@ -284,8 +245,9 @@ async function waitWhileBusy(l: Live): Promise<"speech" | "idle"> {
   let errors = 0;
   while (l.active) {
     const busy = Boolean(l.turn && !l.turn.done);
-    const st = await bridge<{ speech?: boolean; speaking?: boolean; error?: string }>("/voice/await-speech", { maxMs: 250, bargeIn: true }, 5000).catch((e) => ({ error: (e as Error).message, speech: false, speaking: false }));
-    if (st.speech) return "speech";
+    const bargeIn = speechPrefs().interruptByVoice;
+    const st = await bridge<{ speech?: boolean; speaking?: boolean; error?: string }>("/voice/await-speech", { maxMs: 250, bargeIn }, 5000).catch((e) => ({ error: (e as Error).message, speech: false, speaking: false }));
+    if (st.speech && (bargeIn || (!busy && !st.speaking))) return "speech";
     if (st.error) {
       // No interrupting without the microphone: just wait for Maus to finish.
       if (errors++ === 0) l.note = st.error;
@@ -352,13 +314,7 @@ function startTurn(l: Live, botId: string, text: string, name: string) {
     offEnd();
     clearTimeout(timer);
   };
-  sendToBot(
-    botId,
-    `${text}\n\n(Said aloud during a phone call with ${name || "you"}. Reply like natural spoken conversation: start with the answer in a short first sentence, one to three short sentences in all.\n${SPOKEN_STYLE}${l.player ? `\n${CUE_GUIDE}` : ""})`,
-    "call",
-    [],
-    id,
-  );
+  sendToBot(botId, text, "call", [], id, `(Said aloud during a phone call with ${name || "you"}. Reply like natural spoken conversation: start with the answer in a short first sentence, one to three short sentences in all.\n${SPOKEN_STYLE}${l.player ? `\n${CUE_GUIDE}` : ""})`);
 }
 
 /** How long from queuing the first phrase until it was heard (shown on the call screen). */
@@ -390,7 +346,7 @@ export async function listen(l: Pick<Live, "local">, opts: { preroll?: number; s
     const r = await bridge<Heard>("/voice/listen-local", { prerollMs: opts.preroll, silenceMs, timeoutSec }, (timeoutSec + 10) * 1000).catch((e) => ({ error: (e as Error).message }) as Heard);
     if (!r.error) return r;
   }
-  return bridge<Heard>("/voice/listen", { soft: true, silenceMs, timeoutSec }, (timeoutSec + 10) * 1000).catch((e) => ({ text: "", missed: false, error: (e as Error).message }));
+  return bridge<Heard>("/voice/listen", { soft: true, silenceMs, timeoutSec, service: settings().voice.recognizer ?? "" }, (timeoutSec + 10) * 1000).catch((e) => ({ text: "", missed: false, error: (e as Error).message }));
 }
 
 /** Waits for a thought that trailed off ("the other thing is…") to finish. */
@@ -472,7 +428,7 @@ async function resume(l: Live, hold: Hold, action: "wake" | "continue" | "ask", 
   if (t) dropTurn(t); // a new question: the rest of the interrupted reply is dropped
   if (action === "continue") return void (await speakLine(l, "Sorry, I'd finished that one. What's next?", true));
   if (question) {
-    l.beatUntil = Date.now() + beatMs(question);
+    l.beatUntil = Date.now() + beatFor(question);
     startTurn(l, hold.botId, question, userName());
   }
 }
@@ -483,7 +439,8 @@ async function conversation(l: Live, botId: string, reason: string) {
   const name = userName();
   await bridge("/voice/call-mode", { on: true }).catch(() => {});
   // Newer app: phrase player and on-device listening.
-  l.player = Boolean(await bridge("/speech/state", {}).then(() => true).catch(() => false));
+  const prefs = speechPrefs();
+  l.player = prefs.natural && Boolean(await bridge("/speech/state", {}).then(() => true).catch(() => false));
   l.local = l.player && Boolean(await bridge<{ onDevice?: boolean }>("/voice/local-available", {}).then((r) => r.onDevice).catch(() => false));
   if (l.player) void bridge("/speech/warm", voiceParams()).catch(() => {});
   await speakLine(l, reason ? `${shortGreeting(name)}, it's ${botName}. ${reason}` : greeting(name), true);
@@ -528,7 +485,7 @@ async function conversation(l: Live, botId: string, reason: string) {
     }
     silences = 0;
     l.note = "";
-    if (isHoldRequest(text)) {
+    if (speechPrefs().holdByVoice && isHoldRequest(text)) {
       l.lines.push({ who: "you", text });
       changed(l);
       await holdOn(l, botId, botName);
@@ -544,7 +501,7 @@ async function conversation(l: Live, botId: string, reason: string) {
     }
     if (woke?.turn) dropTurn(woke.turn);
     if (interrupted) cancelTurn(l);
-    text = await finishThought(l, text);
+    if (speechPrefs().smartWaiting) text = await finishThought(l, text);
     if (!l.active) break;
     l.lines.push({ who: "you", text });
     changed(l);
@@ -553,7 +510,14 @@ async function conversation(l: Live, botId: string, reason: string) {
       await waitWhileBusy(l);
       break;
     }
-    l.beatUntil = Date.now() + beatMs(text);
+    l.beatUntil = Date.now() + beatFor(text);
     startTurn(l, botId, text, name);
   }
+}
+
+/** The beat before answering, scaled by the setting (quick / normal / relaxed). */
+export function beatFor(text: string): number {
+  const p = speechPrefs();
+  if (!p.smartWaiting) return 0;
+  return Math.round(beatMs(text) * (p.beat === "quick" ? 0.6 : p.beat === "relaxed" ? 1.5 : 1));
 }

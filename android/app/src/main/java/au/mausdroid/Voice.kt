@@ -155,15 +155,40 @@ class Voice(private val ctx: Context) {
 
     fun available() = SpeechRecognizer.isRecognitionAvailable(ctx)
 
-    /** Speech services on the phone: the phone's default first, then Google's, then any others. */
+    private fun installedRecognizers(): List<android.content.ComponentName> = runCatching {
+        ctx.packageManager.queryIntentServices(Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0)
+            .map { android.content.ComponentName(it.serviceInfo.packageName, it.serviceInfo.name) }
+    }.getOrDefault(emptyList())
+    private val googleRank = { c: android.content.ComponentName -> when (c.packageName) { "com.google.android.googlequicksearchbox" -> 0; "com.google.android.tts" -> 1; "com.google.android.as" -> 2; else -> 3 } }
+
+    /**
+     * Speech services to try: the one you chose in Settings, Google's, then the
+     * phone's default, then any others. (The phone's default can be an assistant
+     * app such as Grok that doesn't take dictation from other apps.)
+     */
     private fun recognizers(): List<android.content.ComponentName?> {
-        val found = runCatching {
-            ctx.packageManager.queryIntentServices(Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0)
-                .map { android.content.ComponentName(it.serviceInfo.packageName, it.serviceInfo.name) }
-        }.getOrDefault(emptyList())
-        val rank = { c: android.content.ComponentName -> when (c.packageName) { "com.google.android.googlequicksearchbox" -> 0; "com.google.android.tts" -> 1; "com.google.android.as" -> 2; else -> 3 } }
-        return listOf<android.content.ComponentName?>(null) + found.sortedBy(rank)
+        val found = installedRecognizers().sortedBy(googleRank)
+        val google = found.filter { googleRank(it) < 3 }
+        return listOfNotNull(chosen) + google + listOf<android.content.ComponentName?>(null) + found.filter { googleRank(it) >= 3 }
     }
+
+    /** The service chosen in Settings → Voice → Speech recognition (null = automatic). */
+    @Volatile var chosen: android.content.ComponentName? = null
+        set(v) { if (field != v) { preferredSet = false; preferred = null }; field = v }
+
+    /** Speech services on the phone and the phone's default, for Settings. */
+    fun recognizerList(): JSONObject {
+        val pm = ctx.packageManager
+        val list = JSONArray()
+        for (c in installedRecognizers().sortedBy(googleRank)) {
+            val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(c.packageName, 0)).toString() }.getOrDefault(c.packageName)
+            list.put(JSONObject().put("component", c.flattenToString()).put("package", c.packageName).put("label", label))
+        }
+        val def = runCatching { android.provider.Settings.Secure.getString(ctx.contentResolver, "voice_recognition_service") }.getOrNull()
+        return JSONObject().put("services", list).put("phoneDefault", def ?: "").put("inUse", (if (preferredSet) preferred?.flattenToString() else null) ?: "")
+    }
+
+    private fun hasMic() = ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
     @Volatile private var preferred: android.content.ComponentName? = null
     @Volatile private var preferredSet = false
     @Volatile private var dropLanguage = false
@@ -199,7 +224,8 @@ class Voice(private val ctx: Context) {
                 l.onError(
                     when (error) {
                         SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "I didn't catch that."
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "MausDroid needs microphone permission (Settings → Voice & assistant → Microphone)."
+                        // MausDroid has the microphone: it's the speech service itself refusing.
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> if (hasMic()) "This speech service refused to listen for MausDroid (it may not allow other apps or lack its own microphone access)." else "MausDroid needs microphone permission (Settings → Voice & assistant → Microphone)."
                         SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "No connection for speech recognition."
                         SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "The speech service was busy."
                         SpeechRecognizer.ERROR_AUDIO -> "The microphone couldn't be used (another app may be using it)."
@@ -286,8 +312,10 @@ class Voice(private val ctx: Context) {
      */
     fun listenBlocking(timeoutSec: Long = 45, silenceMs: Long = 0): Triple<String?, String?, Int> {
         // Problems with the speech service itself (not "didn't catch that") try the next service on the phone.
-        val serviceProblem = setOf(SpeechRecognizer.ERROR_CLIENT, SpeechRecognizer.ERROR_SERVER, SpeechRecognizer.ERROR_RECOGNIZER_BUSY, 10, 11, 12, 13)
-        val candidates = (if (preferredSet) listOf(preferred) else emptyList()) + recognizers()
+        // A service refusing "permission" while MausDroid has the microphone is that service's problem: try the next one.
+        val serviceProblem = setOf(SpeechRecognizer.ERROR_CLIENT, SpeechRecognizer.ERROR_SERVER, SpeechRecognizer.ERROR_RECOGNIZER_BUSY, 10, 11, 12, 13) +
+            (if (hasMic()) setOf(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) else emptySet())
+        val candidates = listOfNotNull(chosen) + (if (preferredSet) listOf(preferred) else emptyList()) + recognizers()
         var last: Triple<String?, String?, Int> = Triple(null, "No speech service on this phone.", -1)
         val tried = mutableSetOf<String>()
         for (svc in candidates) {
@@ -309,11 +337,13 @@ class Voice(private val ctx: Context) {
                 return Triple(text, err, code)
             }
             Diag.log(ctx, "speech service ${svc?.flattenToShortString() ?: "default"} failed: code $code $err")
-            last = Triple(null, "$err [${svc?.packageName ?: "default"}]", code)
+            last = Triple(null, "$err [${svc?.packageName ?: "phone default"}]", code)
             if (code == 12 || code == 13) dropLanguage = true // language not supported: let the service pick
             if (code !in serviceProblem) return last
             Thread.sleep(200)
         }
+        if (last.third == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS && hasMic())
+            return Triple(null, "No speech service on this phone would listen for MausDroid (last tried: ${last.second}). Choose one in Settings → Voice & assistant → Speech recognition, e.g. Google.", last.third)
         return last
     }
 

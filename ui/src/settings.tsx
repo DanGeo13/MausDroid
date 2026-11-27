@@ -1073,6 +1073,93 @@ function VoicePicker({ s, save }: { s: any; save: (b: object) => void }) {
   );
 }
 
+/** The newer speech features: Phonon, phrase-by-phrase delivery, reactions, smart waiting, interrupting, hold. */
+function NaturalSpeech({ s, save }: { s: any; save: (b: object) => void }) {
+  const [engines, setEngines] = useState<{ name: string; label: string }[] | null>(null);
+  useEffect(() => {
+    api("voice/engines").then((r) => setEngines(r.engines ?? [])).catch(() => setEngines([]));
+  }, []);
+  const sp = { natural: true, reactions: true, smartWaiting: true, beat: "normal", interruptByVoice: true, holdByVoice: true, ...(s.voice?.speech ?? {}) };
+  const set = (patch: object) => save({ speech: { ...sp, ...patch } });
+  const phonon = (engines ?? []).find((e) => /phonon/i.test(`${e.name} ${e.label}`));
+  const usingPhonon = Boolean(phonon && s.voice?.ttsEngine === phonon.name);
+  const row = (key: keyof typeof sp, label: string, help: string) => (
+    <label class="toggle" style={{ alignItems: "flex-start" }}>
+      <span>
+        {label}
+        <br />
+        <span class="help">{help}</span>
+      </span>
+      <input type="checkbox" checked={Boolean(sp[key])} onChange={() => set({ [key]: !sp[key] })} />
+    </label>
+  );
+  return (
+    <div class="section">
+      <h2>Natural speech</h2>
+      {engines === null ? null : phonon ? (
+        <div class="toggle">
+          <span>
+            Phonon voice engine {usingPhonon ? <span class="pill ok">in use</span> : <span class="pill warn">installed, not in use</span>}
+          </span>
+          {!usingPhonon ? (
+            <button class="btn small" onClick={() => save({ ttsEngine: phonon.name, voiceName: "" })}>
+              Use Phonon
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <p class="help">Phonon isn't installed as a voice engine on this phone. Install the Phonon TTS app, import the Phonon 31M model, then choose it here.</p>
+      )}
+      {row("natural", "Natural delivery", "Speaks phrase by phrase as replies arrive, with small changes in speed and pitch, and pauses where a person would pause. Calls, read-aloud replies and the assistant.")}
+      {row("reactions", "Listening sounds", "An occasional “mm-hmm” or “uh-huh” in the same voice.")}
+      {row("smartWaiting", "Wait when I pause mid-thought", "On calls, “the other thing is…” keeps listening instead of answering.")}
+      <div class="field">
+        <label>Pause before answering</label>
+        <div class="seg">
+          {(
+            [
+              ["quick", "Quick"],
+              ["normal", "Natural"],
+              ["relaxed", "Relaxed"],
+            ] as const
+          ).map(([k, label]) => (
+            <button class={sp.beat === k ? "on" : ""} onClick={() => set({ beat: k })} disabled={!sp.smartWaiting}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {row("interruptByVoice", "Interrupt by talking", "On calls, just start talking: it stops at once and hears you from your first word.")}
+      {row("holdByVoice", "“Hold on a sec”", "Puts the call on hold. It then listens on the phone only for the bot's name: “Maus, continue” or “Maus, what about…”. Side conversations stay private.")}
+    </div>
+  );
+}
+
+/** Which speech service listens (the phone's default can be an assistant app that won't take dictation). */
+function SpeechService({ s, save }: { s: any; save: (b: object) => void }) {
+  const [r, setR] = useState<{ services: { component: string; package: string; label: string }[]; phoneDefault: string; inUse: string } | null>(null);
+  useEffect(() => {
+    api("voice/recognizers").then(setR).catch(() => setR(null));
+  }, []);
+  if (!r) return null;
+  const nameOf = (c: string) => r.services.find((x) => x.component === c || c.startsWith(`${x.package}/`))?.label ?? (c ? c.split("/")[0] : "");
+  return (
+    <div class="field" style={{ marginTop: ".6rem" }}>
+      <label>Speech recognition</label>
+      <select value={s.voice?.recognizer ?? ""} onChange={(e) => save({ recognizer: val(e) })}>
+        <option value="">Automatic (Google first)</option>
+        {r.services.map((x) => (
+          <option value={x.component}>{x.label}</option>
+        ))}
+      </select>
+      <p class="help">
+        Your phone's default speech service is {nameOf(r.phoneDefault) || "not set"}
+        {r.inUse ? `; MausDroid last used ${nameOf(r.inUse)}` : ""}. Assistant apps (e.g. Grok) often refuse to listen for other apps, so Automatic tries Google's first. Calls also use on-device recognition after you interrupt and while on hold.
+      </p>
+    </div>
+  );
+}
+
 function VoiceTab({ bots }: { bots: Bot[] }) {
   const [s, reload] = useLoad<any>("settings");
   const [sys, reloadSys] = useLoad<any>("system");
@@ -1104,6 +1191,7 @@ function VoiceTab({ bots }: { bots: Bot[] }) {
             </button>
           ) : null}
         </div>
+        <SpeechService s={s} save={(b) => save(b)()} />
         <div class="field" style={{ marginTop: ".6rem" }}>
           <label>Which bot answers</label>
           <select value={s.assistant?.botId ?? ""} onChange={(e) => save({ assistantBotId: val(e) || null })()}>
@@ -1157,10 +1245,11 @@ function VoiceTab({ bots }: { bots: Bot[] }) {
           <input type="range" min="0.6" max="1.6" step="0.1" value={s.voice?.rate ?? 1} onChange={(e) => save({ rate: Number(val(e)) })()} />
         </div>
         <VoicePicker s={s} save={(b) => save(b)()} />
-        <button class="btn secondary" onClick={run(async () => api("voice/speak", { body: { text: "Hi! This is how your bots will sound." } }))}>
+        <button class="btn secondary" onClick={run(async () => api("voice/speak", { body: { text: "Hi! {pause 250}This is how your bots sound now. {faster}Quick bits go a little faster, {pause 200}{slower}and careful bits slow down." } }))}>
           Test voice
         </button>
       </div>
+      <NaturalSpeech s={s} save={(b) => save(b)()} />
     </>
   );
 }

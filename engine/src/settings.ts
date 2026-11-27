@@ -51,10 +51,28 @@ export interface Settings {
   timeZone: string;
   quietHours: { start: string; end: string } | null;
   /** Voice: "phone" = the phone's own speech recognition and voice (API and local voices later). */
-  voice: { engine: "phone"; readReplies: "voice" | "always" | "never"; rate: number; ttsEngine?: string; voiceName?: string; pitch?: number };
+  voice: { engine: "phone"; readReplies: "voice" | "always" | "never"; rate: number; ttsEngine?: string; voiceName?: string; pitch?: number; speech?: Partial<SpeechPrefs>; recognizer?: string };
   /** Digital assistant (long-press home/power): which bot answers. null = the pinned/first bot. */
   assistant: { botId: string | null; speak: boolean };
 }
+
+/** Natural speech (calls, read-aloud replies, the assistant). Everything on by default. */
+export interface SpeechPrefs {
+  /** Phrase-by-phrase speech with delivery (speed, pitch, pauses). Off = the plain voice as before. */
+  natural: boolean;
+  /** Short listening sounds ("mm-hmm"), used occasionally. */
+  reactions: boolean;
+  /** Calls: wait when you pause mid-thought. */
+  smartWaiting: boolean;
+  /** Calls: the pause before answering. */
+  beat: "quick" | "normal" | "relaxed";
+  /** Calls: interrupt just by talking. */
+  interruptByVoice: boolean;
+  /** Calls: "hold on a sec", resume by the bot's name. */
+  holdByVoice: boolean;
+}
+export const SPEECH_DEFAULTS: SpeechPrefs = { natural: true, reactions: true, smartWaiting: true, beat: "normal", interruptByVoice: true, holdByVoice: true };
+export const speechPrefs = (): SpeechPrefs => ({ ...SPEECH_DEFAULTS, ...(settings().voice.speech ?? {}) });
 
 const settingsFile = collection<Settings>("settings", {
   providers: PROVIDER_PRESETS,

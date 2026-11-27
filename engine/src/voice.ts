@@ -1,7 +1,8 @@
 import { bridge, bridgeAvailable } from "./bridge.ts";
 import { onTurnEnd, sendToBot } from "./agent.ts";
 import { getBot, listBots } from "./bots.ts";
-import { settings } from "./settings.ts";
+import { settings, speechPrefs } from "./settings.ts";
+import { CUE_GUIDE, SPOKEN_STYLE, SpeechChunker, planPhrase, stripCues } from "./speech-style.ts";
 import { notifyUser } from "./notify.ts";
 import type { Attachment } from "./files.ts";
 
@@ -32,15 +33,46 @@ export function voiceParams() {
   return { rate: v.rate, engine: v.ttsEngine ?? "", voice: v.voiceName ?? "", pitch: v.pitch ?? 1 };
 }
 
+let playerSeen: { ok: boolean; at: number } | null = null;
+/** The phone has the phrase player (newer app); checked again after a minute if not. */
+async function hasPlayer(): Promise<boolean> {
+  if (playerSeen && (playerSeen.ok || Date.now() - playerSeen.at < 60_000)) return playerSeen.ok;
+  const ok = await bridge("/speech/state", {}, 3000).then(() => true).catch(() => false);
+  playerSeen = { ok, at: Date.now() };
+  return ok;
+}
+
+/** Text → what the phrase player plays: phrases with any delivery cues (pauses, speed, pitch, reactions). */
+export function speechItems(text: string) {
+  const c = new SpeechChunker();
+  const pieces = [...c.push(`${text}\n`), c.flush()].filter(Boolean);
+  const reactions = speechPrefs().reactions;
+  return pieces.flatMap((p, seq) => planPhrase(speakable(p)).map((it) => ({ ...it, seq }))).filter((i) => reactions || i.kind !== "clip");
+}
+
 /** Speaks text; with wait=true returns only when the phone has finished speaking (for calls). */
 export async function speak(text: string, wait = false) {
   if (!bridgeAvailable() || !text.trim()) return;
-  await bridge("/voice/speak", { text: speakable(text), ...voiceParams(), wait }, wait ? 180_000 : 60_000).catch(() => {});
+  // Natural speech: phrase by phrase through the voice engine (e.g. Phonon), with delivery cues.
+  if (speechPrefs().natural && (await hasPlayer())) {
+    const items = speechItems(text);
+    if (!items.length) return;
+    const ok = await bridge("/speech/enqueue", { items, turn: "read", flush: true, ...voiceParams() }, 10_000).then(() => true).catch(() => false);
+    if (ok) {
+      if (wait) for (let i = 0; i < 900; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        const st = await bridge<{ speaking?: boolean }>("/speech/state", {}).catch(() => ({ speaking: false }));
+        if (!st.speaking) break;
+      }
+      return;
+    }
+  }
+  await bridge("/voice/speak", { text: speakable(stripCues(text)), ...voiceParams(), wait }, wait ? 180_000 : 60_000).catch(() => {});
 }
 
 /** Adds a piece to what's being said, without waiting (calls speak replies as they arrive). */
 export async function say(text: string, flush = false) {
-  const t = speakable(text);
+  const t = speakable(stripCues(text));
   if (!bridgeAvailable() || !t) return;
   await bridge("/voice/say", { text: t, ...voiceParams(), flush }, 15_000).catch(() => {});
 }
@@ -49,7 +81,10 @@ export async function say(text: string, flush = false) {
 const spokenTo = new Set<string>();
 export function sendByVoice(botId: string, text: string) {
   spokenTo.add(botId);
-  return sendToBot(botId, text, "voice");
+  // The answer will be heard: spoken style, with optional delivery cues (never shown in the chat).
+  const p = speechPrefs();
+  const hint = p.natural ? `(Said aloud; your reply is read out.\n${SPOKEN_STYLE}\n${CUE_GUIDE})` : undefined;
+  return sendToBot(botId, text, "voice", [], undefined, hint);
 }
 
 onTurnEnd((botId, reply) => {
@@ -105,6 +140,7 @@ export function askAssistant(text: string, attachments: Attachment[] = [], scree
         `\n[Screen context — what the person was looking at when they asked${screen.app ? `, in ${screen.app}` : ""}${screen.url ? `, page ${screen.url}` : ""}. Use it only if relevant; it may include private info.]${screen.text ? `\n${screen.text.slice(0, 6000)}` : ""}`,
       );
     }
-    sendToBot(bot.id, parts.join("\n"), "assistant", attachments);
+    const sp = speechPrefs();
+    sendToBot(bot.id, parts.join("\n"), "assistant", attachments, undefined, settings().assistant.speak && sp.natural ? `(Your reply is read out.\n${SPOKEN_STYLE}\n${CUE_GUIDE})` : undefined);
   });
 }

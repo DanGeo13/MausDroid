@@ -100,6 +100,7 @@ class BridgeServer(
                 "/voice/listen" -> {
                     // The microphone can only be used by one listener: stop the interruption watcher first.
                     watch.stop()
+                    if (body.has("service")) voice.chosen = body.optString("service").takeIf { it.isNotBlank() }?.let { android.content.ComponentName.unflattenFromString(it) }
                     val (text, error, code) = voice.listenBlocking(body.optLong("timeoutSec", 45), body.optLong("silenceMs", 0))
                     val missed = code == android.speech.SpeechRecognizer.ERROR_NO_MATCH || code == android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                     when {
@@ -196,6 +197,7 @@ class BridgeServer(
                     ctx.startActivity(Intent(ctx, PdfViewActivity::class.java).putExtra("path", src.path).putExtra("page", body.optInt("page", 0)).putExtra("quote", body.optString("quote")).putExtra("title", body.optString("title")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     ok()
                 }
+                "/voice/recognizers" -> ok(voice.recognizerList())
                 "/voice/engines" -> ok(JSONObject().put("engines", voice.engines()))
                 "/voice/voices" -> ok(voice.voices(body.optString("engine").takeIf { it.isNotBlank() }))
                 "/call/ring" -> { CallRinger.ring(ctx, body.getString("callId"), body.optString("name", "Maus"), body.optString("emoji", "🐭"), body.optString("reason")); ok() }

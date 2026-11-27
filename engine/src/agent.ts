@@ -132,14 +132,16 @@ async function modelTurn(p: ProviderConfig, model: string, system: string, msgs:
 }
 
 /** Sends a message to a bot. Returns at once; progress arrives as events. */
-export function sendToBot(botId: string, text: string, source = "you", attachments?: Attachment[], tag?: string) {
+/** `instructions` go to the AI with the message but aren't shown in the chat (e.g. how to speak a reply). */
+export function sendToBot(botId: string, text: string, source = "you", attachments?: Attachment[], tag?: string, instructions?: string) {
   const bot = getBot(botId);
   if (!bot) throw new Error("No such bot");
   const msg = addMessage(botId, { role: "user", text, source, status: "done", ...(attachments?.length ? { attachments } : {}) });
   updateBot(botId, { lastMessageAt: msg.at });
   emit("message", { botId, message: msg });
   const q = queues.get(botId) ?? [];
-  q.push({ text: source === "you" ? text : `[${source}] ${text}`, source, attachments, tag });
+  const full = instructions ? `${text}\n\n${instructions}` : text;
+  q.push({ text: source === "you" ? full : `[${source}] ${full}`, source, attachments, tag });
   queues.set(botId, q);
   if (!running.has(botId)) void drain(botId);
   return msg;

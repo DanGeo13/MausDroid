@@ -143,3 +143,55 @@ export function wakeFrom(text: string, botName: string): { action: "wake" | "con
   if (/^(?:please\s+)?(?:continue|carry on|go on|keep going|go ahead|resume|where were we|as you were(?: saying)?|you were saying)\b[\s.!,]*(?:please)?[.!]*$/i.test(rest)) return { action: "continue" };
   return { action: "ask", question: rest };
 }
+
+// ---------------- Speaking in pieces ----------------
+
+/**
+ * Cuts streamed text into speakable pieces: a sentence as soon as it ends;
+ * the very first piece even earlier, at a comma; long runs at a space; never
+ * inside a delivery cue.
+ */
+/** True when there's something to say (not just spaces or punctuation). Plain ranges: the phone's Node.js has no Unicode tables. */
+const SPEAKABLE = /[^\s!-/:-@[-`{-~\u2013\u2014\u2018\u2019\u201c\u201d\u2026]/;
+
+export class SpeechChunker {
+  private buf = "";
+  private first = true;
+  push(delta: string): string[] {
+    this.buf += delta;
+    const out: string[] = [];
+    for (;;) {
+      let cut = -1;
+      const end = this.buf.search(/[.!?…](?=[\s"')\]]|$)|\n/);
+      if (end >= 0 && (end + 1 < this.buf.length || /\n$/.test(this.buf))) cut = end + 1;
+      if (cut < 0 && this.first) {
+        const m = this.buf.slice(18).search(/[,;:—–](?=\s)/);
+        if (m >= 0) cut = 18 + m + 1;
+      }
+      if (cut < 0 && this.buf.length > 160) {
+        const sp = this.buf.lastIndexOf(" ", 160);
+        cut = sp > 40 ? sp : 160;
+      }
+      if (cut < 0) break;
+      // Never split a delivery cue ("{pause 300}"): wait for its closing brace.
+      if (openCue(this.buf.slice(0, cut))) {
+        const close = this.buf.indexOf("}", cut);
+        if (close < 0) break;
+        cut = close + 1;
+      }
+      const piece = this.buf.slice(0, cut).trim();
+      this.buf = this.buf.slice(cut);
+      if (SPEAKABLE.test(piece)) {
+        out.push(piece);
+        this.first = false;
+      }
+    }
+    return out;
+  }
+  flush(): string {
+    const rest = this.buf.trim();
+    this.buf = "";
+    return SPEAKABLE.test(rest) ? rest : "";
+  }
+}
+

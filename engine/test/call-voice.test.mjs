@@ -77,6 +77,7 @@ async function newPhone() {
         case "/speech/state": return send({ speaking: speaking(), current: speaking() ? st.current : null, lastStopped: st.lastStopped ?? null, firstAudioMs: 140 });
         case "/speech/warm": return send({});
         case "/voice/say": st.sayCalls++; return send({});
+        case "/voice/speak": (st.plainSpeak ??= []).push(body); return send({});
         case "/voice/state": return send({ speaking: speaking() });
         case "/voice/local-available": return send({ onDevice: true });
         case "/voice/await-speech": {
@@ -93,7 +94,7 @@ async function newPhone() {
         case "/voice/listen":
         case "/voice/listen-local": {
           const next = st.heard.shift();
-          st.listens.push({ route: req.url, preroll: body.prerollMs ?? 0, text: next });
+          st.listens.push({ route: req.url, preroll: body.prerollMs ?? 0, text: next, service: body.service });
           await wait(next === undefined ? 300 : 20);
           return send(next === undefined ? { text: "", missed: true } : { text: next });
         }
@@ -271,6 +272,61 @@ test("call: the name alone wakes it; then 'continue' resumes", async () => {
     await e.until(async () => ph.st.enq.some((q) => q.flush && q.turn?.startsWith("callturn") && q.items.some((i) => /Tuesday is science/.test(i.text ?? ""))), "resumed after wake", 15000);
     assert.ok((await live(e, c.id)).lines.some((x) => x.who === "maus" && x.text === "Yes?"));
     assert.equal(asked.length, 1, "no new AI request for continue");
+  } finally {
+    await done();
+  }
+});
+
+test("settings: natural speech switches; read-aloud and voice chats use the phrase player; instructions stay out of the chat", async () => {
+  const { ph, e, m, done } = await callWith(() => ({ text: "ok" }));
+  try {
+    const st0 = (await e.call("/api/settings")).data;
+    assert.equal(st0.voice.speech, undefined, "defaults: everything on");
+    // Read aloud (Test voice / replies): phrases with cues through the player, in the chosen engine.
+    await e.call("/api/voice/speak", "POST", { text: "Hi! {pause 250}This is how your bots sound now. {react mm-hmm}" });
+    const q = ph.st.enq.at(-1);
+    assert.deepEqual(q.items.map((i) => i.kind), ["speech", "pause", "speech", "clip"]);
+    assert.equal(q.engine, "ai.gradium.phonon.tts");
+    assert.ok(!q.items.some((i) => /[{}]/.test(i.text ?? "")));
+    // Listening sounds off: no clip.
+    await e.call("/api/settings/voice", "PUT", { speech: { reactions: false } });
+    await e.call("/api/voice/speak", "POST", { text: "Sure. {react mm-hmm}" });
+    assert.ok(!ph.st.enq.at(-1).items.some((i) => i.kind === "clip"));
+    // Natural delivery off: the plain voice as before, cues never spoken.
+    await e.call("/api/settings/voice", "PUT", { speech: { natural: false } });
+    const before = ph.st.enq.length;
+    await e.call("/api/voice/speak", "POST", { text: "Plain {pause 300}speech." });
+    assert.equal(ph.st.enq.length, before);
+    assert.equal(ph.st.plainSpeak.at(-1).text, "Plain speech.");
+    const saved = (await e.call("/api/settings")).data.voice.speech;
+    assert.equal(saved.natural, false);
+    assert.equal(saved.reactions, false);
+    await e.call("/api/settings/voice", "PUT", { speech: { natural: true, reactions: true, beat: "quick" } });
+    assert.equal((await e.call("/api/settings")).data.voice.speech.beat, "quick");
+    // A voice chat: the spoken-style guidance goes to the AI, not into your chat bubble.
+    const maus = (await e.call("/api/state")).data.bots.find((b) => b.name === "Maus");
+    await e.call(`/api/bots/${maus.id}/voice`, "POST", { text: "what's on today" });
+    const msgs = (await e.call(`/api/bots/${maus.id}/messages`)).data;
+    const mine = msgs.filter((m) => m.role === "user").at(-1);
+    assert.equal(mine.text, "what's on today", "nothing extra shown in the chat");
+    const sent = await e.until(async () => m.seen.find((b) => JSON.stringify(b.messages.at(-1)).includes("what's on today")), "sent to the AI");
+    assert.match(JSON.stringify(sent.messages.at(-1)), /natural contractions/, "the AI gets the spoken-style guidance");
+  } finally {
+    await done();
+  }
+});
+
+test("call: with voice hold off, 'hold on' is just a question", async () => {
+  const { ph, e, asked, done } = await callWith((last) => (last.includes("hold on") ? { text: "Sure, I'm here." } : { text: "ok" }));
+  try {
+    await e.call("/api/settings/voice", "PUT", { speech: { holdByVoice: false }, recognizer: "com.google.android.googlequicksearchbox/com.google.android.voicesearch.serviceapi.GoogleRecognitionService" });
+    ph.st.heard.push("hold on a sec");
+    const c = (await e.call("/api/calls/start", "POST", {})).data;
+    await e.call(`/api/calls/${c.id}/run`, "POST", {});
+    await e.until(async () => asked.length === 1, "asked the AI", 15000);
+    assert.notEqual((await live(e, c.id)).phase, "on-hold");
+    // The speech service chosen in Settings is the one asked to listen (not the phone's default, e.g. Grok).
+    assert.match(ph.st.listens[0].service, /^com\.google\.android\.googlequicksearchbox\//);
   } finally {
     await done();
   }

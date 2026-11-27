@@ -359,13 +359,22 @@ route("PUT", "/api/settings/voice", (req) => {
     if (typeof b.pitch === "number") st.voice.pitch = Math.min(2, Math.max(0.5, b.pitch));
     if (typeof b.ttsEngine === "string") st.voice.ttsEngine = b.ttsEngine;
     if (typeof b.voiceName === "string") st.voice.voiceName = b.voiceName;
+    // Speech recognition service ("" = automatic: Google first, then the phone's default).
+    if (typeof b.recognizer === "string") st.voice.recognizer = b.recognizer;
     if ("assistantBotId" in b) st.assistant.botId = b.assistantBotId || null;
     if ("assistantSpeak" in b) st.assistant.speak = Boolean(b.assistantSpeak);
+    if (b.speech && typeof b.speech === "object") {
+      const cur = { ...(st.voice.speech ?? {}) } as Record<string, unknown>;
+      for (const k of ["natural", "reactions", "smartWaiting", "interruptByVoice", "holdByVoice"]) if (k in b.speech) cur[k] = Boolean(b.speech[k]);
+      if (["quick", "normal", "relaxed"].includes(b.speech.beat)) cur.beat = b.speech.beat;
+      st.voice.speech = cur;
+    }
   });
   emit("settings.changed");
   return json(publicSettings());
 });
-route("POST", "/api/voice/listen", async (req) => json(await bridge("/voice/listen", { soft: Boolean(req.body?.soft) }, 60_000)));
+route("POST", "/api/voice/listen", async (req) => json(await bridge("/voice/listen", { soft: Boolean(req.body?.soft), service: settings().voice.recognizer ?? "" }, 60_000)));
+route("GET", "/api/voice/recognizers", async () => json(await bridge("/voice/recognizers", {})));
 route("GET", "/api/voice/engines", async () => json(await bridge("/voice/engines", {})));
 route("POST", "/api/voice/voices", async (req) => json(await bridge("/voice/voices", { engine: String(req.body?.engine ?? "") }, 20_000)));
 route("POST", "/api/voice/speak", async (req) => (await voice.speak(String(req.body?.text ?? ""), Boolean(req.body?.wait)), json({ ok: true })));
