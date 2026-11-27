@@ -342,8 +342,10 @@ type Heard = { text?: string; missed?: boolean; error?: string };
 export async function listen(l: Pick<Live, "local">, opts: { preroll?: number; silenceMs?: number; timeoutSec?: number } = {}): Promise<Heard> {
   const silenceMs = opts.silenceMs ?? 700;
   const timeoutSec = opts.timeoutSec ?? 30;
-  if (l.local && opts.preroll) {
-    const r = await bridge<Heard>("/voice/listen-local", { prerollMs: opts.preroll, silenceMs, timeoutSec }, (timeoutSec + 10) * 1000).catch((e) => ({ error: (e as Error).message }) as Heard);
+  // On-device recognition from MausDroid's own microphone whenever the phone has it: it doesn't depend on
+  // the phone's default speech app (which can be an assistant like Grok that won't listen) and makes no beeps.
+  if (l.local) {
+    const r = await bridge<Heard>("/voice/listen-local", { prerollMs: opts.preroll || 300, silenceMs, timeoutSec }, (timeoutSec + 10) * 1000).catch((e) => ({ error: (e as Error).message }) as Heard);
     if (!r.error) return r;
   }
   return bridge<Heard>("/voice/listen", { soft: true, silenceMs, timeoutSec, service: settings().voice.recognizer ?? "" }, (timeoutSec + 10) * 1000).catch((e) => ({ text: "", missed: false, error: (e as Error).message }));

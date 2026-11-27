@@ -79,7 +79,7 @@ async function newPhone() {
         case "/voice/say": st.sayCalls++; return send({});
         case "/voice/speak": (st.plainSpeak ??= []).push(body); return send({});
         case "/voice/state": return send({ speaking: speaking() });
-        case "/voice/local-available": return send({ onDevice: true });
+        case "/voice/local-available": return send({ onDevice: !st.noLocal });
         case "/voice/await-speech": {
           await wait(30);
           if (st.interruptAt && st.interruptAt() && speaking()) {
@@ -191,6 +191,7 @@ test("call: talking over Maus stops it, keeps your first word, drops the stale r
     assert.equal(ph.st.interrupted, 1);
     const after = ph.st.listens.find((x) => x.text === "Actually, book Friday.");
     assert.equal(after.route, "/voice/listen-local", "on-device listening right after the interruption");
+    assert.equal(ph.st.listens[0].route, "/voice/listen-local", "every turn listens on the phone itself when it can (no default speech app, no beeps)");
     assert.equal(after.preroll, 500, "with half a second of pre-roll so the first word is kept");
     // The rest of the weather answer never reached the phone after the interruption.
     const weatherTurn = ph.st.enq.find((q) => q.items.some((i) => /weather is a long story/.test(i.text ?? ""))).turn;
@@ -320,12 +321,14 @@ test("call: with voice hold off, 'hold on' is just a question", async () => {
   const { ph, e, asked, done } = await callWith((last) => (last.includes("hold on") ? { text: "Sure, I'm here." } : { text: "ok" }));
   try {
     await e.call("/api/settings/voice", "PUT", { speech: { holdByVoice: false }, recognizer: "com.google.android.googlequicksearchbox/com.google.android.voicesearch.serviceapi.GoogleRecognitionService" });
+    ph.st.noLocal = true; // a phone without on-device recognition
     ph.st.heard.push("hold on a sec");
     const c = (await e.call("/api/calls/start", "POST", {})).data;
     await e.call(`/api/calls/${c.id}/run`, "POST", {});
     await e.until(async () => asked.length === 1, "asked the AI", 15000);
     assert.notEqual((await live(e, c.id)).phase, "on-hold");
     // The speech service chosen in Settings is the one asked to listen (not the phone's default, e.g. Grok).
+    assert.equal(ph.st.listens[0].route, "/voice/listen");
     assert.match(ph.st.listens[0].service, /^com\.google\.android\.googlequicksearchbox\//);
   } finally {
     await done();

@@ -188,6 +188,27 @@ class Voice(private val ctx: Context) {
         return JSONObject().put("services", list).put("phoneDefault", def ?: "").put("inUse", (if (preferredSet) preferred?.flattenToString() else null) ?: "")
     }
 
+    private fun label(c: android.content.ComponentName?): String {
+        if (c == null) return "phone default"
+        return runCatching { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(c.packageName, 0)).toString() }.getOrDefault(c.packageName)
+    }
+
+    // The speech service's start / stop beeps: system and notification sounds are muted while MausDroid listens.
+    private val quietStreams = intArrayOf(AudioManager.STREAM_SYSTEM, AudioManager.STREAM_NOTIFICATION)
+    private val quietCount = java.util.concurrent.atomic.AtomicInteger(0)
+    fun beginQuiet() {
+        if (quietCount.getAndIncrement() > 0) return
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        for (st in quietStreams) runCatching { am.adjustStreamVolume(st, AudioManager.ADJUST_MUTE, 0) }
+    }
+    fun endQuiet() {
+        if (quietCount.decrementAndGet() > 0) return
+        quietCount.set(0)
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        // A moment later, so the "stopped listening" beep is still silent.
+        main.postDelayed({ if (quietCount.get() == 0) for (st in quietStreams) runCatching { am.adjustStreamVolume(st, AudioManager.ADJUST_UNMUTE, 0) } }, 600)
+    }
+
     private fun hasMic() = ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
     @Volatile private var preferred: android.content.ComponentName? = null
     @Volatile private var preferredSet = false
@@ -261,6 +282,11 @@ class Voice(private val ctx: Context) {
      */
     fun listenOnDevice(audio: android.os.ParcelFileDescriptor, silenceMs: Long, timeoutSec: Long, partial: (String) -> Unit = {}): Triple<String?, String?, Int> {
         if (!onDeviceAvailable()) return Triple(null, "On-device speech recognition isn't available on this phone.", -3)
+        beginQuiet()
+        try { return listenOnDeviceInner(audio, silenceMs, timeoutSec, partial) } finally { endQuiet() }
+    }
+
+    private fun listenOnDeviceInner(audio: android.os.ParcelFileDescriptor, silenceMs: Long, timeoutSec: Long, partial: (String) -> Unit): Triple<String?, String?, Int> {
         val latch = CountDownLatch(1)
         var text: String? = null
         var err: String? = null
@@ -311,6 +337,11 @@ class Voice(private val ctx: Context) {
      * retried once.
      */
     fun listenBlocking(timeoutSec: Long = 45, silenceMs: Long = 0): Triple<String?, String?, Int> {
+        beginQuiet()
+        try { return listenBlockingInner(timeoutSec, silenceMs) } finally { endQuiet() }
+    }
+
+    private fun listenBlockingInner(timeoutSec: Long, silenceMs: Long): Triple<String?, String?, Int> {
         // Problems with the speech service itself (not "didn't catch that") try the next service on the phone.
         // A service refusing "permission" while MausDroid has the microphone is that service's problem: try the next one.
         val serviceProblem = setOf(SpeechRecognizer.ERROR_CLIENT, SpeechRecognizer.ERROR_SERVER, SpeechRecognizer.ERROR_RECOGNIZER_BUSY, 10, 11, 12, 13) +
@@ -318,6 +349,7 @@ class Voice(private val ctx: Context) {
         val candidates = listOfNotNull(chosen) + (if (preferredSet) listOf(preferred) else emptyList()) + recognizers()
         var last: Triple<String?, String?, Int> = Triple(null, "No speech service on this phone.", -1)
         val tried = mutableSetOf<String>()
+        val failures = mutableListOf<String>()
         for (svc in candidates) {
             if (!tried.add(svc?.flattenToShortString() ?: "default")) continue
             val latch = CountDownLatch(1)
@@ -332,18 +364,19 @@ class Voice(private val ctx: Context) {
             }
             if (!latch.await(timeoutSec, TimeUnit.SECONDS)) { stopListening(); return Triple(null, "Listening timed out.", -2) }
             if (text != null || code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                preferred = svc
-                preferredSet = true
+                // Remembered only when it really recognised words (an app that isn't a real recognizer can "hear nothing" instantly).
+                if (text != null) { preferred = svc; preferredSet = true }
                 return Triple(text, err, code)
             }
             Diag.log(ctx, "speech service ${svc?.flattenToShortString() ?: "default"} failed: code $code $err")
+            failures.add("${label(svc)} (code $code)")
             last = Triple(null, "$err [${svc?.packageName ?: "phone default"}]", code)
             if (code == 12 || code == 13) dropLanguage = true // language not supported: let the service pick
             if (code !in serviceProblem) return last
             Thread.sleep(200)
         }
-        if (last.third == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS && hasMic())
-            return Triple(null, "No speech service on this phone would listen for MausDroid (last tried: ${last.second}). Choose one in Settings → Voice & assistant → Speech recognition, e.g. Google.", last.third)
+        if (failures.size > 1 || (last.third == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS && hasMic()))
+            return Triple(null, "No speech service on this phone would listen for MausDroid (tried ${failures.joinToString(", ")}). Choose Google in Settings → Voice & assistant → Speech recognition.", last.third)
         return last
     }
 
