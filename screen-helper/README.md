@@ -1,28 +1,62 @@
-# Screen Helper (Chrome extension)
+# Screen Helper (Chrome extension + Mac helper)
 
-Uses your normal ChatGPT account. No API key needed.
+Press **⌘ ⇧ Y** in Chrome and a side panel opens. ChatGPT looks at the current tab and answers the
+questions on it: multiple choice, short answers, and putting things in the right order. Ask
+follow-ups underneath.
 
-1. Press **⌘ ⇧ Y** (or click the toolbar icon) on the tab with your questions.
-2. The extension screenshots the tab, copies it, and opens ChatGPT in a new tab with the
-   instructions already typed in.
-3. Press **⌘V** to paste the screenshot, then **Enter**.
+It uses your **ChatGPT subscription by sign-in — no API key**, the same way the MausDroid app does:
+a small helper on your Mac runs **Codex**, OpenAI's official program, signed in with your ChatGPT
+account. It only sees the visible part of the current Chrome tab.
 
-ChatGPT then answers multiple choice, short answer and ordering questions. Ask follow-ups in the
-same ChatGPT chat. It only sees the visible part of the tab, so scroll first if needed.
+## Set up (once)
 
-## Install (once)
+1. Install Node.js from https://nodejs.org (the "LTS" version).
+2. Open the Terminal app and install Codex:
 
-1. On GitHub, open the `claude/busy-dirac-feib75` branch, click **Code → Download ZIP**, and unzip it.
-2. In Chrome, go to `chrome://extensions` and turn on **Developer mode** (top right).
-3. Click **Load unpacked** and choose the `screen-helper/extension` folder.
-4. Pin it: click the puzzle-piece icon in the toolbar, then the pin next to **Screen Helper**.
-5. Make sure you're signed in at https://chatgpt.com.
+   ```bash
+   npm install -g @openai/codex
+   ```
 
-To change the shortcut, go to `chrome://extensions/shortcuts`.
+3. Sign in with your ChatGPT account (choose **Sign in with ChatGPT**; a browser page opens):
+
+   ```bash
+   codex login
+   ```
+
+4. Download this repository (on GitHub: **Code → Download ZIP**, `claude/busy-dirac-feib75`
+   branch) and unzip it.
+5. In Chrome, go to `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and
+   choose the `screen-helper/extension` folder. Pin it from the puzzle-piece menu.
+
+## Every time you use it
+
+1. In Terminal, start the helper and leave the window open:
+
+   ```bash
+   cd ~/Downloads/MausDroid-claude-busy-dirac-feib75/screen-helper
+   ```
+
+   ```bash
+   node helper.mjs
+   ```
+
+2. The first time only: click the extension, click **Pair**, paste the **pairing code** the helper
+   printed, and click **Save**.
+3. Press **⌘ ⇧ Y** on the tab with your questions.
+
+## Choosing a model
+
+The panel has **Model** and **Effort** menus. The list comes from your own Codex, so it shows the
+models your ChatGPT plan can use. **Effort** is how hard the model thinks: **Quick** is fastest,
+higher levels are slower but more careful and use more of your plan's limits. Your choice is
+remembered.
+
+## Safety
+
+- The helper only accepts connections from this Mac, and only with the pairing code.
+- Codex runs read-only: it can't change files on your Mac.
+- Screenshots are deleted after each answer.
 
 ## Change the instructions
 
 Edit `extension/prompt.js`, then click the reload icon on Screen Helper in `chrome://extensions`.
-
-If ChatGPT changes its page and the instructions stop appearing, the extension shows a reminder
-instead: paste with ⌘V and type your question yourself.
