@@ -61,6 +61,8 @@ async function main() {
   await step("proxy", () => startEgressProxy(config.port + 3));
   const { ensureAuditRoutine } = await import("./audit-setup.ts");
   await step("audit-routine", () => ensureAuditRoutine());
+  const { ensureAudioRoutine } = await import("./audio-setup.ts");
+  await step("audio-overview", () => ensureAudioRoutine());
   const { ensureImprover, startImprover } = await import("./improve.ts");
   await step("improver", () => ensureImprover());
   await step("scheduler", () => startScheduler());

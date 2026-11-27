@@ -1,0 +1,327 @@
+import fs from "node:fs";
+import path from "node:path";
+import { bridge, bridgeAvailable } from "./bridge.ts";
+import { collection, dataPath } from "./store.ts";
+import { emit } from "./events.ts";
+import { notifyUser } from "./notify.ts";
+import { getFile, saveFile } from "./files.ts";
+import { saveToDownloads, type SavedDownload } from "./downloads.ts";
+import { settings } from "./settings.ts";
+import { join, readWav, seconds, writeWav, type Pcm } from "./wav.ts";
+import { clip, errorText, id as newId, now } from "./util.ts";
+import { localParts } from "./time.ts";
+
+/**
+ * Weekly audio overview: when a new Staff Update is published and shared
+ * with the person, the main assistant writes a short two-host conversation
+ * about the week ahead, and the phone's own voices (e.g. Kokoro) record it.
+ * Never longer than the limit (10 minutes): lines that won't fit are left
+ * out and a closing line points to the full update. The person gets a
+ * notification with a link; the Morning Brief screen shows the latest one.
+ */
+export interface AudioOverview {
+  id: string;
+  title: string;
+  week?: string;
+  staffUpdate?: { name?: string; link?: string };
+  createdAt: string;
+  status: "recording" | "ready" | "failed";
+  progress?: string;
+  fileId?: string;
+  seconds?: number;
+  /** Lines left out to stay under the limit. */
+  linesLeftOut?: number;
+  downloads?: SavedDownload;
+  error?: string;
+}
+
+export interface AudioSettings {
+  enabled: boolean;
+  /** Voice names for the two hosts (blank = your chosen voice / another voice of the same engine). */
+  voiceA: string;
+  voiceB: string;
+  maxMinutes: number;
+  saveToDownloads: boolean;
+}
+
+interface State {
+  settings: AudioSettings;
+  overviews: AudioOverview[];
+  /** Staff Updates already handled (Drive file ids), so each gets one overview. */
+  seen: string[];
+}
+
+const DEFAULTS: AudioSettings = { enabled: true, voiceA: "", voiceB: "", maxMinutes: 10, saveToDownloads: true };
+const store = collection<State>("audio-overviews", { settings: DEFAULTS, overviews: [], seen: [] });
+store.update((s) => (s.settings = { ...DEFAULTS, ...s.settings }));
+
+/** Plain spoken text (no Markdown or links); voice.ts isn't imported to keep start-up order simple. */
+const speakable = (t: string) => t.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/https?:\/\/\S+/g, "").replace(/[*_#>`|]/g, "").replace(/\s+/g, " ").trim();
+function voiceParams() {
+  const v = settings().voice;
+  return { rate: v.rate, engine: v.ttsEngine ?? "", voice: v.voiceName ?? "", pitch: v.pitch ?? 1 };
+}
+
+export const AUDIO_SYSTEM = "audio-overview";
+export const audioSettings = () => store.get().settings;
+export function saveAudioSettings(patch: Partial<AudioSettings>) {
+  store.update((s) => {
+    const n = { ...s.settings, ...patch };
+    n.maxMinutes = Math.min(10, Math.max(1, Number(n.maxMinutes) || 10));
+    s.settings = n;
+  });
+  emit("settings.changed");
+  return audioSettings();
+}
+export const listOverviews = () => store.get().overviews.slice().reverse();
+export const getOverview = (oid: string) => store.get().overviews.find((o) => o.id === oid);
+export const latestOverview = () => listOverviews().find((o) => o.status === "ready") ?? null;
+
+function patch(oid: string, p: Partial<AudioOverview>) {
+  store.update((s) => Object.assign(s.overviews.find((o) => o.id === oid) ?? {}, p));
+  emit("audio-overview", { id: oid });
+}
+
+// ---------------- The script ----------------
+
+export interface Line {
+  speaker: "A" | "B";
+  text: string;
+}
+
+/**
+ * Turns the written script into lines for the two hosts. Accepts "A:" / "B:",
+ * "Host A:", or two names ("Sam: … Jo: …"); anything else alternates by paragraph.
+ */
+export function parseScript(script: string): Line[] {
+  const raw = script.replace(/\r/g, "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const names: string[] = [];
+  const tagged = raw.map((l) => {
+    const m = /^(?:\*\*)?(?:host\s+)?([A-Za-z][\w .'-]{0,24}?)(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(.+)$/i.exec(l);
+    if (!m) return { who: null as string | null, text: l };
+    const who = m[1].trim().toLowerCase();
+    if (!names.includes(who) && names.length < 2) names.push(who);
+    return { who: names.includes(who) ? who : null, text: m[2] };
+  });
+  const usable = tagged.filter((t) => t.who).length >= Math.min(2, tagged.length);
+  const out: Line[] = [];
+  let last: "A" | "B" = "B";
+  for (const t of tagged) {
+    let sp: "A" | "B";
+    if (usable && t.who) sp = t.who === "a" || (t.who !== "b" && names.indexOf(t.who) === 0) ? "A" : "B";
+    else if (usable) sp = last; // an untagged line continues the same speaker
+    else sp = last === "A" ? "B" : "A";
+    const text = speakable(t.text);
+    if (!text) continue;
+    if (usable && !t.who && out.length) out[out.length - 1].text += ` ${text}`;
+    else out.push({ speaker: sp, text });
+    last = sp;
+  }
+  return out;
+}
+
+/** About 150 spoken words a minute; a little room is kept for pauses. */
+export const wordsFor = (minutes: number) => Math.floor(minutes * 140);
+const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
+
+/** Long lines are split at sentence ends so each recording stays small. */
+function pieces(text: string, max = 600): string[] {
+  if (text.length <= max) return [text];
+  const out: string[] = [];
+  let cur = "";
+  for (const s of text.split(/(?<=[.!?])\s+/)) {
+    if (cur && (cur + " " + s).length > max) (out.push(cur), (cur = ""));
+    cur = cur ? `${cur} ${s}` : s;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+// ---------------- Recording ----------------
+
+/** The two hosts' voices: your chosen voice, and a different voice of the same engine. */
+async function hostVoices(s: AudioSettings) {
+  const base = voiceParams();
+  let a = s.voiceA || base.voice;
+  let b = s.voiceB;
+  let pitchB = base.pitch;
+  if (!a || !b) {
+    try {
+      const r = await bridge<{ voices: { name: string; locale: string; notInstalled?: boolean; network?: boolean }[] }>("/voice/voices", { engine: base.engine }, 15_000);
+      // Voices that work offline first.
+      const list = (r.voices ?? []).filter((v) => !v.notInstalled).sort((x, y) => Number(Boolean(x.network)) - Number(Boolean(y.network)));
+      if (!a) a = list.find((v) => v.locale.startsWith("en-AU"))?.name ?? list.find((v) => v.locale.startsWith("en"))?.name ?? list[0]?.name ?? "";
+      if (!b) {
+        const mine = list.find((v) => v.name === a);
+        const lang = (mine?.locale ?? "en").split("-")[0];
+        const others = list.filter((v) => v.name !== a && v.locale.split("-")[0] === lang);
+        // Prefer the same accent.
+        b = (others.find((v) => v.locale === mine?.locale) ?? others[0])?.name ?? "";
+      }
+    } catch {
+      /* the phone's default voice */
+    }
+    // Only one voice available: the second host speaks a little lower.
+    if (!b || b === a) pitchB = Math.max(0.6, base.pitch * 0.85);
+  }
+  return { engine: base.engine, rate: base.rate, A: { voice: a, pitch: base.pitch }, B: { voice: b || a, pitch: pitchB } };
+}
+
+async function synth(text: string, v: { voice: string; pitch: number }, engine: string, rate: number, out: string): Promise<Pcm> {
+  fs.rmSync(out, { force: true });
+  try {
+    await bridge("/voice/synthesize", { text, engine, voice: v.voice, pitch: v.pitch, rate, out }, 180_000);
+  } catch (e) {
+    if (/unknown \/voice\/synthesize/.test(errorText(e))) throw new Error("Recording audio needs the newer MausDroid app (0.11.0 or later): Settings → Updates → install the app update.");
+    throw e;
+  }
+  if (!fs.existsSync(out) || fs.statSync(out).size < 100) throw new Error("The phone's voice engine didn't record anything. Check Settings → Voice (try another voice engine).");
+  return readWav(fs.readFileSync(out));
+}
+
+const running = new Set<string>();
+
+/**
+ * Records an overview from a written script (in the background). Returns at
+ * once; the person is notified when it's ready (or if it fails).
+ */
+export function createOverview(input: { title: string; week?: string; script: string; staff_update_name?: string; staff_update_link?: string }): AudioOverview {
+  const lines = parseScript(String(input.script ?? ""));
+  if (lines.length < 2) throw new Error("Write the script as a conversation, one line per turn, starting each with A: or B:.");
+  const o: AudioOverview = {
+    id: newId("aud"),
+    title: clip(String(input.title || "Weekly audio overview").trim(), 120),
+    week: input.week ? clip(String(input.week), 40) : undefined,
+    staffUpdate: input.staff_update_name || input.staff_update_link ? { name: input.staff_update_name, link: input.staff_update_link } : undefined,
+    createdAt: now(),
+    status: "recording",
+    progress: "Starting…",
+  };
+  store.update((s) => {
+    s.overviews.push(o);
+    if (s.overviews.length > 30) s.overviews.splice(0, s.overviews.length - 30);
+  });
+  emit("audio-overview", { id: o.id });
+  running.add(o.id);
+  void record(o, lines).finally(() => running.delete(o.id));
+  return o;
+}
+
+async function record(o: AudioOverview, lines: Line[]) {
+  const s = audioSettings();
+  const limit = s.maxMinutes * 60;
+  const dir = dataPath("audio-work", o.id);
+  try {
+    if (!bridgeAvailable()) throw new Error("Recording audio needs the Android app.");
+    fs.mkdirSync(dir, { recursive: true });
+    // Never more words than fit (checked again against the real length below).
+    let budget = wordsFor(s.maxMinutes);
+    const kept: Line[] = [];
+    for (const l of lines) {
+      const w = words(l.text);
+      if (w > budget) break;
+      kept.push(l);
+      budget -= w;
+    }
+    const voices = await hostVoices(s);
+    const closing: Line = { speaker: "A", text: "That's the overview for the week. The full Staff Update has all the details." };
+    const closingPcm = await synth(closing.text, voices.A, voices.engine, voices.rate, path.join(dir, "closing.wav"));
+    const parts: Pcm[] = [];
+    let total = 0;
+    let used = 0;
+    for (const [i, l] of kept.entries()) {
+      patch(o.id, { progress: `Recording line ${i + 1} of ${kept.length}` });
+      const segs: Pcm[] = [];
+      for (const [j, t] of pieces(l.text).entries()) segs.push(await synth(t, voices[l.speaker], voices.engine, voices.rate, path.join(dir, `${i}-${j}.wav`)));
+      const line = join(segs, 0.15);
+      // Keep room for the closing line and pauses: stop before the limit.
+      if (total + seconds(line) + seconds(closingPcm) + 0.35 * (parts.length + 2) > limit - 2) break;
+      parts.push(line);
+      total += seconds(line);
+      used++;
+    }
+    if (!parts.length) throw new Error("Nothing could be recorded within the time limit.");
+    const leftOut = lines.length - used;
+    if (leftOut > 0) parts.push(closingPcm);
+    const audio = join(parts, 0.35);
+    const len = seconds(audio);
+    if (len > limit) throw new Error("The recording came out longer than the limit."); // can't happen; never publish one that's too long
+    const fileName = `${o.title.replace(/[\\/:*?"<>|]+/g, " ").trim()}.wav`;
+    const file = saveFile(fileName, "audio/wav", writeWav(audio), "Weekly audio overview");
+    let downloads: SavedDownload | undefined;
+    let dlNote = "";
+    if (s.saveToDownloads) {
+      try {
+        downloads = await saveToDownloads(file);
+      } catch (e) {
+        dlNote = ` (Couldn't also save it to Downloads: ${errorText(e)})`;
+      }
+    }
+    patch(o.id, { status: "ready", progress: undefined, fileId: file.id, seconds: Math.round(len), linesLeftOut: leftOut || undefined, downloads });
+    const mins = `${Math.floor(len / 60)}:${String(Math.round(len % 60)).padStart(2, "0")}`;
+    await notifyUser({
+      title: `🎧 ${o.title} is ready`,
+      body: `${mins} long. Tap to listen — it's also on the Morning Brief screen.${downloads ? ` Saved to ${downloads.location}.` : ""}${dlNote}`,
+      type: "audio-overview",
+      source: "Weekly audio overview",
+      link: `audio:${o.id}`,
+    });
+  } catch (e) {
+    patch(o.id, { status: "failed", progress: undefined, error: errorText(e) });
+    await notifyUser({ title: `Audio overview didn't work`, body: clip(errorText(e), 300), type: "audio-overview", source: "Weekly audio overview", link: `audio:${o.id}` });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export function deleteOverview(oid: string) {
+  if (running.has(oid)) throw new Error("It's still recording.");
+  store.update((s) => {
+    s.overviews = s.overviews.filter((o) => o.id !== oid);
+  });
+  emit("audio-overview", { id: oid });
+}
+
+export const overviewFile = (o: AudioOverview) => (o.fileId ? getFile(o.fileId) : null);
+
+// ---------------- Watching for a new Staff Update ----------------
+
+export const AUDIO_PROMPT = `A new Staff Update has been published and shared with me (details below). Make this week's audio overview.
+1. Read the whole Staff Update (Google Docs/Drive through connected apps, or web_fetch its link).
+2. Write a friendly two-host conversation about what's taking place NEXT WEEK: day by day, key dates and times, deadlines, events, duties and anything I need to do or bring. Only facts from the update — never guess.
+3. Keep it under 1,300 words (it must stay under 10 minutes). One line per turn, starting each line with "A:" or "B:". No headings, lists or links.
+4. Call audio_overview_record with: title like "Week 8 audio overview", week (e.g. "Term 4 Week 8"), staff_update_name, staff_update_link and the script.
+It records in the background and notifies me with a link when it's ready. If you can't read the update, say so plainly instead.`;
+
+/** Checks Drive for a Staff Update not handled yet; raises a (silent) alert that starts the routine. */
+export async function checkForNewStaffUpdate(find: () => Promise<{ file: { id: string; name: string; webViewLink?: string; modifiedTime: string } | null }>): Promise<string | null> {
+  if (!audioSettings().enabled) return null;
+  const { file } = await find();
+  if (!file || store.get().seen.includes(file.id)) return null;
+  store.update((s) => {
+    s.seen.push(file.id);
+    if (s.seen.length > 100) s.seen.splice(0, s.seen.length - 100);
+  });
+  await notifyUser({
+    title: `New Staff Update: ${file.name}`,
+    body: `Drive file id: ${file.id}\nLink: ${file.webViewLink ?? ""}\nModified: ${file.modifiedTime}`,
+    type: "staff-update",
+    source: "Google Drive",
+    eventId: `staff-update:${file.id}`,
+    silentRecord: true,
+  });
+  return file.id;
+}
+
+let timer: NodeJS.Timeout | null = null;
+/** Every 30 minutes between 6 am and 9 pm. */
+export function startStaffUpdateWatch(find: Parameters<typeof checkForNewStaffUpdate>[0]) {
+  if (timer) return;
+  const tick = () => {
+    const hm = localParts(new Date()).hm;
+    if (hm < "06:00" || hm > "21:00") return;
+    void checkForNewStaffUpdate(find).catch(() => {});
+  };
+  timer = setInterval(tick, 30 * 60_000);
+  setTimeout(tick, 90_000);
+}

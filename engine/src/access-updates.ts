@@ -22,6 +22,10 @@ export const ACCESS_UPDATES: { id: string; note: string }[] = [
     id: "codex-connected-app-routing",
     note: "For Codex, use the mausdroid MCP server for the phone browser and connected apps. The phone applies this bot's current approval setting on every call. Try the current tools if an earlier turn reported an approval failure.",
   },
+  {
+    id: "2026-11-27-downloads-audio",
+    note: "New: save_to_downloads saves a file (a link, a MausDroid file, or a Google Drive file — Docs become PDF) to the phone's Downloads › MausDroid folder and checks it arrived, so Gemini and other apps can pick it. Don't open PDFs in the browser to save them. Also new: audio_overview_record records a two-host audio overview (under 10 minutes) with the phone's voices; it runs automatically when a new Staff Update is shared. Earlier messages saying these tools don't exist are out of date.",
+  },
 ];
 export const LATEST_ACCESS_UPDATE = ACCESS_UPDATES[ACCESS_UPDATES.length - 1].id;
 

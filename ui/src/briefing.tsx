@@ -151,7 +151,111 @@ function BriefSettings({ onDone }: { onDone: () => void }) {
   );
 }
 
-export function Briefing({ initialId, onBack }: { initialId?: string; onBack: () => void }) {
+const mmss = (n: number) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+
+/** The weekly audio overview: latest recording, its status, and its settings. */
+function AudioCard({ focusId }: { focusId?: string }) {
+  const [d, setD] = useState<any | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const load = () => void api("audio-overviews").then(setD).catch(() => setD(null));
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, []);
+  if (!d) return null;
+  const list: any[] = d.overviews ?? [];
+  const latest = (focusId && list.find((o) => o.id === focusId)) || list.find((o) => o.status !== "failed") || list[0];
+  const make = async () => {
+    setBusy(true);
+    try {
+      const r = await api("audio-overviews/make", { body: {} });
+      toast(`Maus is reading “${r.staffUpdate}” and writing the overview. You'll get a notification when the audio is ready.`);
+    } catch (e) {
+      toast(`⚠️ ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const set = async (patch: any) => {
+    await api("audio-overviews/settings", { method: "PUT", body: patch });
+    load();
+  };
+  const saveDl = async (o: any) => {
+    try {
+      const r = await api(`files/${o.fileId}/save-to-downloads`, { body: {} });
+      toast(`Saved to ${r.location} ✓`);
+    } catch (e) {
+      toast(`⚠️ ${(e as Error).message}`);
+    }
+  };
+  const item = (o: any) => (
+    <div style={{ margin: ".5rem 0" }}>
+      <div>
+        <strong>{o.title}</strong> {o.week ? <span class="muted">· {o.week}</span> : null}
+      </div>
+      {o.status === "ready" ? (
+        <>
+          <audio src={`api/files/${o.fileId}`} controls preload="metadata" style={{ width: "100%", marginTop: ".4rem" }} />
+          <div class="muted" style={{ fontSize: ".8rem" }}>
+            {mmss(o.seconds ?? 0)} · {new Date(o.createdAt).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
+            {o.linesLeftOut ? ` · shortened to stay under ${d.settings.maxMinutes} min` : ""}
+            {o.staffUpdate?.link ? (
+              <>
+                {" · "}
+                <a href={o.staffUpdate.link} target="_blank">
+                  Staff Update
+                </a>
+              </>
+            ) : null}
+            {" · "}
+            <a href={`api/files/${o.fileId}`} target="_blank">
+              Open audio file
+            </a>
+          </div>
+          {o.downloads ? (
+            <div class="help">Saved to {o.downloads.location}</div>
+          ) : (
+            <button class="btn secondary small" style={{ marginTop: ".3rem" }} onClick={() => saveDl(o)}>
+              Save to Downloads
+            </button>
+          )}
+        </>
+      ) : o.status === "recording" ? (
+        <p class="muted">🎙️ Recording… {o.progress ?? ""}</p>
+      ) : (
+        <p style={{ color: "var(--danger, #c33)" }}>⚠️ {o.error}</p>
+      )}
+    </div>
+  );
+  return (
+    <div class="section">
+      <h2>🎧 Weekly audio overview</h2>
+      {latest ? item(latest) : <p class="muted">None yet. When a new Staff Update is shared with you, Maus makes a short audio overview of the week ahead (under {d.settings.maxMinutes} minutes) and notifies you.</p>}
+      {list.length > 1 ? (
+        <button class="btn secondary small" onClick={() => setShowAll(!showAll)}>
+          {showAll ? "Hide earlier ones" : `Earlier ones (${list.length - 1})`}
+        </button>
+      ) : null}
+      {showAll ? list.filter((o) => o !== latest).map(item) : null}
+      <div class="inline" style={{ marginTop: ".5rem", flexWrap: "wrap", gap: ".5rem" }}>
+        <button class="btn small" disabled={busy} onClick={make}>
+          {busy ? "Starting…" : "Make one now"}
+        </button>
+        <label class="inline" style={{ fontSize: ".85rem" }}>
+          <input type="checkbox" checked={d.settings.enabled} onChange={(e) => set({ enabled: (e.target as HTMLInputElement).checked })} /> Automatic when a new Staff Update arrives
+        </label>
+        <label class="inline" style={{ fontSize: ".85rem" }}>
+          <input type="checkbox" checked={d.settings.saveToDownloads} onChange={(e) => set({ saveToDownloads: (e.target as HTMLInputElement).checked })} /> Also save to Downloads
+        </label>
+      </div>
+      <p class="help">Uses your voice from Settings → Voice for one host and another voice of the same engine (e.g. Kokoro) for the other.</p>
+    </div>
+  );
+}
+
+export function Briefing({ initialId, audioId, onBack }: { initialId?: string; audioId?: string; onBack: () => void }) {
   const [list, setList] = useState<any[] | null>(null);
   const [b, setB] = useState<any | null>(null);
   const [id, setId] = useState<string | undefined>(initialId);
@@ -207,6 +311,7 @@ export function Briefing({ initialId, onBack }: { initialId?: string; onBack: ()
         ) : null}
       </div>
       <div class="page">
+        {mode === "view" ? <AudioCard focusId={audioId} /> : null}
         {mode === "settings" ? (
           <BriefSettings onDone={() => (setMode("view"), load())} />
         ) : !list ? (

@@ -21,7 +21,7 @@ function when(iso?: string) {
   return d.toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
-type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string } | { kind: "improve" } | { kind: "call"; callId?: string; botId?: string };
+type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string; audioId?: string } | { kind: "improve" } | { kind: "call"; callId?: string; botId?: string };
 
 function Home({ poll }: { poll: boolean }) {
   const [bots, setBots] = useState<Bot[]>([]);
@@ -115,6 +115,7 @@ function Home({ poll }: { poll: boolean }) {
     // Notification links, e.g. "briefing:<id>" opens that Morning Brief.
     (window as any).mausdroidLink = (link: string) => {
       if (link.startsWith("briefing:")) setView({ kind: "briefing", id: link.slice(9) || undefined });
+      else if (link.startsWith("audio:")) setView({ kind: "briefing", audioId: link.slice(6) || undefined });
       if (link.startsWith("call:")) setView({ kind: "call", callId: link.slice(5) });
       if (link.startsWith("improve:")) setView({ kind: "improve" });
     };
@@ -296,7 +297,7 @@ function Home({ poll }: { poll: boolean }) {
         ) : view.kind === "improve" ? (
           <Improve onBack={() => setView({ kind: "list" })} openBot={(id) => setView({ kind: "chat", botId: id })} />
         ) : view.kind === "briefing" ? (
-          <Briefing initialId={view.id} onBack={() => setView({ kind: "list" })} />
+          <Briefing initialId={view.id} audioId={view.audioId} onBack={() => setView({ kind: "list" })} />
         ) : view.kind === "settings" ? (
           <Settings tab={view.tab} setTab={(tab) => replaceView({ kind: "settings", tab })} bots={bots} onBack={() => (goBack(), void loadState())} />
         ) : (

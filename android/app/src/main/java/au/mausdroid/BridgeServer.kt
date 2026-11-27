@@ -28,6 +28,7 @@ class BridgeServer(
     private val browser: BackgroundBrowser get() = browserProvider()
     private val voice by lazy { Voice(ctx) }
     private val watch by lazy { VoiceWatch(ctx, voice) }
+    private val recorder by lazy { VoiceRecorder(ctx) }
 
     private fun ok(o: Any = JSONObject().put("ok", true)) = newFixedLengthResponse(Response.Status.OK, "application/json", o.toString())
     private fun err(status: Response.Status, msg: String) = newFixedLengthResponse(status, "application/json", JSONObject().put("error", msg).toString())
@@ -105,6 +106,18 @@ class BridgeServer(
                 }
                 "/voice/watch-stop" -> { watch.stop(); ok() }
                 "/voice/call-mode" -> { voice.setCallMode(body.optBoolean("on")); if (!body.optBoolean("on")) watch.stop(); ok() }
+                "/voice/synthesize" -> {
+                    val out = java.io.File(body.getString("out"))
+                    // Only into MausDroid's own storage.
+                    if (!out.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Not allowed there")
+                    val size = recorder.record(body.getString("text"), body.optString("engine"), body.optString("voice"), body.optDouble("pitch", 1.0).toFloat(), body.optDouble("rate", 1.0).toFloat(), out)
+                    ok(JSONObject().put("ok", true).put("bytes", size))
+                }
+                "/files/save-download" -> {
+                    val src = java.io.File(body.getString("path"))
+                    if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only MausDroid's own files")
+                    ok(Downloads.save(ctx, src.path, body.optString("name", src.name), body.optString("mime"), body.optString("folder", "MausDroid")))
+                }
                 "/voice/engines" -> ok(JSONObject().put("engines", voice.engines()))
                 "/voice/voices" -> ok(voice.voices(body.optString("engine").takeIf { it.isNotBlank() }))
                 "/call/ring" -> { CallRinger.ring(ctx, body.getString("callId"), body.optString("name", "Maus"), body.optString("emoji", "🐭"), body.optString("reason")); ok() }

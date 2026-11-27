@@ -284,3 +284,13 @@ export const MORNING_BRIEF_PROMPT = `Prepare today's Morning Brief.
 5. Write the brief following my content preference, in plain words.
 6. For dated items that should be in my calendar, propose events (don't create them).
 7. Call morning_brief_publish with the summary, a short Staff Update summary, notices and proposed events. Mention every warning honestly.`;
+
+/** This week's Staff Update in Drive (newest, published to or shared with the person), or null. */
+export async function latestStaffUpdate(at = new Date()) {
+  const { prefs, terms } = briefSettings();
+  const day = dayStatus(at, terms);
+  const termNo = Number(day.term?.match(/\d+/)?.[0]) || undefined;
+  const found = await searchStaffUpdates(prefs.staffUpdateTerms.length ? prefs.staffUpdateTerms : ["Staff Update"], new Date(at.getTime() - 10 * 86400_000));
+  const pick = rankStaffUpdates(found.files, at, { term: termNo, week: day.week });
+  return { file: pick.best ?? null, warnings: [...found.warnings, ...pick.warnings], week: day.week, term: termNo };
+}

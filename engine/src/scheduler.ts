@@ -146,10 +146,10 @@ export function handleAlert(a: Alert) {
   for (const [k, t] of recentAlertKeys) if (Date.now() - t > 24 * 3600_000) recentAlertKeys.delete(k);
 }
 
-export function runRoutineNow(rid: string): Run {
+export function runRoutineNow(rid: string, extra?: string): Run {
   const r = getRoutine(rid);
   if (!r) throw new Error("No such routine");
-  const run = execute(r, `manual@${new Date().toISOString()}`, "manual");
+  const run = execute(r, `manual@${new Date().toISOString()}`, "manual", extra ? { extra } : {});
   if (!run) throw new Error("Couldn't start it (its bot is missing).");
   return run;
 }

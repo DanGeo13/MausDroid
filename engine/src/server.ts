@@ -38,6 +38,8 @@ import * as voice from "./voice.ts";
 import * as files from "./files.ts";
 import * as calendar from "./calendar.ts";
 import * as brief from "./brief.ts";
+import * as audio from "./audio-overview.ts";
+import { saveToDownloads } from "./downloads.ts";
 import * as audit from "./audit.ts";
 import * as location from "./location.ts";
 import * as models from "./models.ts";
@@ -214,14 +216,26 @@ route("GET", "/api/files/:id/info", (_r, [id]) => {
   if (!a) throw new HttpError(404, "No such file");
   return json(a);
 });
-route("GET", "/api/files/:id", (_r, [id]) => {
+route("GET", "/api/files/:id", (req, [id]) => {
   const a = files.getFile(id);
   if (!a) throw new HttpError(404, "No such file");
-  return {
-    status: 200,
-    headers: { "content-type": a.mime, "content-disposition": `inline; filename="${a.name.replace(/"/g, "")}"`, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff", "content-security-policy": "sandbox" },
-    body: fs.readFileSync(files.filePath(a)),
-  };
+  const headers: Record<string, string> = { "content-type": a.mime, "content-disposition": `inline; filename="${a.name.replace(/"/g, "")}"`, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff", "content-security-policy": "sandbox", "accept-ranges": "bytes" };
+  const body = fs.readFileSync(files.filePath(a));
+  // Audio and video players ask for parts of the file (so you can skip ahead).
+  const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
+  if (m && (m[1] || m[2])) {
+    const start = m[1] ? Number(m[1]) : Math.max(0, body.length - Number(m[2]));
+    const end = m[1] && m[2] ? Math.min(Number(m[2]), body.length - 1) : body.length - 1;
+    if (start >= body.length || start > end) return { status: 416, headers: { "content-range": `bytes */${body.length}` }, body: "" };
+    return { status: 206, headers: { ...headers, "content-range": `bytes ${start}-${end}/${body.length}` }, body: body.subarray(start, end + 1) };
+  }
+  return { status: 200, headers, body };
+});
+// Save one of MausDroid's files to the phone's Downloads (checked on the phone).
+route("POST", "/api/files/:id/save-to-downloads", async (_r, [id]) => {
+  const a = files.getFile(id);
+  if (!a) throw new HttpError(404, "No such file");
+  return json(await saveToDownloads(a));
 });
 route("POST", "/api/bots/:id/stop", (_r, [id]) => (stopBot(id), json({ ok: true })));
 route("POST", "/api/bots/:id/clear", (_r, [id]) => (bots.clearChat(id), json({ ok: true })));
@@ -426,6 +440,19 @@ route("GET", "/api/audits/wiki", async () => json(await audit.checkWiki()));
 route("GET", "/api/brief/settings", () => json(brief.briefSettings()));
 route("PUT", "/api/brief/settings", (req) => json(brief.saveBriefSettings(req.body ?? {})));
 route("GET", "/api/briefings", () => json(brief.listBriefings()));
+// Weekly audio overviews (Morning Brief screen)
+route("GET", "/api/audio-overviews", () => json({ overviews: audio.listOverviews(), settings: audio.audioSettings(), routine: routines.listRoutines().find((r) => r.system === audio.AUDIO_SYSTEM) ?? null }));
+route("PUT", "/api/audio-overviews/settings", (req) => json(audio.saveAudioSettings(req.body ?? {})));
+route("DELETE", "/api/audio-overviews/:id", (_r, [id]) => (audio.deleteOverview(id), json({ ok: true })));
+// Make one now from this week's Staff Update (runs the routine, even if this update already had one).
+route("POST", "/api/audio-overviews/make", async () => {
+  const r = routines.listRoutines().find((x) => x.system === audio.AUDIO_SYSTEM);
+  if (!r) throw new HttpError(400, "The Weekly Audio Overview routine is missing.");
+  const { file, warnings } = await brief.latestStaffUpdate();
+  if (!file) throw new HttpError(400, warnings[0] ?? "No current Staff Update found in Google Drive.");
+  const run = runRoutineNow(r.id, `\nThe Staff Update:\nName: ${file.name}\nDrive file id: ${file.id}\nLink: ${file.webViewLink ?? ""}`);
+  return json({ ok: true, run, staffUpdate: file.name });
+});
 route("GET", "/api/briefings/:id", (_r, [id]) => {
   const b = brief.getBriefing(id);
   if (!b) throw new HttpError(404, "No such briefing");

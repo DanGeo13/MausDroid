@@ -1,3 +1,5 @@
+import * as audio from "../audio-overview.ts";
+import { fetchForDownload, saveToDownloads } from "../downloads.ts";
 import type { ToolSpec } from "../types.ts";
 import { getBot, listBots, type Bot } from "../bots.ts";
 import { bridge, bridgeAvailable } from "../bridge.ts";
@@ -252,7 +254,7 @@ export function toolCatalog() {
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools(), ...shareTools(), ...adminTools()])];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools(), ...shareTools(), ...adminTools(), ...mediaTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
@@ -509,6 +511,40 @@ function briefTools(): Tool[] {
       run: async (c, i) => {
         const b = await brief.publishBrief(i, c.bot.id);
         return `Published briefing ${b.id} for ${b.date} (${b.warnings.length} warnings, ${b.proposedEvents.length} proposed events). The person was notified.`;
+      },
+    },
+  ];
+}
+
+// ---------------- Downloads and audio overviews ----------------
+
+function mediaTools(): Tool[] {
+  return [
+    {
+      group: "core",
+      spec: {
+        name: "save_to_downloads",
+        description:
+          "Save a file to the phone's Downloads folder (Download/MausDroid), where every app's file picker (Gemini, Gmail, Files…) can find it. The phone checks it arrived with the right size. Give ONE of: url (a direct download link), file_id (a MausDroid file, e.g. an attachment), or drive_file_id (a Google Drive file; Google Docs are exported as PDF). Use this instead of opening a PDF in the browser.",
+        inputSchema: obj({ url: str("Direct download link"), file_id: str("MausDroid file id"), drive_file_id: str("Google Drive file id"), name: str("File name to save as, e.g. 'Week 8 TAS Update.pdf'"), account_id: str("Drive account (optional)") }),
+      },
+      run: async (_c, i) => {
+        const a = await fetchForDownload(i);
+        const saved = await saveToDownloads(a, i.name);
+        return `Saved to ${saved.location} (${Math.round(saved.size / 1024)} KB, checked on the phone). It now shows in file pickers under Downloads › MausDroid. MausDroid file id: ${a.id}.`;
+      },
+    },
+    {
+      group: "core",
+      spec: {
+        name: "audio_overview_record",
+        description:
+          "Record a two-host audio overview (like a short podcast) from a script you write, with the phone's own voices. Always under 10 minutes (lines that don't fit are left out and a closing line is added). Records in the background: the person gets a notification with a link when it's ready, and it shows on the Morning Brief screen. Script: one line per turn, each starting with A: or B:, under 1,300 words, plain sentences only.",
+        inputSchema: obj({ title: str("e.g. 'Week 8 audio overview'"), week: str("e.g. 'Term 4 Week 8'"), staff_update_name: str("Source document name"), staff_update_link: str("Source document link"), script: str("The conversation: lines starting A: or B:") }, ["title", "script"]),
+      },
+      run: async (_c, i) => {
+        const o = audio.createOverview(i);
+        return `Recording started (${o.id}). It takes a few minutes; the person will be notified with a link when it's ready. Don't wait for it.`;
       },
     },
   ];
