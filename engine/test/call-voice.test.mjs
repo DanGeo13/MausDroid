@@ -159,8 +159,8 @@ test("call: cues are playback-only, beat before speaking, unfinished thoughts wa
     const c = (await e.call("/api/calls/start", "POST", {})).data;
     await e.call(`/api/calls/${c.id}/run`, "POST", {});
     await e.until(async () => ph.st.enq.some((q) => q.turn?.startsWith("callturn") && q.items.some((i) => i.kind === "clip")), "reply queued", 15000);
-    // While they paused mid-thought (a long one), a soft "mm-hmm", as a listener would.
-    assert.ok(ph.st.enq.some((q) => q.turn === "nod" && q.items[0].name === "mm-hmm"));
+    // A short thought (8 words) gets no "mm-hmm" while it waits — those are kept for long ones.
+    assert.ok(!ph.st.enq.some((q) => q.turn === "nod"));
     const l = await live(e, c.id);
     // The trailing thought was waited for and joined.
     const mine = l.lines.filter((x) => x.who === "you").map((x) => x.text);
@@ -491,6 +491,34 @@ test("protoVoice / talk-normal / sustained-presence: tool preamble, micro-ack, b
     await e.until(async () => (await live(e, c.id)).lines.some((x) => x.text === "Done."), "quick answer", 15000);
     await wait(900);
     assert.equal(ph.st.enq.filter((q) => q.turn?.startsWith("micro:")).length, before, "fast replies never hear it");
+  } finally {
+    await done();
+  }
+});
+
+test("listening sounds are rationed (one per reply, one every 25 s); pronunciations are spoken, never shown", async () => {
+  const s = await load("src/speech-style.ts");
+  assert.equal(s.pronounce("How did Odette's show go, Dan?", [{ from: "Odette", to: "Oh-DET" }]), "How did Oh-DET's show go, Dan?");
+  assert.equal(s.pronounce("Odetteville stays", [{ from: "Odette", to: "Oh-DET" }]), "Odetteville stays", "whole words only");
+  const { ph, e, done } = await callWith((last) => {
+    if (last.includes("first one")) return { text: "Oh nice. {react mm-hmm} Yeah {react uh-huh} that's great." };
+    if (last.includes("second one")) return { text: "Sure {react mm-hmm} thing, Odette." };
+    return { text: "ok" };
+  });
+  try {
+    await e.call("/api/settings/voice", "PUT", { pronunciations: [{ from: "Odette", to: "Oh-DET" }] });
+    ph.st.heard.push("first one", "second one");
+    const c = (await e.call("/api/calls/start", "POST", {})).data;
+    await e.call(`/api/calls/${c.id}/run`, "POST", {});
+    await e.until(async () => ph.st.enq.some((q) => q.items.some((i) => /Oh-DET/.test(i.text ?? ""))), "second reply", 15000);
+    const replyItems = (word) => ph.st.enq.filter((q) => q.turn?.startsWith("callturn") && q.items.some((i) => (i.text ?? "").includes(word))).flatMap((q) => q.items);
+    const firstClips = ph.st.enq.filter((q) => q.turn?.startsWith("callturn")).slice(0, 3).flatMap((q) => q.items).filter((i) => i.kind === "clip");
+    assert.ok(firstClips.length <= 1, `at most one listening sound in a reply (${firstClips.length})`);
+    assert.equal(replyItems("Oh-DET").filter((i) => i.kind === "clip").length, 0, "none again within 25 s");
+    // Pronunciation: spoken as written in Settings, the transcript keeps the real name.
+    const l = await live(e, c.id);
+    assert.ok(l.lines.some((x) => /Odette/.test(x.text)));
+    assert.ok(!l.lines.some((x) => /Oh-DET/.test(x.text)));
   } finally {
     await done();
   }

@@ -1195,6 +1195,50 @@ function SpeechService({ s, save }: { s: any; save: (b: object) => void }) {
 }
 
 /** MausDroid checks its own voice offline against your success criteria; Improver uses the results. */
+/** How to say names the voice gets wrong: "Odette" → "Oh-DET". Spoken only; the text keeps the real spelling. */
+function Pronunciations({ s, save }: { s: any; save: (b: object) => void }) {
+  const list: { from: string; to: string }[] = s.voice?.pronunciations ?? [];
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const put = (next: { from: string; to: string }[]) => save({ pronunciations: next });
+  return (
+    <div class="field" style={{ marginTop: ".6rem" }}>
+      <label>Pronunciations</label>
+      <p class="help">For names and words the voice says wrong. Write how it should sound, e.g. Odette → Oh-DET. Only the voice uses this; chats and transcripts keep the real spelling. Improver suggests these when the voice checks keep mishearing a word.</p>
+      {list.map((p) => (
+        <div class="toggle">
+          <span>
+            {p.from} → <em>{p.to}</em>
+          </span>
+          <span class="inline" style={{ gap: ".4rem" }}>
+            <button class="btn secondary small" onClick={() => void api("voice/sample", { body: { text: p.from } })}>
+              ▶
+            </button>
+            <button class="btn secondary small" onClick={() => put(list.filter((x) => x !== p))}>
+              Remove
+            </button>
+          </span>
+        </div>
+      ))}
+      <div class="inline" style={{ gap: ".4rem", flexWrap: "wrap" }}>
+        <input placeholder="Word (e.g. Odette)" value={from} onInput={(e) => setFrom((e.target as HTMLInputElement).value)} style={{ width: "9rem" }} />
+        <input placeholder="Say it as (e.g. Oh-DET)" value={to} onInput={(e) => setTo((e.target as HTMLInputElement).value)} style={{ width: "9rem" }} />
+        <button
+          class="btn small"
+          disabled={!from.trim() || !to.trim()}
+          onClick={() => {
+            put([...list.filter((x) => x.from.toLowerCase() !== from.trim().toLowerCase()), { from: from.trim(), to: to.trim() }]);
+            setFrom("");
+            setTo("");
+          }}
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function VoiceQuality({ save }: { save: (b: object) => void }) {
   const [d, setD] = useState<any | null>(null);
   const [busy, setBusy] = useState("");
@@ -1235,6 +1279,7 @@ function VoiceQuality({ save }: { save: (b: object) => void }) {
           {r.interruptMs !== undefined ? `· interrupt ${r.interruptMs} ms ` : ""}
           {r.problems?.length ? `— ${r.problems.join("; ")}` : ""}
           {r.heard && !r.pass ? ` — heard: “${r.heard}”` : ""}
+          {r.missed?.length ? ` — misheard: ${r.missed.join(", ")}` : ""}
         </span>
       </span>
     </div>
@@ -1373,6 +1418,9 @@ function VoiceTab({ bots }: { bots: Bot[] }) {
       </div>
       <NaturalSpeech s={s} save={(b) => save(b)()} />
       <VoiceQuality save={(b) => save(b)()} />
+      <div class="section">
+        <Pronunciations s={s} save={(b) => save(b)()} />
+      </div>
     </>
   );
 }

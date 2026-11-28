@@ -229,6 +229,18 @@ function cancelTurn(l: Live) {
 }
 
 /** Plays phrases through the phone's phrase player (or plain speech on an older app). */
+// Listening sounds ("mm-hmm", "hmm", "yeah"…) are rationed: at most one every 25 s across everything in a
+// call (the AI's own cues, the thinking "mm", nods while you talk) and at most one per reply.
+const LISTEN_SOUNDS = new Set(["mm-hmm", "uh-huh", "hmm", "yeah", "right", "oh", "ah"]);
+const SOUND_GAP_MS = Number(process.env.MAUSDROID_SOUND_GAP_MS ?? 25_000);
+let lastListenSoundAt = 0;
+/** Takes the one allowed listening sound if it's been long enough (true = play it). */
+export function allowListenSound(peek = false): boolean {
+  if (!speechPrefs().reactions || Date.now() - lastListenSoundAt < SOUND_GAP_MS) return false;
+  if (!peek) lastListenSoundAt = Date.now();
+  return true;
+}
+
 export async function play(l: Pick<Live, "player">, turnId: string, phrases: Phrase[], opts: { flush?: boolean; leadMs?: number } = {}) {
   if (!phrases.length) return;
   if (!l.player) {
@@ -236,7 +248,12 @@ export async function play(l: Pick<Live, "player">, turnId: string, phrases: Phr
     return;
   }
   const prefs = speechPrefs();
-  const items: (PlayItem & { seq: number })[] = phrases.flatMap((p) => p.items).filter((i) => prefs.reactions || i.kind !== "clip");
+  const items: (PlayItem & { seq: number })[] = phrases.flatMap((p) => p.items).filter((i) => {
+    if (i.kind !== "clip") return true;
+    if (!prefs.reactions) return false;
+    // Laughs, sighs and breaths are part of what's said; listening sounds are rationed.
+    return LISTEN_SOUNDS.has(i.name) ? allowListenSound() : true;
+  });
   // The beat before answering is a timed silence at the front of the queue: the first phrase is
   // made during it, and if you start talking again it's cancelled with everything else.
   if (opts.leadMs && opts.leadMs > 30 && prefs.smartWaiting) items.unshift({ kind: "pause", ms: Math.round(Math.min(opts.leadMs, 1500)), seq: phrases[0].seq });
@@ -326,9 +343,9 @@ function startTurn(l: Live, botId: string, text: string, name: string, note = ""
   }, 2500);
   // A tiny "mm" shortly after you stop, only if the answer hasn't started yet (cancelled otherwise).
   const microAck = setTimeout(() => {
-    if (turn.spoke || turn.done || turn.cancelled || turn.muted || !l.player || !prefs0.reactions) return;
-    void enqueueSpeech({ items: [{ kind: "clip", name: Math.random() < 0.5 ? "mm-hmm" : "hmm", seq: 0 }], turn: `micro:${id}`, ...voiceParams() }).catch(() => {});
-  }, Math.max(600, l.beatUntil - Date.now() + 250));
+    if (turn.spoke || turn.done || turn.cancelled || turn.muted || !l.player || !allowListenSound()) return;
+    void enqueueSpeech({ items: [{ kind: "clip", name: "hmm", seq: 0 }], turn: `micro:${id}`, ...voiceParams() }).catch(() => {});
+  }, Math.max(1200, l.beatUntil - Date.now() + 900));
   const progressMs = Number(process.env.MAUSDROID_CALL_PROGRESS_MS ?? 15_000);
   let progress: NodeJS.Timeout | null = null;
   const firstProgress = setTimeout(() => {
@@ -400,7 +417,7 @@ export function sentenceStart(phrases: { seq: number; text: string }[], seq: num
   return phrases[i].seq;
 }
 
-type Heard = { text?: string; missed?: boolean; error?: string };
+type Heard = { text?: string; missed?: boolean; error?: string; nods?: number };
 /** One listen: after an interruption, on-device with a pre-roll so the first word is kept. */
 export async function listen(l: Pick<Live, "local">, opts: { preroll?: number; silenceMs?: number; timeoutSec?: number } = {}): Promise<Heard> {
   const silenceMs = opts.silenceMs ?? silenceFor(speechPrefs().beat);
@@ -408,8 +425,9 @@ export async function listen(l: Pick<Live, "local">, opts: { preroll?: number; s
   // On-device recognition from MausDroid's own microphone whenever the phone has it: it doesn't depend on
   // the phone's default speech app (which can be an assistant like Grok that won't listen) and makes no beeps.
   if (l.local) {
-    const nod = speechPrefs().reactions && speechPrefs().natural ? { backchannel: true, ...voiceParams() } : {};
+    const nod = speechPrefs().natural && allowListenSound(true) ? { backchannel: true, ...voiceParams() } : {};
     const r = await bridge<Heard>("/voice/listen-local", { prerollMs: opts.preroll || 300, silenceMs, timeoutSec, ...nod }, (timeoutSec + 10) * 1000).catch((e) => ({ error: (e as Error).message }) as Heard);
+    if (r.nods) lastListenSoundAt = Date.now(); // the phone nodded while you talked: that counts
     if (!r.error) return r;
   }
   return bridge<Heard>("/voice/listen", { soft: true, silenceMs, timeoutSec, service: settings().voice.recognizer ?? "" }, (timeoutSec + 10) * 1000).catch((e) => ({ text: "", missed: false, error: (e as Error).message }));
@@ -422,7 +440,7 @@ async function finishThought(l: Live, text: string): Promise<string> {
   for (let k = 0; k < 3 && l.active && !turnFinished(full); k++) {
     setPhase(l, "listening");
     // A long thought with a pause: a soft "mm-hmm" now and then, as a listener would (once per turn).
-    if (!nodded && l.player && speechPrefs().reactions && full.split(/\s+/).length >= 8) {
+    if (!nodded && l.player && full.split(/\s+/).length >= 15 && allowListenSound()) {
       nodded = true;
       void enqueueSpeech({ items: [{ kind: "clip", name: "mm-hmm", seq: 0 }], turn: "nod", ...voiceParams() }).catch(() => {});
     }

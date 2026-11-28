@@ -55,6 +55,9 @@ async function main() {
   await step("server", () => startServer());
   await step("secrets", () => initSecrets());
   await step("bots", () => ensureDefaultBots());
+  // How to say names the voice gets wrong (Settings → Voice).
+  const { setPronunciations } = await import("./speech-style.ts");
+  setPronunciations(settings().voice.pronunciations);
   const { ensureBuiltinSkills } = await import("./skills.ts");
   await step("skills", () => ensureBuiltinSkills());
   await step("mcp", () => initMcpServer());

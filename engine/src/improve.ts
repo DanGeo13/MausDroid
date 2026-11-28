@@ -19,6 +19,7 @@ import { assistantExamples } from "./phone-notifications.ts";
 import { refreshCodexSecret } from "./cloud-keys.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
 import { voiceSummary } from "./voice-check.ts";
+import { setPronunciations } from "./speech-style.ts";
 import { settings, updateSettings } from "./settings.ts";
 
 /**
@@ -51,7 +52,7 @@ export interface Proposal {
   routinePatch?: { routineId: string; routineTitle: string; before: Record<string, unknown>; after: Record<string, unknown> };
   skill?: { name: string; before: string | null; after: string };
   /** A voice setting change (engine, voice, speed), from the phone's own voice checks. */
-  voicePatch?: { before: { engine: string; voice: string; rate: number }; after: { engine?: string; voice?: string; rate?: number } };
+  voicePatch?: { before: { engine: string; voice: string; rate: number }; after: { engine?: string; voice?: string; rate?: number; pronunciations?: { from: string; to: string }[] } };
   /** A program change built in the cloud (Claude Code on GitHub): its pull request when ready. */
   build?: { prNumber?: number; prUrl?: string; runUrl?: string; startedAt: string; direct: boolean; attempt?: number; progress?: string; questions?: string; answers?: string[]; agent?: selfupdate.Agent };
   status: Status;
@@ -124,7 +125,7 @@ Be brief and concrete.`;
 export const IMPROVE_PROMPT = `Nightly self-check. You have 10 minutes at most; research tools stop after 5, so be quick and don't be exhaustive.
 1. Call improve_evidence to see recent errors, routine runs, routines, skills and earlier suggestions.
 2. Pick the few changes that would help most right now: errors, failing / missed / timed-out routines and the prompts or schedules causing them, skills that are missing, broken or unclear, and — only if clearly worthwhile — small code fixes to MausDroid. A quick web_search or skills_market_search is fine if it helps find a fix.
-   voiceQuality is the phone's own offline check of how clearly and at what speed MausDroid speaks (and call timings), against the person's success criteria. If it falls short, run voice_audition and suggest a voice fix (area "voice" with voice_patch: engine / voice / rate from the best passing result). Don't suggest one if it already passes.
+   voiceQuality is the phone's own offline check of how clearly and at what speed MausDroid speaks (and call timings), against the person's success criteria. If it falls short, run voice_audition and suggest a voice fix (area "voice" with voice_patch: engine / voice / rate from the best passing result). Don't suggest one if it already passes. If voiceQuality.oftenMisheard lists names or words, suggest pronunciations (voice_patch.pronunciations: [{from: "Odette", to: "Oh-DET"}], a simple respelling the voice will say right); you can test a respelling first with voice_check {text}.
    assistantExamples (if any) are recent notifications from Meta's Muse assistant: they show what a good assistant anticipates for the person. If MausDroid doesn't anticipate a need Muse does, a new or better routine is a good suggestion.
 3. Call improve_propose ONCE with at most ${MAX_PER_NIGHT} suggestions (fewer is better; none if nothing is worth changing). Don't repeat earlier suggestions. For a routine fix include routine_patch with the exact new values; for a skill fix include the complete new SKILL.md. Never include passwords, tokens, card numbers or other credentials.
 4. Call improve_finish with a one-line summary.
@@ -286,7 +287,7 @@ export interface SuggestionInput {
   evidence?: string;
   routine_patch?: { routine_id?: string; title?: string; prompt?: string; schedule?: Schedule; timeout_minutes?: number; enabled?: boolean };
   skill?: { name?: string; content?: string };
-  voice_patch?: { engine?: string; voice?: string; rate?: number };
+  voice_patch?: { engine?: string; voice?: string; rate?: number; pronunciations?: { from?: string; to?: string }[] };
 }
 
 const ROUTINE_FIELDS: [keyof NonNullable<SuggestionInput["routine_patch"]>, keyof Routine][] = [
@@ -340,7 +341,11 @@ function buildProposal(runId: string, s: SuggestionInput): Proposal {
   }
   if (area === "voice") {
     const vp = s.voice_patch ?? {};
-    const after: { engine?: string; voice?: string; rate?: number } = {};
+    const after: { engine?: string; voice?: string; rate?: number; pronunciations?: { from: string; to: string }[] } = {};
+    if (Array.isArray(vp.pronunciations)) {
+      const list = vp.pronunciations.map((p) => ({ from: String(p?.from ?? "").trim().slice(0, 60), to: String(p?.to ?? "").trim().slice(0, 80) })).filter((p) => p.from && p.to).slice(0, 20);
+      if (list.length) after.pronunciations = list;
+    }
     if (typeof vp.engine === "string") after.engine = vp.engine;
     if (typeof vp.voice === "string") after.voice = vp.voice;
     if (vp.rate !== undefined) {
@@ -348,7 +353,7 @@ function buildProposal(runId: string, s: SuggestionInput): Proposal {
       if (!(r >= 0.6 && r <= 1.6)) throw new Error("voice_patch.rate must be 0.6–1.6");
       after.rate = r;
     }
-    if (!Object.keys(after).length) throw new Error("a voice fix needs voice_patch with engine, voice and/or rate");
+    if (!Object.keys(after).length) throw new Error("a voice fix needs voice_patch with engine, voice, rate and/or pronunciations");
     const v = settings().voice;
     p.voicePatch = { before: { engine: v.ttsEngine ?? "", voice: v.voiceName ?? "", rate: v.rate ?? 1 }, after };
   }
@@ -464,14 +469,20 @@ export async function approve(pid: string): Promise<Proposal> {
   if (p.area === "voice" && p.voicePatch) {
     const v = settings().voice;
     const b = p.voicePatch.before;
-    if ((v.ttsEngine ?? "") !== b.engine || (v.voiceName ?? "") !== b.voice || (v.rate ?? 1) !== b.rate) return patch(pid, { ...decided, status: "failed", result: "The voice settings changed since this was suggested, so nothing was changed." })!;
+    const touches = ["engine", "voice", "rate"].some((k) => (p.voicePatch!.after as any)[k] !== undefined);
+    if (touches && ((v.ttsEngine ?? "") !== b.engine || (v.voiceName ?? "") !== b.voice || (v.rate ?? 1) !== b.rate)) return patch(pid, { ...decided, status: "failed", result: "The voice settings changed since this was suggested, so nothing was changed." })!;
     const a = p.voicePatch.after;
     updateSettings((st) => {
       if (a.engine !== undefined) st.voice.ttsEngine = a.engine;
       if (a.voice !== undefined) st.voice.voiceName = a.voice;
       if (a.rate !== undefined) st.voice.rate = a.rate;
+      if (a.pronunciations?.length) {
+        const cur = (st.voice.pronunciations ?? []).filter((x) => !a.pronunciations!.some((n) => n.from.toLowerCase() === x.from.toLowerCase()));
+        st.voice.pronunciations = [...cur, ...a.pronunciations].slice(0, 100);
+      }
     });
-    return patch(pid, { ...decided, status: "applied", result: `Voice updated${a.voice ? ` to ${a.voice}` : ""}${a.rate ? ` at ${Math.round(a.rate * 100)}% speed` : ""}.` })!;
+    setPronunciations(settings().voice.pronunciations);
+    return patch(pid, { ...decided, status: "applied", result: `Voice updated${a.voice ? ` to ${a.voice}` : ""}${a.rate ? ` at ${Math.round(a.rate * 100)}% speed` : ""}${a.pronunciations?.length ? `; how to say ${a.pronunciations.map((x) => `"${x.from}"`).join(", ")}` : ""}.` })!;
   }
   // Program changes are built in the cloud; a finished build is installed (published) on approval.
   if (p.area === "code") {

@@ -557,8 +557,8 @@ function voiceCheckTools(): Tool[] {
   return [
     {
       group: "core",
-      spec: { name: "voice_check", description: "Check how clearly MausDroid speaks right now: speaks test sentences silently, recognises them offline on the phone, and scores clarity (word accuracy) and speed against the person's success criteria. Optional voice/rate to test another setting without changing anything.", inputSchema: obj({ voice: str("Voice name to test (default: current)"), rate: { type: "number", description: "Speed to test (default: current)" } }) },
-      run: async (_c, i) => JSON.stringify(await vc.checkVoice({ voice: i.voice, rate: i.rate }), null, 1),
+      spec: { name: "voice_check", description: "Check how clearly MausDroid speaks right now: speaks test sentences silently, recognises them offline on the phone, and scores clarity (word accuracy) and speed against the person's success criteria. Optional voice/rate to test another setting without changing anything.", inputSchema: obj({ voice: str("Voice name to test (default: current)"), rate: { type: "number", description: "Speed to test (default: current)" }, text: str("Your own test sentence (e.g. with a name), default: the standard sentences") }) },
+      run: async (_c, i) => JSON.stringify(await vc.checkVoice({ voice: i.voice, rate: i.rate, text: i.text }), null, 1),
     },
     {
       group: "core",
@@ -796,7 +796,7 @@ function improveTools(): Tool[] {
                   evidence: str("What showed the problem (errors, run ids)"),
                   routine_patch: { type: "object", description: "area=routine: {routine_id, title?, prompt?, schedule?, timeout_minutes?, enabled?} with the exact NEW values" },
                   skill: { type: "object", description: "area=skill: {name, content} where content is the complete new SKILL.md (frontmatter name + description, then instructions)" },
-                  voice_patch: { type: "object", description: "area=voice: {engine?, voice?, rate?} — the voice settings to switch to (from voice_audition's best passing result)" },
+                  voice_patch: { type: "object", description: "area=voice: {engine?, voice?, rate?, pronunciations?: [{from, to}]} — voice settings to switch to (from voice_audition's best passing result) and/or how to say often-misheard words" },
                 },
                 required: ["title", "problem", "change", "area"],
               },

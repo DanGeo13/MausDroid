@@ -18,6 +18,7 @@ test("scoring: word error rate, normalising, judging against criteria", async ()
   assert.deepEqual(v.judge({ clarity: 0.97, wps: 2.6 }, c), []);
   assert.match(v.judge({ clarity: 0.6, wps: 4.5 }, c).join(" "), /clarity 60%.*too fast: 4\.5/);
   assert.match(v.judge({ firstAudioMs: 1200, interruptMs: 300 }, c).join(" "), /first audio 1200 ms.*interruption 300 ms/);
+  assert.deepEqual(v.missedWords("How did Odette's show go, Dan?", "how did a death eo show go done"), ["Odette", "Dan"]);
 });
 
 async function fakePhone() {
@@ -36,7 +37,8 @@ async function fakePhone() {
         const text = body.text ?? st.recording ?? "";
         const words = text.split(/\s+/).filter(Boolean).length;
         // pt_voice reads English with Portuguese sounds; en_fast is too quick; speed scales with rate.
-        const heard = body.voice === "pt_voice" ? "ayo is your way keep all that tms says" : text;
+        let heard = body.voice === "pt_voice" ? "ayo is your way keep all that tms says" : text;
+        if (st.mishear) heard = heard.replace(new RegExp(st.mishear, "gi"), "a death");
         const wps = (body.voice === "en_fast" ? 4.4 : 2.6) * (body.rate ?? 1);
         return send({ heard, speechMs: Math.round((words / wps) * 1000), audioMs: 0 });
       }
@@ -109,6 +111,11 @@ test("self-check, audition, Improver suggests a voice fix that applies only when
     assert.equal((await e.call("/api/settings")).data.voice.voiceName, "en_good");
     // Now it passes.
     assert.equal((await e.call("/api/voice/check", "POST", {})).data.pass, true);
+    // A name it keeps mishearing shows up for Improver as a pronunciation candidate.
+    ph.st.mishear = "Odette";
+    for (let k = 0; k < 2; k++) await e.call("/api/voice/check", "POST", { text: "How did Odette's show go?" });
+    const sum = (await e.call("/api/voice/checks")).data.summary;
+    assert.deepEqual(sum.oftenMisheard[0], { word: "Odette", times: 2 });
   } finally {
     await e.stop();
     m.close();

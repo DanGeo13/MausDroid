@@ -163,22 +163,24 @@ class BridgeServer(
                     // On-device only, fed from the call microphone with a short pre-roll (your first word is kept).
                     val pfd = watch.openFeed(body.optInt("prerollMs", 500)) ?: return err(Response.Status.INTERNAL_ERROR, "The microphone couldn't be opened.")
                     try {
-                        // While you talk at length: a soft "mm-hmm" about 5 s in, then every 6 s (protoVoice's timing).
+                        // While you talk at length: a soft "mm-hmm" about 8 s in, then at most every 15 s.
                         val nod = body.optBoolean("backchannel")
                         var speechStart = 0L
                         var lastNod = 0L
+                        var nods = 0
                         val nodVoice = speechVoice(body)
                         val (text, error, code) = voice.listenOnDevice(pfd, body.optLong("silenceMs", 700), body.optLong("timeoutSec", 30)) { _ ->
                             if (!nod) return@listenOnDevice
                             val now = System.currentTimeMillis()
                             if (speechStart == 0L) speechStart = now
-                            if (now - speechStart >= 5000 && now - lastNod >= 6000 && !player.isSpeaking()) {
+                            if (now - speechStart >= 8000 && now - lastNod >= 15000 && !player.isSpeaking()) {
                                 lastNod = now
+                                nods++
                                 player.enqueue(listOf(SpeechPlayer.Item.Clip("mm-hmm")), nodVoice)
                             }
                         }
-                        if (text != null) ok(JSONObject().put("text", text).put("missed", text.isBlank()))
-                        else ok(JSONObject().put("text", "").put("error", error ?: "No speech").put("code", code))
+                        if (text != null) ok(JSONObject().put("text", text).put("missed", text.isBlank()).put("nods", nods))
+                        else ok(JSONObject().put("text", "").put("error", error ?: "No speech").put("code", code).put("nods", nods))
                     } finally { watch.closeFeeds(); runCatching { pfd.close() } }
                 }
                 "/voice/hold-listen" -> {

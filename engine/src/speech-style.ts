@@ -21,7 +21,22 @@ export const SPOKEN_STYLE = `Write for listening, not reading:
 - Sound like a person who cares, not a script: match their mood (excited with good news, calm and gentle when they're stressed or sad, brief when they're busy), react before you inform ("Oh, nice!", "Ah, that's annoying"), and have a view when asked.
 - An occasional natural filler or self-correction ("well,", "hmm,", "I mean", "actually—") is fine; don't overdo it.`;
 
-export const CUE_GUIDE = `Optional delivery cues (they're never spoken or shown): {pause 300} for a short silence; {faster}, {slower}, {higher} or {lower} at the start of a phrase changes only that phrase, subtly; {warm}, {excited}, {gentle} or {serious} gives that phrase an emotional tone; {react mm-hmm} (or uh-huh, hmm, oh, right, yeah, ah) for a brief listening sound; {laugh}, {chuckle}, {sigh} or {breath} for an expressive sound where a person really would (something funny, a relief, a pause before something serious). Use them rarely and only where a person naturally would — most phrases need none, and never in serious or sad moments except a soft {sigh}.`;
+export const CUE_GUIDE = `Optional delivery cues (they're never spoken or shown): {pause 300} for a short silence; {faster}, {slower}, {higher} or {lower} at the start of a phrase changes only that phrase, subtly; {warm}, {excited}, {gentle} or {serious} gives that phrase an emotional tone; {react mm-hmm} (or uh-huh, hmm, oh, right, yeah, ah) for a brief listening sound — at most one per reply, and none in most replies; {laugh}, {chuckle}, {sigh} or {breath} for an expressive sound where a person really would (something funny, a relief, a pause before something serious). Use them rarely and only where a person naturally would — most phrases need none, and never in serious or sad moments except a soft {sigh}.`;
+
+// ---------------- Pronunciations ----------------
+
+/** How to say words the voice gets wrong (names especially): "Odette" → "Oh-DET". Set from Settings. */
+let saying: { from: string; to: string }[] = [];
+export const setPronunciations = (list: { from: string; to: string }[] | undefined) => (saying = (list ?? []).filter((p) => p.from?.trim() && p.to?.trim()));
+/** Spoken text with your pronunciations (whole words, any case; possessives keep their 's). Never shown. */
+export function pronounce(text: string, list = saying): string {
+  let out = text;
+  for (const p of list) {
+    const esc = p.from.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replace(new RegExp(`(^|[^A-Za-z0-9])${esc}(?=$|[^A-Za-z0-9])`, "gi"), (_, pre: string) => `${pre}${p.to.trim()}`);
+  }
+  return out;
+}
 
 export type PlayItem =
   | { kind: "speech"; text: string; rate?: number; pitch?: number }
@@ -70,7 +85,7 @@ export function planPhrase(phrase: string): PlayItem[] {
   let pitch: number | undefined;
   let last = 0;
   const pushText = (raw: string) => {
-    const text = stripCues(raw);
+    const text = pronounce(stripCues(raw));
     if (!/[A-Za-z0-9]/.test(text)) return;
     const prev = out[out.length - 1];
     // Words split only by an ignored cue stay one phrase.

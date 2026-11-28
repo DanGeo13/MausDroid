@@ -3,6 +3,7 @@ import { collection } from "./store.ts";
 import { emit } from "./events.ts";
 import { settings } from "./settings.ts";
 import { clip, errorText, id as newId, now } from "./util.ts";
+import { pronounce } from "./speech-style.ts";
 
 /**
  * MausDroid checks its own voice: it makes (or takes) speech, recognises it
@@ -40,6 +41,8 @@ export interface CheckResult {
   pass: boolean;
   problems: string[];
   error?: string;
+  /** Words meant but not heard (often names the voice says wrong). */
+  missed?: string[];
 }
 
 const store = collection<{ criteria: VoiceCriteria; results: CheckResult[] }>("voice-checks", { criteria: DEFAULT_CRITERIA, results: [] });
@@ -101,6 +104,20 @@ export function wordErrorRate(expected: string, heard: string): number {
   return prev[b.length] / a.length;
 }
 
+/** Words in what was meant that weren't heard (original spelling, e.g. names), most useful first. */
+export function missedWords(expected: string, heard: string): string[] {
+  const got = new Set(normalizeWords(heard));
+  const common = new Set(["a", "an", "the", "and", "to", "of", "in", "on", "at", "is", "it", "so", "for", "with"]);
+  const out: string[] = [];
+  for (const w of expected.split(/\s+/)) {
+    const n = normalizeWords(w)[0];
+    if (!n || common.has(n) || got.has(n)) continue;
+    const clean = w.replace(/[^A-Za-z0-9'’-]+/g, "").replace(/['’]s$/i, "");
+    if (clean && /[A-Za-z]{3,}/.test(clean) && !out.includes(clean)) out.push(clean);
+  }
+  return out.slice(0, 8);
+}
+
 /** What falls short of the criteria, in plain words. */
 export function judge(r: Partial<CheckResult>, c: VoiceCriteria): string[] {
   const out: string[] = [];
@@ -139,14 +156,15 @@ function score(kind: CheckResult["kind"], expected: string, r: SelfCheck, v: { e
   if (r.error || !r.heard) return record({ kind, engine: v.engine, voice: v.voice, rate: v.rate, expected: clip(expected, 400), heard: r.heard, error: r.error || "Nothing was recognised.", problems: [r.error || "nothing recognised"] });
   const clarity = Math.max(0, Math.round((1 - wordErrorRate(expected, r.heard)) * 1000) / 1000);
   const wps = r.speechMs ? Math.round((normalizeWords(expected).length / (r.speechMs / 1000)) * 100) / 100 : undefined;
-  return record({ kind, engine: v.engine, voice: v.voice, rate: v.rate, expected: clip(expected, 400), heard: clip(r.heard, 400), clarity, wps });
+  return record({ kind, engine: v.engine, voice: v.voice, rate: v.rate, expected: clip(expected, 400), heard: clip(r.heard, 400), clarity, wps, missed: missedWords(expected, r.heard) });
 }
 
 /** Speaks test sentences (silently, to a file) with the current voice or another one, and scores them. */
-export async function checkVoice(over: { engine?: string; voice?: string; rate?: number } = {}, kind: CheckResult["kind"] = "sample", sentences = TEST_SENTENCES): Promise<CheckResult> {
+export async function checkVoice(over: { engine?: string; voice?: string; rate?: number; text?: string } = {}, kind: CheckResult["kind"] = "sample", sentences = over.text ? [over.text] : TEST_SENTENCES): Promise<CheckResult> {
   const v = voiceNow(over);
   const text = sentences.join(" ");
-  return score(kind, text, await selfCheck({ text, ...v }), v);
+  // Spoken with your pronunciations; judged against the real words.
+  return score(kind, text, await selfCheck({ text: pronounce(text), ...v }), v);
 }
 
 /** Checks part of a recording (e.g. a podcast line) against what it should say. */
@@ -213,6 +231,14 @@ export function voiceSummary(days = 7) {
     passing: recent.length - failing.length,
     averages: { clarity: avg("clarity"), wordsPerSecond: avg("wps"), firstAudioMs: avg("firstAudioMs"), interruptMs: avg("interruptMs") },
     currentVoice: voiceNow(),
+    pronunciations: settings().voice.pronunciations ?? [],
+    // Words misheard again and again (usually names): candidates for a pronunciation.
+    // (Only from checks that were otherwise clear: a voice that garbles everything needs a different voice.)
+    oftenMisheard: Object.entries(recent.filter((r) => (r.clarity ?? 0) >= 0.5).flatMap((r) => r.missed ?? []).reduce<Record<string, number>>((m, w) => ((m[w] = (m[w] ?? 0) + 1), m), {}))
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([word, times]) => ({ word, times })),
     worst: failing.slice(-5).map((r) => ({ kind: r.kind, voice: r.voice, rate: r.rate, problems: r.problems, expected: r.expected, heard: r.heard })),
   };
 }

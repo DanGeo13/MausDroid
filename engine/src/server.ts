@@ -39,6 +39,7 @@ import * as files from "./files.ts";
 import * as calendar from "./calendar.ts";
 import * as brief from "./brief.ts";
 import * as audio from "./audio-overview.ts";
+import { setPronunciations } from "./speech-style.ts";
 import * as podcast from "./podcast-session.ts";
 import { saveToDownloads } from "./downloads.ts";
 import * as audit from "./audit.ts";
@@ -359,6 +360,11 @@ route("PUT", "/api/settings/voice", (req) => {
     if (typeof b.pitch === "number") st.voice.pitch = Math.min(2, Math.max(0.5, b.pitch));
     if (typeof b.ttsEngine === "string") st.voice.ttsEngine = b.ttsEngine;
     if (typeof b.voiceName === "string") st.voice.voiceName = b.voiceName;
+    if (Array.isArray(b.pronunciations))
+      st.voice.pronunciations = b.pronunciations
+        .slice(0, 100)
+        .map((p: any) => ({ from: String(p?.from ?? "").trim().slice(0, 60), to: String(p?.to ?? "").trim().slice(0, 80) }))
+        .filter((p: { from: string; to: string }) => p.from && p.to);
     // Speech recognition service ("" = automatic: Google first, then the phone's default).
     if (typeof b.recognizer === "string") st.voice.recognizer = b.recognizer;
     if ("assistantBotId" in b) st.assistant.botId = b.assistantBotId || null;
@@ -370,6 +376,7 @@ route("PUT", "/api/settings/voice", (req) => {
       st.voice.speech = cur;
     }
   });
+  setPronunciations(settings().voice.pronunciations);
   emit("settings.changed");
   return json(publicSettings());
 });
@@ -384,7 +391,7 @@ route("GET", "/api/voice/checks", async () => {
   return json({ criteria: vc.voiceCriteria(), results: vc.recentChecks(30), summary: vc.voiceSummary(7) });
 });
 route("PUT", "/api/voice/criteria", async (req) => json((await import("./voice-check.ts")).saveCriteria(req.body ?? {})));
-route("POST", "/api/voice/check", async (req) => json(await (await import("./voice-check.ts")).checkVoice({ voice: req.body?.voice, rate: req.body?.rate })));
+route("POST", "/api/voice/check", async (req) => json(await (await import("./voice-check.ts")).checkVoice({ voice: req.body?.voice, rate: req.body?.rate, text: req.body?.text ? String(req.body.text) : undefined })));
 route("POST", "/api/voice/audition", async () => json(await (await import("./voice-check.ts")).audition()));
 // Compare voice engines: the same sample in one engine (and voice), with natural delivery.
 route("POST", "/api/voice/sample", async (req) => {
