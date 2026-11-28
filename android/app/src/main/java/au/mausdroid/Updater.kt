@@ -30,9 +30,11 @@ import java.util.zip.ZipInputStream
 class Updater(private val ctx: Context) {
     private val root = File(ctx.filesDir, "engines").apply { mkdirs() }
     private val currentFile = File(root, "current.txt")
+    private val manualVersionFile = File(root, "manual-version.txt")
     private val trialFile = File(root, "trial.txt")
     private val triedFile = File(root, "trial-started.txt")
     private val badFile = File(root, "bad.txt")
+    private val stagedDir = File(root, ".staged")
     private val prefs = ctx.getSharedPreferences("updater", Context.MODE_PRIVATE)
 
     @Volatile var state = "idle"
@@ -62,12 +64,12 @@ class Updater(private val ctx: Context) {
         val bundled = bundledVersion()
         val bad = if (badFile.exists()) badFile.readLines().map { it.trim() } else emptyList()
         val current = currentFile.takeIf { it.exists() }?.readText()?.trim()?.takeIf { it !in bad }
-        val use = if (current == null || compare(bundled, current) > 0) bundled else current
+        val manual = manualVersionFile.takeIf { it.exists() }?.readText()?.trim()
+        val use = if (current != null && (current == manual || compare(current, bundled) >= 0)) current else bundled
         val dir = File(root, use)
         if (use == bundled && !File(dir, "engine.cjs").exists()) {
             dir.deleteRecursively()
             unzip(ctx.assets.open("engine.zip"), dir)
-            currentFile.writeText(bundled)
         }
         if (!File(dir, "engine.cjs").exists()) {
             File(root, bundled).deleteRecursively()
@@ -75,6 +77,7 @@ class Updater(private val ctx: Context) {
             currentFile.writeText(bundled)
             return File(root, bundled)
         }
+        if (current != use) currentFile.writeText(use)
         return dir
     }
 
@@ -92,13 +95,17 @@ class Updater(private val ctx: Context) {
     }
 
     /** The engine said it started fine: keep this version. */
+    @Synchronized
     fun confirmReady(version: String) {
         if (trialFile.exists() && trialFile.readText().trim() == version) {
+            val previous = currentFile.takeIf { it.exists() }?.readText()?.trim()
             currentFile.writeText(version)
+            manualVersionFile.delete()
             trialFile.delete(); triedFile.delete()
             message = "Updated to $version."
-            // Old versions are removed, keeping the current one.
-            root.listFiles()?.filter { it.isDirectory && it.name != version }?.forEach { it.deleteRecursively() }
+            // Keep the last working version and the built-in recovery copy.
+            val keep = setOf(version, previous, bundledVersion(), stagedDir.name)
+            root.listFiles()?.filter { it.isDirectory && it.name !in keep }?.forEach { it.deleteRecursively() }
         }
     }
 
@@ -133,6 +140,7 @@ class Updater(private val ctx: Context) {
     @Synchronized
     fun check(): JSONObject {
         state = "checking"
+        available = null
         try {
             val doc = JSONObject(String(get(BuildConfig.UPDATE_URL + "?t=" + System.currentTimeMillis())))
             val payloadText = doc.getString("payload")
@@ -150,25 +158,25 @@ class Updater(private val ctx: Context) {
             }
             val eng = payload.getJSONObject("engine")
             val v = eng.getString("version")
+            require(Regex("""\d+\.\d+\.\d+""").matches(v)) { "Invalid update version." }
             val minApk = eng.optInt("minApk", 0)
             val bad = if (badFile.exists()) badFile.readLines() else emptyList()
-            available = null
             when {
                 compare(v, runningVersion()) <= 0 -> { state = "up to date"; return status() }
                 v in bad -> { state = "skipped"; message = "Update $v was rolled back earlier."; return status() }
                 minApk > BuildConfig.VERSION_CODE -> { state = "needs app update"; message = "Install the new app version first."; return status() }
             }
-            available = v
-            if (staged != v) {
+            if (staged != v || !File(stagedDir, "engine.cjs").isFile) {
                 state = "downloading"
                 val zip = get(eng.getString("url"))
                 if (sha256(zip) != eng.getString("sha256")) throw SecurityException("Downloaded update is damaged — ignored.")
-                val dir = File(root, v)
-                dir.deleteRecursively()
-                unzip(zip.inputStream(), dir)
-                if (!File(dir, "engine.cjs").exists()) throw RuntimeException("Update is missing engine.cjs")
+                staged = null
+                stagedDir.deleteRecursively()
+                unzip(zip.inputStream(), stagedDir)
+                if (!File(stagedDir, "engine.cjs").isFile) throw RuntimeException("Update is missing engine.cjs")
                 staged = v
             }
+            available = v
             state = "ready"
             message = "Version $v is ready."
         } catch (e: Exception) {
@@ -180,10 +188,19 @@ class Updater(private val ctx: Context) {
     }
 
     /** Switches to the staged engine on the next engine start. */
+    @Synchronized
     fun stageForRestart(): Boolean {
         val v = staged ?: return false
-        trialFile.writeText(v)
+        if (state != "ready" || available != v || trialFile.exists()) return false
+        if (!File(stagedDir, "engine.cjs").isFile || compare(v, runningVersion()) <= 0) return false
+        if (badFile.exists() && v in badFile.readLines()) return false
+        val dir = File(root, v)
+        if (!dir.deleteRecursively() || !stagedDir.renameTo(dir)) return false
         triedFile.delete()
+        trialFile.writeText(v)
+        staged = null
+        available = null
+        state = "installing"
         return true
     }
 

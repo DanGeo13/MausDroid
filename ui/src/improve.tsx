@@ -341,13 +341,20 @@ const older = (a: string, b: string) => {
 };
 
 /** Program versions on the phone, with roll back. */
-function Versions({ v, onDone }: { v: any; onDone: () => void }) {
+export interface EngineVersions {
+  running: string;
+  canRollBack: boolean;
+  versions: { version: string; bad: boolean; running: boolean }[];
+}
+
+export function Versions({ v, onDone }: { v?: EngineVersions; onDone: () => void }) {
   if (!v?.versions?.length) return null;
   const back = async (version: string) => {
-    if (!confirm(`Go back to version ${version}? DanDroid restarts for a moment.`)) return;
+    const goingBack = older(version, v.running);
+    if (!confirm(`${goingBack ? "Roll back" : "Switch"} to version ${version}? DanDroid will restart.`)) return;
     try {
       const r = await api("improve/rollback", { body: { version } });
-      toast(`Going back from ${r.from} to ${r.to} — restarting…`);
+      toast(`Restarting with version ${r.to}…`);
     } catch (e) {
       toast(`⚠️ ${(e as Error).message}`);
     }
@@ -356,14 +363,15 @@ function Versions({ v, onDone }: { v: any; onDone: () => void }) {
   return (
     <div class="section">
       <h2>Versions on this phone</h2>
-      <p class="help">Running {v.running}. If an update causes trouble, go back to an earlier one — that update won't be installed again.</p>
-      {v.versions.map((x: any) => (
-        <div class="toggle">
+      <p class="help">Running {v.running}. Rolling back switches the engine and keeps your bots, chats and settings.</p>
+      {v.versions.length === 1 ? <p class="help">There’s no other saved version to switch to yet.</p> : null}
+      {v.versions.map((x) => (
+        <div class="toggle" key={x.version}>
           <span>
             {x.version} {x.running ? <span class="pill ok">running</span> : null} {x.bad ? <span class="pill">set aside</span> : null}
           </span>
           {x.running ? null : (
-            <button class="btn secondary small" onClick={() => back(x.version)}>
+            <button class="btn secondary" onClick={() => back(x.version)}>
               {older(x.version, v.running) ? "Roll back" : "Switch"}
             </button>
           )}

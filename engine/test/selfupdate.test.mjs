@@ -220,23 +220,26 @@ test("cloud builds: progress lines, a question comes back, answers carry it on; 
 test("rollback: back to an earlier version kept on the phone; the left version is set aside", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "md-engines-"));
   const version = JSON.parse(fs.readFileSync(new URL("../../version.json", import.meta.url), "utf8")).engine;
-  for (const v of ["0.8.1", "0.8.2", version]) {
+  for (const v of ["0.8.1", "0.8.2", "0.8.3", version]) {
     fs.mkdirSync(path.join(root, v), { recursive: true });
     fs.writeFileSync(path.join(root, v, "engine.cjs"), "");
   }
   fs.writeFileSync(path.join(root, "current.txt"), version);
   fs.writeFileSync(path.join(root, "trial.txt"), version);
+  fs.writeFileSync(path.join(root, "bad.txt"), "0.8.3\n");
   const e = await startEngine({ env: { MAUSDROID_ENGINES_DIR: root, MAUSDROID_RESTART_DELAY_MS: "300" } });
   let exited = false;
   try {
     const v = (await e.call("/api/improve")).data.versions;
     assert.equal(v.running, version);
-    assert.deepEqual(v.versions.map((x) => x.version), [version, "0.8.2", "0.8.1"]);
+    assert.deepEqual((await e.call("/api/update")).data.versions, v);
+    assert.deepEqual(v.versions.map((x) => x.version), [version, "0.8.3", "0.8.2", "0.8.1"]);
     assert.equal(v.canRollBack, true);
     assert.equal((await e.call("/api/improve/rollback", "POST", { version: "0.1.0" })).status, 400, "only versions on the phone");
     const r = (await e.call("/api/improve/rollback", "POST", {})).data;
     assert.deepEqual(r, { from: version, to: "0.8.2" });
     assert.equal(fs.readFileSync(path.join(root, "current.txt"), "utf8"), "0.8.2");
+    assert.equal(fs.readFileSync(path.join(root, "manual-version.txt"), "utf8"), "0.8.2");
     assert.match(fs.readFileSync(path.join(root, "bad.txt"), "utf8"), new RegExp(version.replace(/\./g, "\\.")));
     assert.ok(!fs.existsSync(path.join(root, "trial.txt")));
     // The engine stops so the app restarts it on the older version.
@@ -251,5 +254,27 @@ test("rollback: back to an earlier version kept on the phone; the left version i
     assert.ok(exited, "engine restarted");
   } finally {
     if (!exited) await e.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("over-the-air update reports when the phone has nothing ready to install", async () => {
+  let restarting = false;
+  const phone = http.createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/update/status") return res.end(JSON.stringify({ engineVersion: "0.17.0", state: "up to date" }));
+    if (req.url === "/update/apply") return res.end(JSON.stringify({ restarting }));
+    res.end("{}");
+  });
+  await new Promise((resolve) => phone.listen(0, "127.0.0.1", resolve));
+  const e = await startEngine({ env: { MAUSDROID_BRIDGE_URL: `http://127.0.0.1:${phone.address().port}` } });
+  try {
+    assert.equal((await e.call("/api/update")).data.state, "up to date");
+    assert.equal((await e.call("/api/update/apply", "POST", {})).status, 409);
+    restarting = true;
+    assert.deepEqual(await e.call("/api/update/apply", "POST", {}), { status: 200, data: { restarting: true } });
+  } finally {
+    await e.stop();
+    phone.close();
   }
 });

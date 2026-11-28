@@ -857,9 +857,16 @@ route("PUT", "/api/tailscale", async (req) => {
   if (bridgeAvailable()) await bridge(s.enabled ? "/tailscale/start" : "/tailscale/stop", { hostname: s.hostname, authKey: getSecret("tailscale:authkey") ?? "" });
   return json(publicSettings());
 });
-route("GET", "/api/update", async () => json(bridgeAvailable() ? await bridge("/update/status") : { state: "dev" }));
+route("GET", "/api/update", async () => json({
+  ...(bridgeAvailable() ? await bridge("/update/status") : { state: "dev" }),
+  versions: selfupdate.engineVersions(),
+}));
 route("POST", "/api/update/check", async () => json(await bridge("/update/check", {}, 300_000)));
-route("POST", "/api/update/apply", async () => json(await bridge("/update/apply", {}, 300_000)));
+route("POST", "/api/update/apply", async () => {
+  const result = await bridge<{ restarting: boolean }>("/update/apply", {}, 300_000);
+  if (!result.restarting) throw new HttpError(409, "There’s no update ready to install. Tap Check now and try again.");
+  return json(result);
+});
 route("GET", "/api/system", async () => json({ ...(bridgeAvailable() ? await bridge("/device/info").catch(() => ({})) : {}), engine: config.version }));
 route("POST", "/api/system/:action", async (req, [action]) => json(await bridge(`/device/${action}`, req.body ?? {})));
 route("POST", "/api/browser/login", async (req) => json(await bridge("/login/show", { url: req.body?.url })));

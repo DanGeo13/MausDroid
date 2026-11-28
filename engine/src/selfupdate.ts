@@ -43,7 +43,7 @@ export function engineVersions() {
     .filter((d) => /^\d+\.\d+\.\d+$/.test(d) && fs.existsSync(path.join(root, d, "engine.cjs")))
     .sort((a, b) => cmp(b, a))
     .map((v) => ({ version: v, bad: bad.includes(v), running: v === running }));
-  return { running, canRollBack: versions.some((v) => !v.running && cmp(v.version, running) < 0), versions };
+  return { running, canRollBack: versions.some((v) => !v.bad && cmp(v.version, running) < 0), versions };
 }
 
 let restarting = false;
@@ -56,7 +56,7 @@ export function rollBack(to?: string): { from: string; to: string } {
   const root = enginesRoot();
   if (!root) throw new Error("Rolling back works in the Android app.");
   const { running, versions } = engineVersions();
-  const target = to ? versions.find((v) => v.version === to) : versions.find((v) => cmp(v.version, running) < 0);
+  const target = to ? versions.find((v) => v.version === to) : versions.find((v) => !v.bad && cmp(v.version, running) < 0);
   if (!target) throw new Error(to ? `Version ${to} isn't on the phone. Kept versions: ${versions.map((v) => v.version).join(", ") || "none"}.` : "There's no earlier version on the phone to go back to.");
   if (target.version === running) throw new Error(`${running} is already running.`);
   if (restarting) throw new Error("Already restarting.");
@@ -64,6 +64,7 @@ export function rollBack(to?: string): { from: string; to: string } {
   // Going forward again: that version is no longer set aside.
   const badFile = path.join(root, "bad.txt");
   if (fs.existsSync(badFile)) fs.writeFileSync(badFile, fs.readFileSync(badFile, "utf8").split("\n").filter((x) => x.trim() && x.trim() !== target.version).map((x) => `${x}\n`).join(""));
+  fs.writeFileSync(path.join(root, "manual-version.txt"), target.version);
   fs.writeFileSync(path.join(root, "current.txt"), target.version);
   for (const f of ["trial.txt", "trial-started.txt"]) fs.rmSync(path.join(root, f), { force: true });
   restarting = true;
