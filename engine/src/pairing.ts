@@ -4,7 +4,7 @@ import { getSecret, setSecret } from "./secrets.ts";
 import { settings, updateSettings } from "./settings.ts";
 
 /**
- * Devices you trust to control MausDroid from elsewhere (your PC's browser,
+ * Devices you trust to control DanDroid from elsewhere (your PC's browser,
  * a tablet): through the always-on website or over Tailscale. A device is
  * added by opening the website on it and scanning the QR code it shows
  * with the phone (or typing its short code); the website then asks for
@@ -97,11 +97,11 @@ export function linkCodeFrom(text: string, relayUrl: string): string {
     try {
       u = new URL(url);
     } catch {
-      throw new Error("That QR code isn't a MausDroid one.");
+      throw new Error("That QR code isn't a DanDroid one.");
     }
     if (u.origin !== new URL(relayUrl).origin) throw new Error(`That QR code is for a different website (${u.host}). Open ${new URL(relayUrl).host} on your PC.`);
     const m = u.pathname.match(/^\/p\/([A-Za-z0-9]{8})$/);
-    if (!m) throw new Error("That QR code isn't a MausDroid linking code.");
+    if (!m) throw new Error("That QR code isn't a DanDroid linking code.");
     return m[1].toUpperCase();
   }
   const code = t.toUpperCase().replace(/[\s-]/g, "");

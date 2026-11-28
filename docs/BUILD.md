@@ -1,4 +1,4 @@
-# Building MausDroid
+# Building DanDroid
 
 Needs: Node 22, Java 17, Go 1.24, Android SDK (platform 35, build-tools 35,
 NDK 27.2.12479018, CMake 3.22.1).

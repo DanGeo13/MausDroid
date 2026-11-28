@@ -10,7 +10,7 @@ import { clip, errorText, htmlToText, id as newId, now } from "./util.ts";
 /**
  * Reply Desk: one place for messages that may need your reply — email
  * (Gmail through connected apps: full text and thread, sending after your
- * approval) and messaging apps whose notifications MausDroid reads (previews
+ * approval) and messaging apps whose notifications DanDroid reads (previews
  * only: WhatsApp, Messenger, SMS…). One card per conversation, so the same
  * conversation never reminds you twice. You mark each Handled, No reply needed
  * or Snooze. Drafts never leave the phone by themselves: email is sent only
@@ -25,7 +25,7 @@ export interface Service {
   label: string;
   /** Recognisable accent colour for the card. */
   accent: string;
-  /** How a reply leaves MausDroid: send (after approval), prefill (open the app with the text), copy (paste it yourself). */
+  /** How a reply leaves DanDroid: send (after approval), prefill (open the app with the text), copy (paste it yourself). */
   reply: "send" | "prefill" | "copy";
   packages: string[];
 }
@@ -325,7 +325,7 @@ export function stripSignOff(text: string, name = ""): string {
   for (let k = 0; k < 3 && lines.length > 1; k++) {
     const last = lines[lines.length - 1].trim();
     const prev = (lines[lines.length - 2] ?? "").trim();
-    // A name line right after a sign-off ("Cheers,\nDan") goes too, even when MausDroid doesn't know your name.
+    // A name line right after a sign-off ("Cheers,\nDan") goes too, even when DanDroid doesn't know your name.
     const nameAfterSignOff = /^[A-Z][A-Za-z'-]+( [A-Z][A-Za-z'-]+){0,2}$/.test(last) && signOff.test(prev);
     if (!last || signOff.test(last) || nameAfterSignOff || (name && last.replace(/[^A-Za-z ]/g, "").trim().toLowerCase() === name.toLowerCase()) || /^-+\s*\w+$/.test(last)) lines.pop();
     else break;
@@ -360,7 +360,7 @@ export async function emailSignature(accountId: string): Promise<string> {
 /** The exact email that would go out: your draft (no sign-off) + your signature. */
 export async function finalEmail(id: string, draftText: string): Promise<{ body: string; signature: string }> {
   const it = getItem(id);
-  if (!it || it.source.kind !== "email") throw new Error("Only email can be sent from MausDroid.");
+  if (!it || it.source.kind !== "email") throw new Error("Only email can be sent from DanDroid.");
   const signature = await emailSignature(it.source.accountId);
   const body = stripSignOff(draftText, await myName());
   return { body: signature ? `${body}\n\n${signature}` : body, signature };
@@ -412,7 +412,7 @@ const hashOf = (text: string, to: string) => createHash("sha256").update(`${to}\
 /** You approve this exact final text (with signature) to this recipient. */
 export async function approveSend(id: string, draftText: string, to: string): Promise<{ hash: string; body: string; to: string }> {
   const it = getItem(id);
-  if (!it || it.source.kind !== "email") throw new Error("Only email can be sent from MausDroid; for other apps, open the app or copy the reply.");
+  if (!it || it.source.kind !== "email") throw new Error("Only email can be sent from DanDroid; for other apps, open the app or copy the reply.");
   if (!to.trim()) throw new Error("Who should it go to?");
   saveDraft(id, draftText, to);
   const { body } = await finalEmail(id, draftText);
@@ -424,7 +424,7 @@ export async function approveSend(id: string, draftText: string, to: string): Pr
 /** Sends only if the final text and recipient are exactly what was approved (within 10 minutes). */
 export async function sendApproved(id: string, draftText: string, to: string): Promise<ReplyItem> {
   const it = getItem(id);
-  if (!it || it.source.kind !== "email") throw new Error("Only email can be sent from MausDroid.");
+  if (!it || it.source.kind !== "email") throw new Error("Only email can be sent from DanDroid.");
   const { body } = await finalEmail(id, draftText);
   const hash = hashOf(body, to.trim());
   if (!it.approval || it.approval.hash !== hash) throw new Error("The text or recipient changed since you approved it. Review and approve again.");
@@ -478,7 +478,7 @@ export function startReplyDesk() {
 }
 
 /**
- * Which messaging apps are on the phone and which ones MausDroid reads (your
+ * Which messaging apps are on the phone and which ones DanDroid reads (your
  * choice: only the apps you switch on are read). Email comes from connected apps.
  */
 export async function sources() {

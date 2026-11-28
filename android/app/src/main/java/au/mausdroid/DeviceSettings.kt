@@ -25,7 +25,7 @@ object DeviceSettings {
             .put("locationPermission", DeviceLocation.permissionState(ctx))
     }
 
-    /** True when MausDroid is chosen as the phone's digital assistant. */
+    /** True when DanDroid is chosen as the phone's digital assistant. */
     fun isDefaultAssistant(ctx: Context): Boolean = try {
         val cr = ctx.contentResolver
         listOf("voice_interaction_service", "assistant").any { Settings.Secure.getString(cr, it)?.contains(ctx.packageName) == true }

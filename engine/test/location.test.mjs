@@ -71,7 +71,7 @@ test("device_location: approvals, real fixes only, clear errors, visible indicat
     assert.equal(denied.isError, true);
     assert.ok(!/"latitude"/.test(denied.result), "no coordinates with an error");
     assert.match(denied.result, /said no/);
-    assert.match((await ask({ permission: "permanently_denied", error: "permission_permanently_denied" })).result, /blocked for MausDroid/);
+    assert.match((await ask({ permission: "permanently_denied", error: "permission_permanently_denied" })).result, /blocked for DanDroid/);
     assert.match((await ask({ permission: "granted", error: "location_off" })).result, /turned off/);
 
     // Saying no to the approval means no request reaches the phone.

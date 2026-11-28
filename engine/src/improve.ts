@@ -23,7 +23,7 @@ import { setPronunciations } from "./speech-style.ts";
 import { settings, updateSettings } from "./settings.ts";
 
 /**
- * The Improver: a bot that checks MausDroid once a night (10 minutes at most,
+ * The Improver: a bot that checks DanDroid once a night (10 minutes at most,
  * research stops after 5), and suggests at most 5 fixes for skills, routines
  * or code. Suggestions wait until midday, then appear as cards. NOTHING
  * changes until you tap Approve: routine and skill fixes are applied exactly
@@ -112,21 +112,21 @@ export const isImprover = (botId: string) => settingsFile.get().botId === botId;
 // ---------------- Setup ----------------
 
 export const OLD_IMPROVER_PERSONA =
-  "You are Improver, MausDroid's self-improvement bot. Each night you look for the few changes that would most help right now: errors, failing or missed routines, unclear or broken skills, and small code fixes. You are brief, concrete and never exhaustive. You never change anything yourself without the person's approval.";
-export const IMPROVER_PERSONA = `You are Improver, MausDroid's self-improvement bot, with admin rights over MausDroid's set-up.
+  "You are Improver, DanDroid's self-improvement bot. Each night you look for the few changes that would most help right now: errors, failing or missed routines, unclear or broken skills, and small code fixes. You are brief, concrete and never exhaustive. You never change anything yourself without the person's approval.";
+export const IMPROVER_PERSONA = `You are Improver, DanDroid's self-improvement bot, with admin rights over DanDroid's set-up.
 - When the person asks you directly for a change, do it now — don't make a suggestion card. You can change any bot (bot_list, bot_edit: instructions, AI and model, tool switches, single tools, skills, approvals of other bots), any routine (routine_admin_list, routine_admin_update), skills (skill_save) and see every tool (tool_list). After changing something, call improve_record so it shows in Improvements history, and say briefly what you changed (bot changes can be undone in Settings → Tools).
 - If they ask to remove or cancel a suggestion, call improve_withdraw.
-- Changes to MausDroid's own program (new screens, features, fixes in its code): call improve_build with a short title and a clear, complete spec. The coding agent of the chosen platform (GitHub + Claude Code or GitHub + Codex, in Improvements → Settings) makes the change in the cloud, runs every test, and — if they pass — it installs by itself; MausDroid restarts with it. Tell them it usually takes 5–20 minutes and they'll get a notification.
+- Changes to DanDroid's own program (new screens, features, fixes in its code): call improve_build with a short title and a clear, complete spec. The coding agent of the chosen platform (GitHub + Claude Code or GitHub + Codex, in Improvements → Settings) makes the change in the cloud, runs every test, and — if they pass — it installs by itself; DanDroid restarts with it. Tell them it usually takes 5–20 minutes and they'll get a notification.
 - While it builds you'll get progress lines; if the developer asks questions, you'll be told — ask the person and pass their answers on with improve_build_answer.
-- If something is wrong after an update, or they ask to go back: improve_versions shows the versions kept on the phone, improve_rollback switches back at once (MausDroid restarts).
+- If something is wrong after an update, or they ask to go back: improve_versions shows the versions kept on the phone, improve_rollback switches back at once (DanDroid restarts).
 - In the nightly check (a routine), only suggest (improve_propose, at most 5); nothing changes until approved.
 Be brief and concrete.`;
 
 export const IMPROVE_PROMPT = `Nightly self-check. You have 10 minutes at most; research tools stop after 5, so be quick and don't be exhaustive.
 1. Call improve_evidence to see recent errors, routine runs, routines, skills and earlier suggestions.
-2. Pick the few changes that would help most right now: errors, failing / missed / timed-out routines and the prompts or schedules causing them, skills that are missing, broken or unclear, and — only if clearly worthwhile — small code fixes to MausDroid. A quick web_search or skills_market_search is fine if it helps find a fix.
-   voiceQuality is the phone's own offline check of how clearly and at what speed MausDroid speaks (and call timings), against the person's success criteria. If it falls short, run voice_audition and suggest a voice fix (area "voice" with voice_patch: engine / voice / rate from the best passing result). Don't suggest one if it already passes. If voiceQuality.oftenMisheard lists names or words, suggest pronunciations (voice_patch.pronunciations: [{from: "Odette", to: "Oh-DET"}], a simple respelling the voice will say right); you can test a respelling first with voice_check {text}.
-   assistantExamples (if any) are recent notifications from Meta's Muse assistant: they show what a good assistant anticipates for the person. If MausDroid doesn't anticipate a need Muse does, a new or better routine is a good suggestion.
+2. Pick the few changes that would help most right now: errors, failing / missed / timed-out routines and the prompts or schedules causing them, skills that are missing, broken or unclear, and — only if clearly worthwhile — small code fixes to DanDroid. A quick web_search or skills_market_search is fine if it helps find a fix.
+   voiceQuality is the phone's own offline check of how clearly and at what speed DanDroid speaks (and call timings), against the person's success criteria. If it falls short, run voice_audition and suggest a voice fix (area "voice" with voice_patch: engine / voice / rate from the best passing result). Don't suggest one if it already passes. If voiceQuality.oftenMisheard lists names or words, suggest pronunciations (voice_patch.pronunciations: [{from: "Odette", to: "Oh-DET"}], a simple respelling the voice will say right); you can test a respelling first with voice_check {text}.
+   assistantExamples (if any) are recent notifications from Meta's Muse assistant: they show what a good assistant anticipates for the person. If DanDroid doesn't anticipate a need Muse does, a new or better routine is a good suggestion.
 3. Call improve_propose ONCE with at most ${MAX_PER_NIGHT} suggestions (fewer is better; none if nothing is worth changing). Don't repeat earlier suggestions. For a routine fix include routine_patch with the exact new values; for a skill fix include the complete new SKILL.md. Never include passwords, tokens, card numbers or other credentials.
 4. Call improve_finish with a one-line summary.
 Don't notify the person: the suggestions are shown at midday as cards, and nothing changes until they approve.`;
@@ -505,7 +505,7 @@ Problem: ${p.problem}
 Change: ${p.change}
 Area: ${p.area} · Risk: ${p.risk}
 
-Rules: ${p.area === "code" ? "make the change in the MausDroid source (github.com/DanGeo13/MausDroid) on a new branch named improve/<short-name>, with tests where possible. Never push to main or the updates branch, never publish a release or APK, never touch signing keys. Any push or pull request goes through an approval card. " : ""}Every action that needs approval still asks. Never store credentials anywhere. If you can't finish it from here, say exactly what's left. End with a short summary of what changed.`;
+Rules: ${p.area === "code" ? "make the change in the DanDroid source (github.com/DanGeo13/DanDroid) on a new branch named improve/<short-name>, with tests where possible. Never push to main or the updates branch, never publish a release or APK, never touch signing keys. Any push or pull request goes through an approval card. " : ""}Every action that needs approval still asks. Never store credentials anywhere. If you can't finish it from here, say exactly what's left. End with a short summary of what changed.`;
 }
 
 export function snooze(pid: string): Proposal {
@@ -589,7 +589,7 @@ async function installBuild(p: Proposal): Promise<Proposal> {
   } catch (e) {
     return patch(p.id, { status: "failed", result: `Couldn't install: ${(e as Error).message}` })!;
   }
-  const out = patch(p.id, { status: "applied", decidedAt: now(), result: "Installed: publishing the update now; MausDroid restarts with it in a few minutes. If anything's wrong, roll back in Improvements." })!;
+  const out = patch(p.id, { status: "applied", decidedAt: now(), result: "Installed: publishing the update now; DanDroid restarts with it in a few minutes. If anything's wrong, roll back in Improvements." })!;
   followUpdate(p.title);
   return out;
 }
@@ -663,7 +663,7 @@ function followUpdate(title: string) {
     if (s?.state === "ready") {
       clearInterval(t);
       const bot = improverBot();
-      await notifyUser({ title: `${bot?.emoji ?? "🛠️"} Installing ${s.available}`, body: `${title} — MausDroid restarts for a moment.`, botId: bot?.id, type: "improvement", priority: "low" });
+      await notifyUser({ title: `${bot?.emoji ?? "🛠️"} Installing ${s.available}`, body: `${title} — DanDroid restarts for a moment.`, botId: bot?.id, type: "improvement", priority: "low" });
       await bridge("/update/apply", {}).catch(() => {});
     }
   }, Number(process.env.MAUSDROID_UPDATE_POLL_MS ?? 180_000));

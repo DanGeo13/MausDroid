@@ -17,7 +17,7 @@ export function ensureAuditRoutine() {
   if (!owner) return;
   createRoutine({
     botId: owner.id,
-    title: "Weekly MausDroid Routine & Skill Audit",
+    title: "Weekly DanDroid Routine & Skill Audit",
     prompt: AUDIT_PROMPT,
     schedule: { kind: "weekly", days: [0], time: "07:52", timeZone: "Australia/Sydney", missedPolicy: "skip" },
     deadline: "08:00",

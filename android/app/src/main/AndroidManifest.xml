@@ -29,7 +29,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:label="MausDroid"
+        android:label="DanDroid"
         android:usesCleartextTraffic="true"
         android:extractNativeLibs="true"
         android:pageSizeCompat="enabled"
@@ -47,13 +47,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Share any file, link or text to MausDroid from any app. -->
-            <intent-filter android:label="MausDroid">
+            <!-- Share any file, link or text to DanDroid from any app. -->
+            <intent-filter android:label="DanDroid">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
             </intent-filter>
-            <intent-filter android:label="MausDroid">
+            <intent-filter android:label="DanDroid">
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
@@ -81,12 +81,12 @@
 
         <receiver android:name=".CardActionReceiver" android:exported="false" />
 
-        <!-- Digital assistant: MausDroid can be chosen as the phone's assistant app. -->
+        <!-- Digital assistant: DanDroid can be chosen as the phone's assistant app. -->
         <!-- Reads notifications from the apps you choose (e.g. Meta's Muse), read-only. You allow it in Android's settings. -->
         <service
             android:name=".NotificationWatcher"
             android:exported="true"
-            android:label="MausDroid (notifications you choose)"
+            android:label="DanDroid (notifications you choose)"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
@@ -95,7 +95,7 @@
         <service
             android:name=".MausVoiceInteractionService"
             android:exported="true"
-            android:label="MausDroid"
+            android:label="DanDroid"
             android:permission="android.permission.BIND_VOICE_INTERACTION">
             <meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction" />
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
@@ -107,7 +107,7 @@
         <service
             android:name=".MausRecognitionService"
             android:exported="true"
-            android:label="MausDroid">
+            android:label="DanDroid">
             <meta-data android:name="android.speech" android:resource="@xml/recognition" />
             <intent-filter><action android:name="android.speech.RecognitionService" /></intent-filter>
         </service>

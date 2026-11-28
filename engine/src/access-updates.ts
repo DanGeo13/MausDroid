@@ -1,5 +1,5 @@
 /**
- * When MausDroid's access rules change, existing chats must not keep acting on
+ * When DanDroid's access rules change, existing chats must not keep acting on
  * what happened earlier in the conversation (e.g. "Gmail is blocked"). Each
  * change gets a short note; a bot sees the notes it hasn't seen yet once, at
  * the start of its next turn. Nothing is cleared — chats and bots carry on.
@@ -12,11 +12,11 @@ export const ACCESS_UPDATES: { id: string; note: string }[] = [
   },
   {
     id: "2026-11-26-no-claude-prompts",
-    note: "Claude Code's own approval step is switched off (it was refusing MausDroid's tools, which looked like 'blocked at the approval step'). MausDroid's tools now just work; only sending, creating, changing, deleting, archiving, buying or posting asks the person, with a card. Earlier 'blocked' results in this chat are out of date — try again now.",
+    note: "Claude Code's own approval step is switched off (it was refusing DanDroid's tools, which looked like 'blocked at the approval step'). DanDroid's tools now just work; only sending, creating, changing, deleting, archiving, buying or posting asks the person, with a card. Earlier 'blocked' results in this chat are out of date — try again now.",
   },
   {
     id: "2026-11-26-codex-tool-access",
-    note: "Codex now sends MausDroid tool calls to the app for approval under this bot's current settings, including in existing chats. If an earlier Codex tool call said 'approval policy is never', try the MausDroid tool again.",
+    note: "Codex now sends DanDroid tool calls to the app for approval under this bot's current settings, including in existing chats. If an earlier Codex tool call said 'approval policy is never', try the DanDroid tool again.",
   },
   {
     id: "codex-connected-app-routing",
@@ -24,7 +24,7 @@ export const ACCESS_UPDATES: { id: string; note: string }[] = [
   },
   {
     id: "2026-11-27-downloads-audio",
-    note: "New: save_to_downloads saves a file (a link, a MausDroid file, or a Google Drive file — Docs become PDF) to the phone's Downloads › MausDroid folder and checks it arrived, so Gemini and other apps can pick it. Don't open PDFs in the browser to save them. Also new: audio_overview_record records a two-host audio overview (under 10 minutes) with the phone's voices; it runs automatically when a new Staff Update is shared. Earlier messages saying these tools don't exist are out of date.",
+    note: "New: save_to_downloads saves a file (a link, a DanDroid file, or a Google Drive file — Docs become PDF) to the phone's Downloads › DanDroid folder and checks it arrived, so Gemini and other apps can pick it. Don't open PDFs in the browser to save them. Also new: audio_overview_record records a two-host audio overview (under 10 minutes) with the phone's voices; it runs automatically when a new Staff Update is shared. Earlier messages saying these tools don't exist are out of date.",
   },
 ];
 export const LATEST_ACCESS_UPDATE = ACCESS_UPDATES[ACCESS_UPDATES.length - 1].id;
@@ -38,5 +38,5 @@ export function unseenUpdates(seen: string | undefined) {
 
 export function accessNote(seen: string | undefined): string | null {
   const notes = unseenUpdates(seen);
-  return notes.length ? `[MausDroid update since earlier in this chat: ${notes.map((n) => n.note).join(" ")}]` : null;
+  return notes.length ? `[DanDroid update since earlier in this chat: ${notes.map((n) => n.note).join(" ")}]` : null;
 }

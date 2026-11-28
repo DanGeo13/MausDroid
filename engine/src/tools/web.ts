@@ -45,7 +45,7 @@ export async function webFetch(url: string, render: "auto" | "always" | "never" 
     return renderInBrowser(u.toString(), waitMs);
   }
   const res = await fetch(u, {
-    headers: { "user-agent": "Mozilla/5.0 (Linux; Android 15) MausDroid/0.1", accept: "text/html,application/json,text/plain;q=0.9,*/*;q=0.5" },
+    headers: { "user-agent": "Mozilla/5.0 (Linux; Android 15) DanDroid/0.1", accept: "text/html,application/json,text/plain;q=0.9,*/*;q=0.5" },
     redirect: "follow",
     signal: AbortSignal.timeout(30_000),
   });
@@ -61,7 +61,7 @@ export async function webFetch(url: string, render: "auto" | "always" | "never" 
         return clip(`HTTP ${res.status} ${res.url}\n(This page needs JavaScript and the background browser couldn't open it: ${(e as Error).message})\n\n${text}`);
       }
     }
-    return clip(`HTTP ${res.status} ${res.url}\n(This page builds its content with JavaScript, so this plain copy may be incomplete. On the phone MausDroid opens such pages in its background browser.)\n\n${text}`);
+    return clip(`HTTP ${res.status} ${res.url}\n(This page builds its content with JavaScript, so this plain copy may be incomplete. On the phone DanDroid opens such pages in its background browser.)\n\n${text}`);
   }
   return clip(`HTTP ${res.status} ${res.url}\n\n${text}`);
 }
@@ -69,7 +69,7 @@ export async function webFetch(url: string, render: "auto" | "always" | "never" 
 /** Web search without an API key, via DuckDuckGo's HTML results page. */
 export async function webSearch(query: string): Promise<string> {
   const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
-    headers: { "user-agent": "Mozilla/5.0 (Linux; Android 15) MausDroid/0.1" },
+    headers: { "user-agent": "Mozilla/5.0 (Linux; Android 15) DanDroid/0.1" },
     signal: AbortSignal.timeout(20_000),
   });
   const html = await res.text();

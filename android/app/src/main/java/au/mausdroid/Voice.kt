@@ -192,7 +192,7 @@ class Voice(private val ctx: Context) {
         return runCatching { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(c.packageName, 0)).toString() }.getOrDefault(c.packageName)
     }
 
-    // The speech service's start / stop beeps: system and notification sounds are muted while MausDroid listens.
+    // The speech service's start / stop beeps: system and notification sounds are muted while DanDroid listens.
     private val quietStreams = intArrayOf(AudioManager.STREAM_SYSTEM, AudioManager.STREAM_NOTIFICATION)
     private val quietCount = java.util.concurrent.atomic.AtomicInteger(0)
     fun beginQuiet() {
@@ -219,7 +219,7 @@ class Voice(private val ctx: Context) {
         recognizer = null
         if (!available()) return l.onError("Speech recognition isn't available on this phone. Install or enable Google's speech services.")
         if (ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED)
-            return l.onError("MausDroid needs microphone permission (Settings → Voice & assistant → Microphone).", SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS)
+            return l.onError("DanDroid needs microphone permission (Settings → Voice & assistant → Microphone).", SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS)
         val r = try {
             if (service != null) SpeechRecognizer.createSpeechRecognizer(ctx, service) else SpeechRecognizer.createSpeechRecognizer(ctx)
         } catch (e: Exception) {
@@ -244,8 +244,8 @@ class Voice(private val ctx: Context) {
                 l.onError(
                     when (error) {
                         SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "I didn't catch that."
-                        // MausDroid has the microphone: it's the speech service itself refusing.
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> if (hasMic()) "This speech service refused to listen for MausDroid (it may not allow other apps or lack its own microphone access)." else "MausDroid needs microphone permission (Settings → Voice & assistant → Microphone)."
+                        // DanDroid has the microphone: it's the speech service itself refusing.
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> if (hasMic()) "This speech service refused to listen for DanDroid (it may not allow other apps or lack its own microphone access)." else "DanDroid needs microphone permission (Settings → Voice & assistant → Microphone)."
                         SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "No connection for speech recognition."
                         SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "The speech service was busy."
                         SpeechRecognizer.ERROR_AUDIO -> "The microphone couldn't be used (another app may be using it)."
@@ -285,7 +285,7 @@ class Voice(private val ctx: Context) {
         fun attempt(i: Int) {
             if (i >= candidates.size) {
                 endQuiet()
-                return l.onError("No speech service on this phone would listen (tried ${failures.joinToString(", ")}). Choose Google in MausDroid → Settings → Voice & assistant → Speech recognition.", -1)
+                return l.onError("No speech service on this phone would listen (tried ${failures.joinToString(", ")}). Choose Google in DanDroid → Settings → Voice & assistant → Speech recognition.", -1)
             }
             val svc = candidates[i]
             listen(object : Listener {
@@ -306,7 +306,7 @@ class Voice(private val ctx: Context) {
 
     /**
      * Recognises recorded speech (16 kHz mono) with the phone's on-device
-     * recognizer: MausDroid's self-check of how clearly it speaks. Offline;
+     * recognizer: DanDroid's self-check of how clearly it speaks. Offline;
      * the audio never leaves the phone. Returns (words, error).
      */
     fun recognizePcm(pcm16k: ShortArray, timeoutSec: Long = 40): Pair<String?, String?> {
@@ -399,7 +399,7 @@ class Voice(private val ctx: Context) {
 
     private fun listenBlockingInner(timeoutSec: Long, silenceMs: Long): Triple<String?, String?, Int> {
         // Problems with the speech service itself (not "didn't catch that") try the next service on the phone.
-        // A service refusing "permission" while MausDroid has the microphone is that service's problem: try the next one.
+        // A service refusing "permission" while DanDroid has the microphone is that service's problem: try the next one.
         val serviceProblem = setOf(SpeechRecognizer.ERROR_CLIENT, SpeechRecognizer.ERROR_SERVER, SpeechRecognizer.ERROR_RECOGNIZER_BUSY, 10, 11, 12, 13) +
             (if (hasMic()) setOf(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) else emptySet())
         val candidates = listOfNotNull(chosen) + (if (preferredSet) listOf(preferred) else emptyList()) + recognizers()
@@ -432,7 +432,7 @@ class Voice(private val ctx: Context) {
             Thread.sleep(200)
         }
         if (failures.size > 1 || (last.third == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS && hasMic()))
-            return Triple(null, "No speech service on this phone would listen for MausDroid (tried ${failures.joinToString(", ")}). Choose Google in Settings → Voice & assistant → Speech recognition.", last.third)
+            return Triple(null, "No speech service on this phone would listen for DanDroid (tried ${failures.joinToString(", ")}). Choose Google in Settings → Voice & assistant → Speech recognition.", last.third)
         return last
     }
 

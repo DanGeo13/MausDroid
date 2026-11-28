@@ -30,7 +30,7 @@ object Diag {
         fun tail(f: File, n: Int) = if (f.exists()) f.readText().takeLast(n) else "(none)"
         return buildString {
             val page = try { android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE) } catch (_: Exception) { -1L }
-            append("MausDroid ${BuildConfig.VERSION_NAME} · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} · page ${page / 1024} KB\n\n")
+            append("DanDroid ${BuildConfig.VERSION_NAME} · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} · page ${page / 1024} KB\n\n")
             append("== App log ==\n").append(tail(file(ctx), 6000)).append("\n\n")
             append("== Engine start-up ==\n").append(tail(engineStatus(ctx), 6000)).append("\n\n")
             append("== Engine output ==\n").append(tail(engineLog(ctx), 8000))

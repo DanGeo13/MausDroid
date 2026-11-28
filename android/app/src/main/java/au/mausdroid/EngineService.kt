@@ -16,7 +16,7 @@ import androidx.core.app.NotificationCompat
 import java.io.File
 
 /**
- * The always-running part of MausDroid (separate ":engine" process). It
+ * The always-running part of DanDroid (separate ":engine" process). It
  * hosts the Node.js engine, the background browser, built-in Tailscale and
  * the updater, as a foreground service so Android keeps it alive while you
  * use other apps or the screen is off.
@@ -57,7 +57,7 @@ class EngineService : Service(), BridgeServer.Hooks {
         }
         tailscale = TailscaleManager(this)
         updater = Updater(this)
-        busyLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MausDroid:busy")
+        busyLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DanDroid:busy")
         val bridgeToken = MausApp.secret(this, "bridge-token")
         try {
             bridge = BridgeServer(this, bridgeToken, { browser }, tailscale, updater, this).also { it.start(30_000, true) }
@@ -73,7 +73,7 @@ class EngineService : Service(), BridgeServer.Hooks {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_HEARTBEAT) {
             // Woken by the alarm (works in Doze): stay awake briefly so routines can run.
-            getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MausDroid:tick").acquire(90_000)
+            getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DanDroid:tick").acquire(90_000)
             scheduleHeartbeat(this)
         }
         return START_STICKY
@@ -83,7 +83,7 @@ class EngineService : Service(), BridgeServer.Hooks {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, MausApp.CH_SERVICE)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("MausDroid is ready")
+            .setContentTitle("DanDroid is ready")
             .setContentText("Your bots keep working in the background")
             .setContentIntent(open)
             .setOngoing(true)

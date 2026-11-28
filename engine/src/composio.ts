@@ -108,7 +108,7 @@ export async function callComposio(name: string, args: unknown) {
   const r = await c.callTool(name.replace(/^composio__/, ""), args);
   // An app that needs your own developer app: tell the bot (and so the person) how to fix it.
   const m = r.text.match(/toolkit ([a-z0-9_]+)[^\n]{0,40}does not manage auth/i);
-  if (m) r.text += `\n\n[MausDroid: ${m[1]} needs the person's own ${m[1]} developer app. Tell them: Settings → Connected apps → ${m[1]} → "Set up sign-in", enter its keys there (never in chat), then connect again.]`;
+  if (m) r.text += `\n\n[DanDroid: ${m[1]} needs the person's own ${m[1]} developer app. Tell them: Settings → Connected apps → ${m[1]} → "Set up sign-in", enter its keys there (never in chat), then connect again.]`;
   return r;
 }
 
@@ -205,7 +205,7 @@ export async function setupCustomAuth(slug: string, mode: string, credentials: R
   const res = await fetch(`${API}/auth_configs`, {
     method: "POST",
     headers: headers(key, true),
-    body: JSON.stringify({ toolkit: { slug }, auth_config: { type: "use_custom_auth", authScheme: mode, credentials: clean, name: `MausDroid ${slug}`, is_enabled_for_tool_router: true } }),
+    body: JSON.stringify({ toolkit: { slug }, auth_config: { type: "use_custom_auth", authScheme: mode, credentials: clean, name: `DanDroid ${slug}`, is_enabled_for_tool_router: true } }),
     signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`Composio didn't accept these details: ${await responseError(res)}`);

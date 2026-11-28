@@ -98,11 +98,11 @@ export function assistantExamples(days = 7) {
 export const REVIEW_PROMPT = (items: PhoneNotification[]) => `Review these notifications from Meta's Muse assistant (${items.length}; ${items.filter((n) => n.pending).length} were still pending). They show what a quality digital assistant anticipates for the person.
 
 1. Work out the kinds of needs Muse anticipates (reminders, follow-ups, plans, nudges…), when it sends them, and how it words them.
-2. Compare with MausDroid's routines (routine_admin_list) and bots (bot_list): what does MausDroid not anticipate yet?
+2. Compare with DanDroid's routines (routine_admin_list) and bots (bot_list): what does DanDroid not anticipate yet?
 3. Suggest the few most useful changes with improve_propose (at most 5; new routines for Maus, better wording or timing) — don't change things now, the person approves the cards.
 4. Save 3–6 short "assistant quality notes" with memory_save (scope "bot") so future checks keep them in mind.
-5. Reply with a short summary: what Muse anticipates, what MausDroid now suggests doing.
-MausDroid only reads these notifications; it never acts in Meta's apps.
+5. Reply with a short summary: what Muse anticipates, what DanDroid now suggests doing.
+DanDroid only reads these notifications; it never acts in Meta's apps.
 
 Notifications (newest first):
 ${items.map((n) => `- ${n.postedAt}${n.pending ? " (pending)" : ""}: ${n.title} — ${clip(n.text.replace(/\s+/g, " "), 300)}`).join("\n")}`;

@@ -116,7 +116,7 @@ async function resolveTarget(target?: { accountId?: string; calendarId?: string;
     if (!hit) throw new Error(`No calendar called "${target.name ?? target.calendarId}". Use calendar_list to see them.`);
     return { accountId: hit.accountId, calendarId: hit.calendarId };
   }
-  if (!dest) throw new Error("No destination calendar chosen. Pick one in Settings → Connected apps → Calendars (MausDroid never guesses the default calendar).");
+  if (!dest) throw new Error("No destination calendar chosen. Pick one in Settings → Connected apps → Calendars (DanDroid never guesses the default calendar).");
   return { accountId: dest.accountId, calendarId: dest.calendarId };
 }
 
@@ -198,7 +198,7 @@ export async function testWrite(target?: { accountId?: string; calendarId?: stri
   const { accountId, calendarId } = await resolveTarget(target);
   const start = new Date(Date.now() + 400 * 86400_000);
   start.setUTCHours(3, 0, 0, 0);
-  const ev: NewEvent = { summary: `MausDroid write test ${start.getTime().toString(36)}`, start: start.toISOString(), durationMinutes: 15, description: "Automatic permission check; deleted straight away." };
+  const ev: NewEvent = { summary: `DanDroid write test ${start.getTime().toString(36)}`, start: start.toISOString(), durationMinutes: 15, description: "Automatic permission check; deleted straight away." };
   let ok = false;
   let detail: string;
   try {

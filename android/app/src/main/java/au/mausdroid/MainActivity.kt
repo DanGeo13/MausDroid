@@ -51,10 +51,10 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             Diag.log(this, "could not start engine service: $e")
         }
-        window.statusBarColor = Color.parseColor("#0B0D12")
-        window.navigationBarColor = Color.parseColor("#0B0D12")
+        window.statusBarColor = Color.parseColor("#0B1110")
+        window.navigationBarColor = Color.parseColor("#0B1110")
         web = WebView(this)
-        web.setBackgroundColor(Color.parseColor("#0B0D12"))
+        web.setBackgroundColor(Color.parseColor("#0B1110"))
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         // Always load the current engine's screens, never ones saved from an older version.
@@ -112,7 +112,7 @@ class MainActivity : Activity() {
         waitForEngine()
     }
 
-    private val bg = Color.parseColor("#0B0D12")
+    private val bg = Color.parseColor("#0B1110")
     private var waiting = false
 
     private fun showSplash() {
@@ -125,7 +125,7 @@ class MainActivity : Activity() {
                 layoutParams = LinearLayout.LayoutParams(dp(96), dp(96))
             })
             addView(TextView(context).apply {
-                text = "MausDroid"
+                text = "DanDroid"
                 setTextColor(Color.WHITE)
                 textSize = 24f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -204,7 +204,7 @@ class MainActivity : Activity() {
             setPadding(dp(8), 0, dp(8), dp(8))
             addView(btn("Try again") { restartEngine() })
             addView(btn("Copy report") {
-                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("MausDroid report", Diag.report(this@MainActivity)))
+                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("DanDroid report", Diag.report(this@MainActivity)))
                 Toast.makeText(this@MainActivity, "Copied — paste it to Claude", Toast.LENGTH_SHORT).show()
             })
             addView(btn("Share report") {
@@ -212,7 +212,7 @@ class MainActivity : Activity() {
             })
         }
         val title = TextView(this).apply {
-            this.text = "MausDroid is taking too long to start"
+            this.text = "DanDroid is taking too long to start"
             setTextColor(Color.WHITE)
             textSize = 18f
             setPadding(dp(16), dp(48), dp(16), dp(4))
@@ -263,7 +263,7 @@ class MainActivity : Activity() {
         if (p == "granted") return
         if (p == "permanently_denied") {
             DeviceSettings.open(this, "app")
-            Toast.makeText(this, "Location is blocked for MausDroid. Allow it under Permissions → Location.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Location is blocked for DanDroid. Allow it under Permissions → Location.", Toast.LENGTH_LONG).show()
             return
         }
         requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION), 12)
@@ -303,7 +303,7 @@ class MainActivity : Activity() {
     private var pendingPhoto: java.io.File? = null
     private var pendingVideo: java.io.File? = null
 
-    /** The phone's camera app, saving into MausDroid's cache (no camera permission needed). */
+    /** The phone's camera app, saving into DanDroid's cache (no camera permission needed). */
     private fun cameraIntent(video: Boolean): Intent? {
         val i = Intent(if (video) MediaStore.ACTION_VIDEO_CAPTURE else MediaStore.ACTION_IMAGE_CAPTURE)
         if (i.resolveActivity(packageManager) == null) return null
@@ -385,7 +385,7 @@ class MainActivity : Activity() {
         fileCallback = null
     }
 
-    /** Files and links shared to MausDroid from any app: saved, then "which bot?" opens. */
+    /** Files and links shared to DanDroid from any app: saved, then "which bot?" opens. */
     private fun handleShare(intent: Intent?) {
         if (intent == null || (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE)) return
         val uris = mutableListOf<Uri>()
@@ -438,7 +438,7 @@ class MainActivity : Activity() {
     private var lastBackAt = 0L
 
     /**
-     * Phone Back button / back gesture: go back one screen inside MausDroid.
+     * Phone Back button / back gesture: go back one screen inside DanDroid.
      * On the home screen, the first press only shows a hint; a second press
      * within 2 seconds leaves (the bots keep working in the background).
      */
@@ -453,7 +453,7 @@ class MainActivity : Activity() {
     private fun leaveOrHint() {
         val now = System.currentTimeMillis()
         if (now - lastBackAt < 2000) {
-            moveTaskToBack(true) // never closes MausDroid; it just goes to the background
+            moveTaskToBack(true) // never closes DanDroid; it just goes to the background
         } else {
             lastBackAt = now
             Toast.makeText(this, "Press back again to leave — your bots keep working", Toast.LENGTH_SHORT).show()

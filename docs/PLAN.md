@@ -1,4 +1,4 @@
-# MausDroid plan (agreed scope)
+# DanDroid plan (agreed scope)
 
 Three phases, each tested on the Poco F8 before the next.
 
@@ -42,4 +42,4 @@ self-updating (signed OTA + rollback).
 - Sideloaded APK targeting Android API 28 (needed to run Claude Code/Codex
   and Tailscale on the phone). Not for Google Play.
 - Updates are fetched from the public `updates` branch of this repo and must
-  be signed with the MausDroid update key.
+  be signed with the DanDroid update key.

@@ -6,7 +6,7 @@ import { Writable } from "node:stream";
 
 /** Downloads a URL to a file (streamed), reporting progress. Uses the engine's fetch. */
 export async function download(url: string, file: string, onProgress?: (done: number, total: number) => void): Promise<void> {
-  const res = await fetch(url, { headers: { "user-agent": "MausDroid" } });
+  const res = await fetch(url, { headers: { "user-agent": "DanDroid" } });
   if (!res.ok || !res.body) throw new Error(`Download failed (HTTP ${res.status}) for ${url}`);
   const total = Number(res.headers.get("content-length") ?? 0);
   fs.mkdirSync(path.dirname(file), { recursive: true });

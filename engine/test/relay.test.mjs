@@ -49,7 +49,7 @@ test("website relay: QR pairing + password", async (t) => {
       }
       await new Promise((r) => setTimeout(r, 500));
     }
-    assert.match(page, /MausDroid/, "UI served through relay");
+    assert.match(page, /DanDroid/, "UI served through relay");
 
     // Not paired: refused.
     assert.equal((await fetch(base + "api/state")).status, 401);
@@ -94,7 +94,7 @@ test("website relay: the PC shows a QR, the phone scans it (or types the code)",
   };
   const pcPage = async () => {
     const html = await (await fetch(RELAY + "/")).text();
-    assert.match(html, /Link this device to MausDroid/);
+    assert.match(html, /Link this device to DanDroid/);
     assert.match(html, /<svg/, "shows a QR code");
     return html.match(/const code="([A-Z0-9]{8})"/)[1];
   };

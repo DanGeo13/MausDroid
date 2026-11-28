@@ -1,4 +1,4 @@
-# MausDroid computer companion
+# DanDroid computer companion
 
 A backup for when a subscription can't run on the phone itself: your
 phone's bots use **Claude Code** (Claude) and **Codex** (ChatGPT) on your computer — signed in with your own accounts, no API

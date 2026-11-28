@@ -1,5 +1,5 @@
 // Setting up cloud builds from the phone: the official Claude program makes a
-// cloud key (stand-in here), MausDroid encrypts it with the repository's key
+// cloud key (stand-in here), DanDroid encrypts it with the repository's key
 // and saves it as a GitHub secret; the checklist shows what's there.
 import { test } from "node:test";
 import assert from "node:assert/strict";

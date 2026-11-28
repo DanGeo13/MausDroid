@@ -4,7 +4,7 @@ import { api, listen, type EngineEvent } from "./api.ts";
 import { Avatar, Chat } from "./chat.tsx";
 import { BotEditor, Settings, toast } from "./settings.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
-import { IconBell, IconGear, IconInbox, IconLink, IconPlus, IconSearch } from "./icons.tsx";
+import { IconBell, IconGear, IconInbox, IconLink, IconNews, IconPlus, IconSearch, IconWrench } from "./icons.tsx";
 import { applyAppearance, loadAppearance } from "./appearance.ts";
 import { fileIcon, type Attachment } from "./files.ts";
 import { Briefing } from "./briefing.tsx";
@@ -15,6 +15,9 @@ import { Resources } from "./resources.tsx";
 import { Alerts } from "./alerts.tsx";
 
 applyAppearance(loadAppearance());
+
+/** A one-line preview without Markdown marks (links keep their words). */
+const plainPreview = (t: string) => t.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*_`#>~]+/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
 
 function when(iso?: string) {
   if (!iso) return "";
@@ -65,7 +68,7 @@ function Home({ poll }: { poll: boolean }) {
   const [voiceOk, setVoiceOk] = useState(false);
   // Location indicator: who is using location right now (or just did).
   const [loc, setLoc] = useState<{ state: "active" | "done"; requester: string; outcome?: string } | null>(null);
-  // Files/text shared to MausDroid from another app, waiting for "which bot?".
+  // Files/text shared to DanDroid from another app, waiting for "which bot?".
   const [shared, setShared] = useState<{ attachments: Attachment[]; text?: string } | null>(null);
   const [initial, setInitial] = useState<{ botId: string; text?: string; attachments?: Attachment[] } | null>(null);
   const viewRef = useRef(view);
@@ -188,7 +191,7 @@ function Home({ poll }: { poll: boolean }) {
               {fileIcon(a)} <span class="fname">{a.name}</span>
             </span>
           ))}
-          {shared.text ? <span class="file-chip">🔗 <span class="fname">{shared.text}</span></span> : null}
+          {shared.text ? <span class="file-chip"><IconLink /> <span class="fname">{shared.text}</span></span> : null}
         </div>
         {sorted.map((b) => (
           <button
@@ -222,7 +225,7 @@ function Home({ poll }: { poll: boolean }) {
       <div class="sidebar">
         <div class="topbar">
           <h1 class="brand">
-            <img src="icon.svg" alt="" /> MausDroid
+            <img src="icon.svg" alt="" /> Dan<span class="tag">Droid</span>
           </h1>
           <button class="icon-btn" title="Reply Desk" aria-label={`Reply Desk${pendingReplies ? `, ${pendingReplies} waiting` : ""}`} onClick={() => setView({ kind: "replydesk" })}>
             <IconInbox />
@@ -232,10 +235,10 @@ function Home({ poll }: { poll: boolean }) {
             <IconLink />
           </button>
           <button class="icon-btn" title="Morning Brief" aria-label="Morning Brief" onClick={() => setView({ kind: "briefing" })}>
-            📰
+            <IconNews />
           </button>
           <button class="icon-btn" title="Improvements" aria-label="Improvements" onClick={() => setView({ kind: "improve" })}>
-            🛠️
+            <IconWrench />
           </button>
           <button class="icon-btn" title="Notifications" aria-label={`Notifications${unreadAlerts ? `, ${unreadAlerts} need you` : ""}`} onClick={() => setView({ kind: "alerts" })}>
             <IconBell />
@@ -272,7 +275,7 @@ function Home({ poll }: { poll: boolean }) {
                       </div>
                       <div class="top">
                         <span class={`preview ${b.busy ? "working" : ""}`} style={{ flex: 1 }}>
-                          {b.busy ? "working…" : b.last ? `${b.last.role === "user" ? "You: " : ""}${b.last.text.replace(/\s+/g, " ").slice(0, 80)}` : b.persona.slice(0, 80)}
+                          {b.busy ? "working…" : b.last ? `${b.last.role === "user" ? "You: " : ""}${plainPreview(b.last.text)}` : b.persona.slice(0, 80)}
                         </span>
                         {cards.some((c) => c.botId === b.id) ? <span class="badge warn">!</span> : b.unread ? <span class="badge">{b.unread}</span> : null}
                       </div>
@@ -343,7 +346,7 @@ function Onboarding({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
   const steps = [
     {
-      title: "Welcome to MausDroid",
+      title: "Welcome to DanDroid",
       body: "Your own team of AI bots, running on this phone. They can research, use your apps, work in a background browser and alert you when something matters — and they ask before anything risky.",
     },
     {
@@ -418,12 +421,12 @@ function RemoteGate() {
     <div class="center">
       <div class="box">
         <img class="hero-logo" src="icon.svg" alt="" />
-        <h2>MausDroid</h2>
+        <h2>DanDroid</h2>
         {stage === "pair" ? (
-          <p class="muted">Open MausDroid on your phone → Settings → Website &amp; devices → Show QR code, and scan it with this device.</p>
+          <p class="muted">Open DanDroid on your phone → Settings → Website &amp; devices → Show QR code, and scan it with this device.</p>
         ) : (
           <>
-            <p class="muted">This device is linked. Enter your MausDroid password.</p>
+            <p class="muted">This device is linked. Enter your DanDroid password.</p>
             <input type="password" value={pw} onInput={(e) => setPw((e.target as HTMLInputElement).value)} autofocus />
             <button
               class="btn"

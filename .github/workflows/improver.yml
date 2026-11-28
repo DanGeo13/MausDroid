@@ -1,4 +1,4 @@
-# Improver's cloud builds: MausDroid's Improver bot (on the phone) starts this
+# Improver's cloud builds: DanDroid's Improver bot (on the phone) starts this
 # with a change request. Claude Code makes the change, every test runs (like
 # on the phone), and a pull request is opened. Installing it (merging, from
 # the phone) runs release.yml, which publishes a signed engine update.
@@ -7,7 +7,7 @@
 # APK); the Android app, signing, the website relay, build scripts and these
 # workflows can't be touched, and no dependencies can be added.
 #
-# The coding platform is chosen in MausDroid (Improvements → Settings):
+# The coding platform is chosen in DanDroid (Improvements → Settings):
 #   claude — Claude Code. Secret: CLAUDE_CODE_OAUTH_TOKEN (run `claude setup-token`
 #            on a computer signed in to your Claude subscription, paste the result).
 #   codex  — OpenAI Codex. Secret: CODEX_AUTH_JSON (your ChatGPT subscription: the
@@ -79,7 +79,7 @@ jobs:
           ATTEMPT: ${{ inputs.attempt }}
         run: |
           cat > .improver-prompt.md <<'RULES'
-          You are improving MausDroid, a phone app (Android shell + a Node.js engine with a Preact UI). Make exactly the change requested below.
+          You are improving DanDroid, a phone app (Android shell + a Node.js engine with a Preact UI). Make exactly the change requested below.
 
           Rules:
           - Change only files under engine/src, engine/test, ui/src and ui/public. Never touch android/, relay/, scripts/, companion/, tsbridge/, .github/, version.json or any package.json — no new dependencies.
@@ -175,9 +175,9 @@ jobs:
           git checkout -B "improve/$ID"
           git add engine/src engine/test ui/src ui/public version.json
           TITLE=$(printf '%s' "$REQUEST" | head -n1 | cut -c1-70)
-          git commit -qm "Improver: $TITLE" -m "Requested from MausDroid's Improver ($ID)."
+          git commit -qm "Improver: $TITLE" -m "Requested from DanDroid's Improver ($ID)."
           git push -qf origin "improve/$ID"
           git push -q origin --delete "improve/$ID-questions" 2>/dev/null || true
-          printf 'Built by Claude Code from a request made through MausDroid'"'"'s Improver (%s). All tests passed.\n\n<details><summary>Request</summary>\n\n%s\n\n</details>\n' "$ID" "$REQUEST" > /tmp/body.md
-          # GitHub may not let its own runs open pull requests (a repository setting); MausDroid then opens it from the phone.
-          gh pr create --base main --head "improve/$ID" --title "Improver: $TITLE" --body-file /tmp/body.md || echo "::notice::Branch improve/$ID is ready; MausDroid opens the pull request."
+          printf 'Built by Claude Code from a request made through DanDroid'"'"'s Improver (%s). All tests passed.\n\n<details><summary>Request</summary>\n\n%s\n\n</details>\n' "$ID" "$REQUEST" > /tmp/body.md
+          # GitHub may not let its own runs open pull requests (a repository setting); DanDroid then opens it from the phone.
+          gh pr create --base main --head "improve/$ID" --title "Improver: $TITLE" --body-file /tmp/body.md || echo "::notice::Branch improve/$ID is ready; DanDroid opens the pull request."

@@ -163,7 +163,7 @@ function Editor({ bots, routine, onDone }: { bots: Bot[]; routine?: any; onDone:
               <option value="phone-notification">Phone notifications</option>
               <option value="routine-result">Routine results</option>
               <option value="external">From other apps</option>
-              <option value="share">Things I share to MausDroid</option>
+              <option value="share">Things I share to DanDroid</option>
             </select>
             <select value={aPriority} onChange={(e) => setAPriority(v(e))}>
               <option value="low">Any priority</option>

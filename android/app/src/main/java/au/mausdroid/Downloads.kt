@@ -10,7 +10,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Saves a file to the phone's Downloads folder (Download/MausDroid) so any
+ * Saves a file to the phone's Downloads folder (Download/DanDroid) so any
  * app's file picker can find it, then checks the saved copy's size.
  */
 object Downloads {
@@ -23,7 +23,7 @@ object Downloads {
     fun save(ctx: Context, path: String, name: String, mime: String, folder: String): JSONObject {
         val src = File(path)
         if (!src.isFile) throw IllegalArgumentException("File not found.")
-        val safeFolder = folder.replace(Regex("[^A-Za-z0-9 _-]"), "").ifBlank { "MausDroid" }
+        val safeFolder = folder.replace(Regex("[^A-Za-z0-9 _-]"), "").ifBlank { "DanDroid" }
         val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), " ").trim().ifBlank { src.name }
         if (Build.VERSION.SDK_INT >= 29) {
             val resolver = ctx.contentResolver

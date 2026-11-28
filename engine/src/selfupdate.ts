@@ -5,7 +5,7 @@ import { getSecret } from "./secrets.ts";
 import { clip } from "./util.ts";
 
 /**
- * Self-improvement of MausDroid's own program:
+ * Self-improvement of DanDroid's own program:
  *  - builds: Improver asks a Claude Code session in the cloud (GitHub
  *    Actions, .github/workflows/improver.yml) to make a change; it edits the
  *    source, runs every test and opens a pull request. Installing it (merging)
@@ -13,7 +13,7 @@ import { clip } from "./util.ts";
  *  - rollback: switch back to any earlier engine version kept on the phone,
  *    instantly. (An update that doesn't start is rolled back automatically.)
  */
-export const CODE_REPO = process.env.MAUSDROID_CODE_REPO ?? "DanGeo13/MausDroid";
+export const CODE_REPO = process.env.MAUSDROID_CODE_REPO ?? "DanGeo13/DanDroid";
 const GH = process.env.MAUSDROID_GITHUB_API ?? "https://api.github.com";
 const WORKFLOW = "improver.yml";
 
@@ -50,7 +50,7 @@ let restarting = false;
 /**
  * Goes back to an earlier engine (default: the newest one older than the
  * running one). The running version is set aside so it isn't downloaded
- * again; MausDroid restarts in a couple of seconds.
+ * again; DanDroid restarts in a couple of seconds.
  */
 export function rollBack(to?: string): { from: string; to: string } {
   const root = enginesRoot();
@@ -76,8 +76,8 @@ export function rollBack(to?: string): { from: string; to: string } {
 
 function gh(p: string, init: RequestInit = {}) {
   const token = getSecret("github");
-  if (!token) throw new Error("Save a GitHub token first (Settings → Memory → GitHub token) with access to the MausDroid repository (Actions, Contents and Pull requests: read and write).");
-  return fetch(`${GH}${p}`, { ...init, headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "MausDroid-improver", "content-type": "application/json", ...(init.headers ?? {}) }, signal: AbortSignal.timeout(30_000) });
+  if (!token) throw new Error("Save a GitHub token first (Settings → Memory → GitHub token) with access to the DanDroid repository (Actions, Contents and Pull requests: read and write).");
+  return fetch(`${GH}${p}`, { ...init, headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "DanDroid-improver", "content-type": "application/json", ...(init.headers ?? {}) }, signal: AbortSignal.timeout(30_000) });
 }
 
 async function ghJson(p: string, init: RequestInit = {}) {
@@ -149,7 +149,7 @@ export async function buildState(id: string, attempt = 1, title = ""): Promise<B
   if (run && run.status === "completed" && run.conclusion === "success") {
     const br = await gh(`/repos/${CODE_REPO}/branches/${encodeURIComponent(`improve/${id}`)}`);
     if (br.ok) {
-      const created = await ghJson(`/repos/${CODE_REPO}/pulls`, { method: "POST", body: JSON.stringify({ title: `Improver: ${clip(title || id, 70)}`, head: `improve/${id}`, base: "main", body: `Built by the cloud coding agent from a request made through MausDroid's Improver (${id}). All tests passed.` }) });
+      const created = await ghJson(`/repos/${CODE_REPO}/pulls`, { method: "POST", body: JSON.stringify({ title: `Improver: ${clip(title || id, 70)}`, head: `improve/${id}`, base: "main", body: `Built by the cloud coding agent from a request made through DanDroid's Improver (${id}). All tests passed.` }) });
       return { state: "ready", prNumber: created.number, prUrl: created.html_url };
     }
   }

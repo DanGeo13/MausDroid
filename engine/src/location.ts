@@ -29,9 +29,9 @@ export const recentLocationUses = () => log.get().slice().reverse().slice(0, 30)
 export const activeLocationRequests = () => [...active.entries()].map(([id, a]) => ({ id, ...a }));
 
 const MESSAGES: Record<string, string> = {
-  permission_not_requested: "Location permission hasn't been given. The person can allow it in Settings → Phone → Location (MausDroid never turns it on by itself).",
+  permission_not_requested: "Location permission hasn't been given. The person can allow it in Settings → Phone → Location (DanDroid never turns it on by itself).",
   permission_denied: "The person said no to location access.",
-  permission_permanently_denied: "Location is blocked for MausDroid in Android settings. The person can allow it under App info → Permissions → Location.",
+  permission_permanently_denied: "Location is blocked for DanDroid in Android settings. The person can allow it under App info → Permissions → Location.",
   location_off: "Location is turned off on the phone.",
   no_provider: "No location provider is available on the phone.",
   unavailable: "The phone couldn't get a location fix right now.",

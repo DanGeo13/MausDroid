@@ -187,7 +187,7 @@ export function tick(at = new Date()) {
 /** After a restart: runs that were in progress are marked failed (and retried if allowed). */
 export function recoverAfterRestart() {
   for (const run of listRuns(undefined, 300)) {
-    if (run.status === "queued" || run.status === "running") finish(run.id, "failed", "MausDroid restarted during this run.");
+    if (run.status === "queued" || run.status === "running") finish(run.id, "failed", "DanDroid restarted during this run.");
   }
 }
 

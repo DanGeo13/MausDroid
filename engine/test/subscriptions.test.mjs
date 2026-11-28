@@ -98,7 +98,7 @@ echo '{"type":"result","is_error":false,"session_id":"c1"}'
     await call(`/api/bots/${bots[0].id}/messages`, "POST", { text: "look", attachments: [pic.id] });
     await until(async () => (await call(`/api/bots/${bots[0].id}/messages`)).some((m) => m.text === "I can open the picture"), "codex got the picture");
 
-    // A saved conversation Codex no longer has: MausDroid starts a fresh one by itself.
+    // A saved conversation Codex no longer has: DanDroid starts a fresh one by itself.
     await call(`/api/bots/${bots[0].id}`, "PATCH", { cliSession: "stale-thread" });
     const before = (await call(`/api/bots/${bots[0].id}/messages`)).length;
     await call(`/api/bots/${bots[0].id}/messages`, "POST", { text: "still there?" });

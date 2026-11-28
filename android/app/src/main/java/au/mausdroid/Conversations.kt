@@ -7,7 +7,7 @@ import android.net.Uri
 
 /**
  * Opening conversations and handing text to other apps — always with the
- * person in control: MausDroid never presses Send in another app.
+ * person in control: DanDroid never presses Send in another app.
  *  - "Open conversation": the notification's own action (exact chat) when it's
  *    still known, otherwise the app itself.
  *  - WhatsApp: the draft prefilled (they choose the chat, review, send).
@@ -30,7 +30,7 @@ object Conversations {
 
     fun installed(ctx: Context, pkg: String) = runCatching { ctx.packageManager.getPackageInfo(pkg, 0); true }.getOrDefault(false)
 
-    fun copy(ctx: Context, text: String, label: String = "MausDroid") {
+    fun copy(ctx: Context, text: String, label: String = "DanDroid") {
         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
         cm.setPrimaryClip(android.content.ClipData.newPlainText(label, text))
     }

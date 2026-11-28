@@ -1,4 +1,4 @@
-# MausDroid upgrade plan: routines, calendar, Morning Brief, audit, location
+# DanDroid upgrade plan: routines, calendar, Morning Brief, audit, location
 
 Branch: `feature/routines-calendar-brief` (not merged to `main` until approved).
 

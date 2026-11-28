@@ -10,11 +10,11 @@ import { isSignedIn, programCommand, programEnv, workDir, SUBS, type SubId } fro
 
 /**
  * Subscription engines: the official Claude Code and Codex programs, signed in with your own account. They run their own agent loop;
- * MausDroid gives them its tools (browser, connected apps, alerts…) over MCP
+ * DanDroid gives them its tools (browser, connected apps, alerts…) over MCP
  * and turns their permission prompts into approval cards.
  *
  * Where: on this phone first; if that isn't possible, on your computer
- * through the MausDroid companion (when one is set up).
+ * through the DanDroid companion (when one is set up).
  */
 export interface CliRun {
   engine: "claude" | "codex";
@@ -43,15 +43,15 @@ export interface CliEvent {
 
 const engineFor = (sub: SubId): CliRun["engine"] => (sub === "chatgpt" ? "codex" : "claude");
 
-/** Tools Claude Code may use without asking: all of MausDroid's (it gates them itself) and its own read-only ones. */
+/** Tools Claude Code may use without asking: all of DanDroid's (it gates them itself) and its own read-only ones. */
 export const CLI_ALLOWED_TOOLS = ["mcp__mausdroid", "Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "TodoWrite", "NotebookRead"];
-/** Claude Code's own tools that could change things outside MausDroid's approvals: off. */
+/** Claude Code's own tools that could change things outside DanDroid's approvals: off. */
 export const CLI_DISALLOWED_TOOLS = ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "KillShell", "BashOutput"];
 const CLI_READ_ONLY = new Set(CLI_ALLOWED_TOOLS.filter((t) => t !== "mcp__mausdroid"));
 
 /**
- * When Claude Code asks permission for a tool anyway: MausDroid's tools and
- * read-only tools are allowed (MausDroid's own gate still checks its tools);
+ * When Claude Code asks permission for a tool anyway: DanDroid's tools and
+ * read-only tools are allowed (DanDroid's own gate still checks its tools);
  * anything else (running commands, editing files) asks the person once.
  */
 export function cliPermission(toolName: string): "allow" | "ask" {
@@ -67,7 +67,7 @@ export function cliArgs(run: CliRun): string[] {
     const args = ["-p", run.prompt, "--output-format", "stream-json", "--verbose", "--mcp-config", mcp,
       "--append-system-prompt", run.systemPrompt, "--include-partial-messages",
       // One approval layer: Claude Code doesn't ask (its own prompts got in the way of simple reads);
-      // MausDroid's tools ask you themselves when something would be sent, changed, deleted, bought or posted.
+      // DanDroid's tools ask you themselves when something would be sent, changed, deleted, bought or posted.
       // Claude Code's own command-running and file-writing tools are switched off entirely.
       "--permission-mode", "bypassPermissions", "--disallowedTools", ...CLI_DISALLOWED_TOOLS,
       "--allowedTools", ...CLI_ALLOWED_TOOLS];
@@ -76,11 +76,11 @@ export function cliArgs(run: CliRun): string[] {
     return args;
   }
   const args = ["exec", ...(run.resume ? ["resume", run.resume] : []), "--json", "--skip-git-repo-check",
-    // Connected apps for MausDroid bots must go through the phone's approval layer.
+    // Connected apps for DanDroid bots must go through the phone's approval layer.
     "--disable", "apps",
     "-c", `mcp_servers.mausdroid.url=${JSON.stringify(run.mcpUrl)}`,
     "-c", 'mcp_servers.mausdroid.bearer_token_env_var="MAUSDROID_MCP_TOKEN"',
-    // MausDroid checks the bot's current permissions on each call. Codex exec can't show approval prompts.
+    // DanDroid checks the bot's current permissions on each call. Codex exec can't show approval prompts.
     "-c", 'mcp_servers.mausdroid.default_tools_approval_mode="approve"',
     "-c", "mcp_servers.mausdroid.tool_timeout_sec=600"];
   if (run.model && run.model !== "default") args.push("-m", run.model);
@@ -89,7 +89,7 @@ export function cliArgs(run: CliRun): string[] {
   return args;
 }
 
-/** Turns one line of the program's JSON output into MausDroid events. */
+/** Turns one line of the program's JSON output into DanDroid events. */
 export function parseCliLine(engine: CliRun["engine"], line: string, acc: { text: string }): CliEvent[] {
   let ev: any;
   try {

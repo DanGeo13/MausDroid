@@ -18,8 +18,8 @@ test("improver: setup, max 5, refusals, approve / not now / dismiss, code hand-o
   const m = await fakeModel(async (body) => {
     const sys = JSON.stringify(body.messages?.[0] ?? "");
     const last = body.messages?.[body.messages.length - 1];
-    if (/MausDroid's self-improvement bot/.test(sys) && mode === "apply") return { text: "Made branch improve/retry-note with the fix and a test. Nothing pushed." };
-    if (!/MausDroid's self-improvement bot/.test(sys)) return { text: "hello" };
+    if (/DanDroid's self-improvement bot/.test(sys) && mode === "apply") return { text: "Made branch improve/retry-note with the fix and a test. Nothing pushed." };
+    if (!/DanDroid's self-improvement bot/.test(sys)) return { text: "hello" };
     if (mode === "lazy") return { text: "All good!" };
     if (last?.role !== "tool" && step > 0) step = 0;
     step++;

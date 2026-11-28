@@ -1,6 +1,6 @@
 // Writes dist/updates/update.json: a signed description of the newest
 // engine (and optionally APK). The app refuses anything not signed with the
-// MausDroid update key. Usage:
+// DanDroid update key. Usage:
 //   MAUSDROID_UPDATE_KEY=path/to/update-signing-key.pem node scripts/publish-update.mjs [apk-path]
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -11,9 +11,9 @@ const signingKey = crypto.createPrivateKey(keyPem);
 const signingPublicKey = crypto.createPublicKey(signingKey).export({ format: "der", type: "spki" });
 const trustedPublicKey = Buffer.from(fs.readFileSync("updates-public-key.txt", "utf8").trim(), "base64");
 if (!signingPublicKey.equals(trustedPublicKey)) {
-  throw new Error("The update signing key does not match the key trusted by installed MausDroid apps.");
+  throw new Error("The update signing key does not match the key trusted by installed DanDroid apps.");
 }
-const raw = "https://raw.githubusercontent.com/DanGeo13/MausDroid/updates";
+const raw = "https://raw.githubusercontent.com/DanGeo13/DanDroid/updates";
 const sha = (f) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
 const zip = `dist/updates/engine-${v.engine}.zip`;
 const payload = {
@@ -23,8 +23,8 @@ const payload = {
 const apk = process.argv[2];
 if (apk) {
   const [a, b, c] = v.apk.split(".").map(Number);
-  fs.copyFileSync(apk, `dist/updates/MausDroid-${v.apk}.apk`);
-  payload.apk = { versionName: v.apk, versionCode: a * 10000 + b * 100 + c, url: `${raw}/MausDroid-${v.apk}.apk`, sha256: sha(apk) };
+  fs.copyFileSync(apk, `dist/updates/DanDroid-${v.apk}.apk`);
+  payload.apk = { versionName: v.apk, versionCode: a * 10000 + b * 100 + c, url: `${raw}/DanDroid-${v.apk}.apk`, sha256: sha(apk) };
 }
 // Engine-only release: keep offering the APK from the previous manifest.
 if (!apk && process.env.KEEP_APK_FROM && fs.existsSync(process.env.KEEP_APK_FROM)) {

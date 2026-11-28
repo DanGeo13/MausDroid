@@ -15,7 +15,7 @@ Not merged to `main` and not published to phones (awaiting approval).
 | F | `device_location` (fused provider, permission states, freshness, accuracy, stale marking, no fabricated coordinates, no history), 📍 indicator naming the requester, location settings; geofence kind modelled, refused until activation, events already drive Upon Alert routines |
 
 ## Partially completed / blocked
-- **Wiki:** needs the private repo `DanGeo13/mausdroid-routine-wiki` to exist and a fine-grained GitHub token (Contents read/write on that repo) saved in Settings → Memory. MausDroid won't create it or write to a public repo. Notion fallback is not implemented.
+- **Wiki:** needs the private repo `DanGeo13/mausdroid-routine-wiki` to exist and a fine-grained GitHub token (Contents read/write on that repo) saved in Settings → Memory. DanDroid won't create it or write to a public repo. Notion fallback is not implemented.
 - **Composio tool slugs/inputs** (Calendar, Drive, Sheets) are read from Composio at run time, but were tested only against a stand-in; first real run on the phone may need small adjustments.
 - **CMW term dates** must be entered and confirmed by you (Morning Brief → Settings); none are assumed.
 - **Geofence activation** intentionally off (see docs/GEOFENCE.md).
@@ -26,7 +26,7 @@ Not merged to `main` and not published to phones (awaiting approval).
 Upon Alert (type/source/priority/contains, duplicate protection) · Once a Day (time, zone) · Once a Week (weekdays, time, zone, missed-run policy) · Custom (interval ≥15 min, specific dates, every N days at times/weekdays, window, conditions).
 
 ## New MCP / bot tools
-routine_create, routine_list, routine_update*, routine_delete*, routine_run_now, routine_history, routine_pause, routine_resume, calendar_list, calendar_create_event*, morning_brief_prepare, morning_brief_publish, audit_begin, audit_score, audit_file_overflow, audit_finish, skills_market_search, device_location* (\* always asks; can be always-allowed per bot by type). Available to API bots and to Claude Code/Codex through MausDroid's MCP server.
+routine_create, routine_list, routine_update*, routine_delete*, routine_run_now, routine_history, routine_pause, routine_resume, calendar_list, calendar_create_event*, morning_brief_prepare, morning_brief_publish, audit_begin, audit_score, audit_file_overflow, audit_finish, skills_market_search, device_location* (\* always asks; can be always-allowed per bot by type). Available to API bots and to Claude Code/Codex through DanDroid's MCP server.
 
 ## Permissions
 New Android: ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION (asked only from Settings). Existing: RECORD_AUDIO etc. No background-location permission requested.

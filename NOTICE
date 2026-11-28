@@ -1,7 +1,7 @@
-MausDroid
-Copyright 2026 the MausDroid authors. Licensed under the Apache License 2.0.
+DanDroid
+Copyright 2026 the DanDroid authors. Licensed under the Apache License 2.0.
 
-MausDroid is an Android adaptation inspired by and following the design of
+DanDroid is an Android adaptation inspired by and following the design of
 OpenMausBot (https://github.com/milind-soni/OpenMausBot), Copyright Milind
 Soni, Apache License 2.0. The Composio Tool Router Session approach, the
 Claude Code / Codex permission-prompt-over-MCP approach and the SKILL.md

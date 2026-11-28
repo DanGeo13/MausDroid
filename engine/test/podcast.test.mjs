@@ -229,7 +229,7 @@ test("podcast: chosen hosts, per-phrase cues, segments; hands-free explain and c
     await e.call(`/api/audio-overviews/${id}/listen/stop`, "POST", {});
 
     // Sources as PDFs in their own Downloads folder; each quote placed on its page.
-    assert.deepEqual(o.pdfs.map((p) => [p.name, p.location, p.kind]), [["Carnival map.pdf", "Download/MausDroid Review Podcast/Carnival map.pdf", "resource"]]);
+    assert.deepEqual(o.pdfs.map((p) => [p.name, p.location, p.kind]), [["Carnival map.pdf", "Download/DanDroid Review Podcast/Carnival map.pdf", "resource"]]);
     assert.match(o.pdfNote, /Newsletter isn't a PDF/, "a web page stays a link");
     assert.equal(sg[0].source.page, 0);
     assert.equal(sg[0].source.pdf, o.pdfs[0].fileId);
@@ -281,12 +281,12 @@ test("podcast: a Google Doc source is saved as a PDF (exported through Drive) an
     const o = await e.until(async () => (await e.call("/api/audio-overviews")).data.overviews.find((x) => x.status !== "recording"), "recorded", 20000);
     assert.equal(o.status, "ready", o.error);
     assert.equal(exports[0].file_id, "1StaffUpdateWeek8xxxxxxxxxxx");
-    assert.deepEqual(o.pdfs.map((p) => [p.name, p.location, p.kind]), [["Week 8 Staff Update.pdf", "Download/MausDroid Review Podcast/Week 8 Staff Update.pdf", "source"]]);
+    assert.deepEqual(o.pdfs.map((p) => [p.name, p.location, p.kind]), [["Week 8 Staff Update.pdf", "Download/DanDroid Review Podcast/Week 8 Staff Update.pdf", "source"]]);
     const sg = o.segments;
     assert.equal(sg[3].source.page, 2);
     assert.equal(sg[3].source.pdf, o.pdfs[0].fileId);
     assert.equal(sg[3].source.url, undefined, "no web jump for a Google Doc; the PDF is used instead");
-    // Tapping the source opens MausDroid's PDF viewer at that page with the quote.
+    // Tapping the source opens DanDroid's PDF viewer at that page with the quote.
     const r = await e.call(`/api/audio-overviews/${o.id}/source`, "POST", { index: 3 });
     assert.equal(r.status, 200);
     assert.equal(ph.st.opened[0].page, 2);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "./api.ts";
-import { IconCopy, IconPlay, IconShare, IconStop } from "./icons.tsx";
+import { IconBot, IconCopy, IconGlobe, IconPlay, IconShare, IconStop } from "./icons.tsx";
 
 /** Short message at the bottom of the screen. */
 export const toast = (m: string) => {
@@ -104,18 +104,18 @@ export function ResponseActions({ id, text, title, openBot }: { id: string; text
       {menu === "share" ? (
         <div class="share-menu" role="menu">
           <button role="menuitem" onClick={toBot}>
-            🤖 Another bot
+            <span class="icon-glyph"><IconBot /></span> Another bot
           </button>
           <button
             role="menuitem"
             onClick={async () => {
               setMenu("");
-              const r = await api("share/view", { body: { text, title: title ?? "From MausDroid" } }).catch((e) => ({ error: (e as Error).message }));
+              const r = await api("share/view", { body: { text, title: title ?? "From DanDroid" } }).catch((e) => ({ error: (e as Error).message }));
               if (r.error) toast(`⚠️ ${r.error}`);
               else if (!targets?.chrome) window.open(r.url, "_blank");
             }}
           >
-            🌐 Chrome
+            <span class="icon-glyph"><IconGlobe /></span> Chrome
           </button>
           {(targets?.apps ?? []).map((a: any) => (
             <button role="menuitem" onClick={() => app(a)}>

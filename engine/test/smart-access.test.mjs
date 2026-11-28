@@ -12,20 +12,20 @@ test("reading never asks; only real changes do", async () => {
     assert.equal(tools.isWriteAction(write), true, write);
 });
 
-test("Claude Code: MausDroid's tools pre-approved, read-only allowed, commands ask once", async () => {
+test("Claude Code: DanDroid's tools pre-approved, read-only allowed, commands ask once", async () => {
   const cli = await load("src/providers/cli.ts");
   const args = cli.cliArgs({ engine: "claude", prompt: "x", systemPrompt: "s", mcpUrl: "u", mcpToken: "t" });
   const i = args.indexOf("--allowedTools");
   assert.ok(i > 0);
   assert.deepEqual(args.slice(i + 1, i + 1 + cli.CLI_ALLOWED_TOOLS.length), cli.CLI_ALLOWED_TOOLS);
   assert.ok(cli.CLI_ALLOWED_TOOLS.includes("mcp__mausdroid"));
-  // Claude Code doesn't ask (MausDroid's own gate is the only approval layer); its risky tools are off.
+  // Claude Code doesn't ask (DanDroid's own gate is the only approval layer); its risky tools are off.
   assert.equal(args[args.indexOf("--permission-mode") + 1], "bypassPermissions");
   const d = args.indexOf("--disallowedTools");
   for (const t of ["Bash", "Edit", "Write"]) assert.ok(args.slice(d + 1, d + 1 + cli.CLI_DISALLOWED_TOOLS.length).includes(t), t);
   assert.ok(!args.includes("--permission-prompt-tool"));
   assert.ok(!cli.CLI_ALLOWED_TOOLS.some((t) => /^(Bash|Edit|Write)$/.test(t)), "commands and file changes aren't pre-approved");
-  assert.equal(cli.cliPermission("mcp__mausdroid__composio__COMPOSIO_MULTI_EXECUTE_TOOL"), "allow", "MausDroid gates its own tools when they run");
+  assert.equal(cli.cliPermission("mcp__mausdroid__composio__COMPOSIO_MULTI_EXECUTE_TOOL"), "allow", "DanDroid gates its own tools when they run");
   assert.equal(cli.cliPermission("WebFetch"), "allow");
   assert.equal(cli.cliPermission("Read"), "allow");
   assert.equal(cli.cliPermission("Bash"), "ask");
@@ -45,7 +45,7 @@ test("existing chats catch up on access changes once; new bots start up to date"
     await e.call(`/api/bots/${maus.id}/messages`, "POST", { text: "read my email" });
     await e.until(async () => (await e.call(`/api/bots/${maus.id}/messages`)).data.some((x) => x.role === "assistant" && x.text === "ok"), "reply");
     const firstAsk = JSON.stringify(m.seen.at(-1).messages.at(-1));
-    assert.match(firstAsk, /MausDroid update since earlier in this chat: Reading no longer needs approval/);
+    assert.match(firstAsk, /DanDroid update since earlier in this chat: Reading no longer needs approval/);
     assert.match(firstAsk, /Claude Code's own approval step is switched off/);
     assert.match(firstAsk, /read my email/);
     const msgs = (await e.call(`/api/bots/${maus.id}/messages`)).data;
@@ -53,12 +53,12 @@ test("existing chats catch up on access changes once; new bots start up to date"
     // Only once.
     await e.call(`/api/bots/${maus.id}/messages`, "POST", { text: "again" });
     await e.until(async () => (await e.call(`/api/bots/${maus.id}/messages`)).data.filter((x) => x.role === "assistant" && x.text === "ok").length === 2, "second reply");
-    assert.ok(!JSON.stringify(m.seen.at(-1).messages.at(-1)).includes("MausDroid update"), "not repeated");
+    assert.ok(!JSON.stringify(m.seen.at(-1).messages.at(-1)).includes("DanDroid update"), "not repeated");
     // A new bot starts with today's rules.
     const nb = (await e.call("/api/bots", "POST", { name: "Fresh" })).data;
     await e.call(`/api/bots/${nb.id}/messages`, "POST", { text: "hi" });
     await e.until(async () => (await e.call(`/api/bots/${nb.id}/messages`)).data.some((x) => x.role === "assistant" && x.text === "ok"), "fresh reply");
-    assert.ok(!JSON.stringify(m.seen.at(-1).messages.at(-1)).includes("MausDroid update"));
+    assert.ok(!JSON.stringify(m.seen.at(-1).messages.at(-1)).includes("DanDroid update"));
     // Every bot is told to retry rather than trust earlier "blocked" results.
     assert.match(JSON.stringify(m.seen.at(-1).messages[0]), /try the tool again before saying something can't be reached/);
   } finally {
@@ -77,7 +77,7 @@ test("Claude tool results show what really happened", async () => {
   assert.match(res[0].text, /haven't granted it yet/);
 });
 
-test("Codex delegates MausDroid approvals on fresh and resumed conversations", async () => {
+test("Codex delegates DanDroid approvals on fresh and resumed conversations", async () => {
   const { cliArgs, parseCliLine } = await load("src/providers/cli.ts");
   const run = { engine: "codex", prompt: "Read my email", systemPrompt: "instructions", mcpUrl: "http://localhost/mcp/bot", mcpToken: "token" };
   for (const resume of [undefined, "existing-thread"]) {
@@ -194,7 +194,7 @@ test("MCP checks updated bot permissions on the same bot URL before performing G
     assert.equal(updated.data.cliSession, "existing-thread");
     assert.equal((await call("GMAIL_FETCH_EMAILS")).result.content[0].text, "Gmail result");
     const write = call("GMAIL_SEND_EMAIL");
-    const card = await e.until(pendingCard, "MausDroid approval for sending mail");
+    const card = await e.until(pendingCard, "DanDroid approval for sending mail");
     assert.deepEqual(executed, ["GMAIL_FETCH_EMAILS"]);
     await e.call(`/api/cards/${card.id}`, "POST", { allow: false });
     assert.equal((await write).result.isError, true);

@@ -62,7 +62,7 @@ test("chat, tools and approvals work end to end", async () => {
     }
     // Unauthenticated requests are refused; the UI page itself loads.
     assert.equal((await fetch(base + "/api/state")).status, 401);
-    assert.match(await (await fetch(base + "/")).text(), /MausDroid/);
+    assert.match(await (await fetch(base + "/")).text(), /DanDroid/);
 
     const st = await call("/api/state");
     assert.deepEqual(st.data.bots.map((b) => b.name), ["Maus", "Researcher", "Inbox", "Improver"]);

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "./api.ts";
-import { IconBack, IconSearch } from "./icons.tsx";
+import { IconArchive, IconBack, IconDoc, IconLink, IconSearch } from "./icons.tsx";
 import { copyText, toast } from "./actions.tsx";
 
 /**
- * Resources: links bots gave you and documents MausDroid made, grouped by
+ * Resources: links bots gave you and documents DanDroid made, grouped by
  * keyword. Old ones move to Archived but stay searchable (and any bot can
  * find them). Delete one, or select several and delete them together.
  */
@@ -69,20 +69,20 @@ export function Resources({ onBack }: { onBack: () => void }) {
             </button>
           ))}
           <button class={`chip ${archived ? "on" : ""}`} onClick={() => setArchived(!archived)}>
-            🗄️ Archived
+            <span class="icon-glyph" style={{ display: "inline-block", verticalAlign: "-.2em" }}><IconArchive /></span> Archived
           </button>
         </div>
         {!data ? (
           <p class="muted">Loading…</p>
         ) : !data.items.length ? (
-          <p class="muted">{archived ? "Nothing archived." : "No links or documents yet. Links bots give you, and documents MausDroid makes, appear here."}</p>
+          <p class="muted">{archived ? "Nothing archived." : "No links or documents yet. Links bots give you, and documents DanDroid makes, appear here."}</p>
         ) : (
           data.items.map((r) => (
             <div class={`res-row ${sel.has(r.id) ? "picked" : ""}`} key={r.id}>
               <input type="checkbox" checked={sel.has(r.id)} onChange={() => pick(r.id)} aria-label={`Select ${r.title}`} />
               <button class="res-main" onClick={() => void open(r)}>
                 <div class="res-title">
-                  {r.kind === "doc" ? "📄" : "🔗"} {r.title}
+                  <span class="icon-glyph">{r.kind === "doc" ? <IconDoc /> : <IconLink />}</span> {r.title}
                   {r.archived ? <span class="pill">Archived</span> : null}
                 </div>
                 {r.url ? <div class="muted res-url">{r.url}</div> : null}
