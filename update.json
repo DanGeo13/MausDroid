@@ -1,4 +1,4 @@
 {
- "payload": "{\"createdAt\":\"2026-11-28T02:15:29.883Z\",\"engine\":{\"version\":\"0.16.0\",\"url\":\"https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/engine-0.16.0.zip\",\"sha256\":\"1a914f273a762680ff465eb41bb1049ca90a90ec8157d5764bf9dd0c82186c25\",\"size\":242380,\"minApk\":600},\"apk\":{\"versionName\":\"0.16.0\",\"versionCode\":1600,\"url\":\"https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/MausDroid-0.16.0.apk\",\"sha256\":\"aefd28b294aa8a76166dd2e1007ff2de1156ca962a74f45ed10e5ad776f6551c\"}}",
- "signature": "MEUCIQCRfNcOqvnzklIhBDdBilbCfAjzS0ljDGPfZbsGdgpmmQIgH6T1q9JwWRCpTaGXKiz7wIqCwnZ/kSeNWpGepQiq8oc="
+ "payload": "{\"createdAt\":\"2026-11-28T02:34:37.710Z\",\"engine\":{\"version\":\"0.16.1\",\"url\":\"https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/engine-0.16.1.zip\",\"sha256\":\"47a0159907e2be0c4cc945e1147df632fedaf92a1b7996f869c7162cffb505e0\",\"size\":244499,\"minApk\":600},\"apk\":{\"versionName\":\"0.16.1\",\"versionCode\":1601,\"url\":\"https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/MausDroid-0.16.1.apk\",\"sha256\":\"6dff84cfa6a20f39cdff6283323e6dad5dbf7ab1d8f0554f6061f8d75f18e86e\"}}",
+ "signature": "MEUCIB3NhaCld4TRGDbfdN4PMoaoVyHiT3EQWMsKu+ijMnqcAiEA2zYougFqM/Z2233gg/vZm4n62t+tzXRWp0m6du99vtM="
 }
