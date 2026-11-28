@@ -7,10 +7,9 @@
 #   MAUSDROID_KEYSTORE_B64     base64 of mausdroid-release.jks
 #   MAUSDROID_KEYSTORE_PASSWORD
 name: release
+# Runs only when started by hand (Actions → release → Run workflow), so nothing reaches the phone
+# until Dan says "Release". Merging to main never publishes on its own.
 on:
-  push:
-    branches: [main]
-    paths: ["engine/**", "ui/**", "android/**", "tsbridge/**", "version.json", ".github/workflows/release.yml"]
   workflow_dispatch:
 
 permissions:
