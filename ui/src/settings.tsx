@@ -150,10 +150,10 @@ function ProviderRow({ p, isDefault, reload }: { p: Provider; isDefault: boolean
   );
 }
 
-const SUB_LOOK: Record<string, { color: string; mark: () => any }> = {
-  claude: { color: "#D97757", mark: IconSpark },
-  chatgpt: { color: "#10A37F", mark: IconRing },
-  gemini: { color: "#4C8DF6", mark: IconSpark },
+const SUB_LOOK: Record<string, { mark: () => any }> = {
+  claude: { mark: IconSpark },
+  chatgpt: { mark: IconRing },
+  gemini: { mark: IconSpark },
 };
 
 function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider; isDefault: boolean; reload: () => void }) {
@@ -163,7 +163,7 @@ function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider
   const [computerToken, setComputerToken] = useState("");
   const [runOn, setRunOn] = useState(p.runOn ?? "phone");
   const [model, setModel] = useState(p.defaultModel);
-  const look = SUB_LOOK[sub.id] ?? { color: "#666", mark: IconRing };
+  const look = SUB_LOOK[sub.id] ?? { mark: IconRing };
   const busy = sub.stage === "installing" || sub.stage === "signing-in";
   const signedIn = sub.stage === "signed-in";
   const stageText: Record<string, string> = {
@@ -1068,7 +1068,7 @@ function VoicePicker({ s, save }: { s: any; save: (b: object) => void }) {
           // A voice for another language reads English with the wrong sounds (garbled speech).
           const chosen = usable.find((v) => v.name === s.voice?.voiceName);
           return chosen?.locale && !String(chosen.locale).toLowerCase().startsWith(lang) ? (
-            <p class="help" style={{ color: "var(--warn, #c80)" }}>
+            <p class="help" style={{ color: "var(--warn)" }}>
               ⚠️ This voice speaks {chosen.locale}, not your phone's language, so English may sound garbled. Pick a voice marked {lang}-….
             </p>
           ) : null;

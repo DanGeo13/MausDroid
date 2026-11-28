@@ -328,7 +328,7 @@ function AudioCard({ focusId }: { focusId?: string }) {
       ) : o.status === "recording" ? (
         <p class="muted">🎙️ Recording… {o.progress ?? ""}</p>
       ) : (
-        <p style={{ color: "var(--danger, #c33)" }}>⚠️ {o.error}</p>
+        <p style={{ color: "var(--danger)" }}>⚠️ {o.error}</p>
       )}
     </div>
   );

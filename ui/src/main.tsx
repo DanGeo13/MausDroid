@@ -317,9 +317,15 @@ function Home({ poll }: { poll: boolean }) {
           <input value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} placeholder="Search bots" />
         </div>
         <div class="list">
+          <div class="list-head">
+            <span>Your bots</span>
+            <button class="btn small" onClick={() => setView({ kind: "edit", botId: null })}>
+              <IconPlus /> New bot
+            </button>
+          </div>
           {[
-            ["Pinned", shown.filter((b) => b.pinned)],
-            [shown.some((b) => b.pinned) ? "Bots" : "", shown.filter((b) => !b.pinned)],
+            [shown.some((b) => !b.pinned) ? "Pinned" : "", shown.filter((b) => b.pinned)],
+            [shown.some((b) => b.pinned) ? "Others" : "", shown.filter((b) => !b.pinned)],
           ].map(([label, list]) =>
             (list as Bot[]).length ? (
               <>
@@ -346,10 +352,8 @@ function Home({ poll }: { poll: boolean }) {
             ) : null,
           )}
           {!shown.length ? <div class="empty">No bots match “{query}”.</div> : null}
+
         </div>
-        <button class="fab" aria-label="New bot" title="New bot" onClick={() => setView({ kind: "edit", botId: null })}>
-          <IconPlus />
-        </button>
         <nav class="signnav" aria-label="Main">
           <button class="on" aria-current="page">
             <IconInbox />
