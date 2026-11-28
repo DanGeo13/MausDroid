@@ -25,14 +25,14 @@ android {
     defaultConfig {
         applicationId = "au.mausdroid"
         minSdk = 28
-        // Sideloaded app: targeting API 28 lets MausDroid run the official
+        // Sideloaded app: targeting API 28 lets DanDroid run the official
         // Claude Code / Codex programs and its built-in Tailscale on the phone.
         targetSdk = 28
         versionCode = apkCode
         versionName = apkVersion
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild { cmake { cppFlags += "-std=c++17"; arguments += "-DANDROID_STL=c++_shared" } }
-        buildConfigField("String", "UPDATE_URL", "\"https://raw.githubusercontent.com/DanGeo13/MausDroid/updates/update.json\"")
+        buildConfigField("String", "UPDATE_URL", "\"https://raw.githubusercontent.com/DanGeo13/DanDroid/updates/update.json\"")
         buildConfigField("String", "UPDATE_PUBLIC_KEY", "\"${rootProject.file("../updates-public-key.txt").readText().trim()}\"")
         buildConfigField("String", "ENGINE_VERSION", "\"${versions["engine"]}\"")
     }
