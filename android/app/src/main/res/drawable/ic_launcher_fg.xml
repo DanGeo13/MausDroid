@@ -1,14 +1,7 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-  <!-- Mouse head (ears, face) with a small spark: MausDroid's mark. Kept inside the adaptive-icon safe zone. -->
-  <group android:scaleX="0.72" android:scaleY="0.72" android:pivotX="54" android:pivotY="54">
-    <path android:fillColor="#FFFFFF" android:pathData="M35,38m-15,0a15,15 0 1,1 30,0a15,15 0 1,1 -30,0"/>
-    <path android:fillColor="#FFFFFF" android:pathData="M73,38m-15,0a15,15 0 1,1 30,0a15,15 0 1,1 -30,0"/>
-    <path android:fillColor="#FFC2D6" android:pathData="M35,38m-8,0a8,8 0 1,1 16,0a8,8 0 1,1 -16,0"/>
-    <path android:fillColor="#FFC2D6" android:pathData="M73,38m-8,0a8,8 0 1,1 16,0a8,8 0 1,1 -16,0"/>
-    <path android:fillColor="#FFFFFF" android:pathData="M54,34c-15.5,0 -27,11 -27,25c0,14.5 12,25 27,25s27,-10.5 27,-25c0,-14 -11.5,-25 -27,-25z"/>
-    <path android:fillColor="#1B1F3B" android:pathData="M44,58m-4.2,0a4.2,4.2 0 1,1 8.4,0a4.2,4.2 0 1,1 -8.4,0"/>
-    <path android:fillColor="#1B1F3B" android:pathData="M64,58m-4.2,0a4.2,4.2 0 1,1 8.4,0a4.2,4.2 0 1,1 -8.4,0"/>
-    <path android:fillColor="#FF6F9C" android:pathData="M54,68m-4.5,0a4.5,3.2 0 1,1 9,0a4.5,3.2 0 1,1 -9,0"/>
-    <path android:fillColor="#FFE27A" android:pathData="M84,14l2.6,6.4L93,23l-6.4,2.6L84,32l-2.6,-6.4L75,23l6.4,-2.6z"/>
+  <!-- DanDroid's mark: a hand-drawn droid head shaped like a D, drawn as a sign pictogram. Inside the adaptive-icon safe zone. -->
+  <group android:translateX="6" android:translateY="8" android:scaleX="2" android:scaleY="2">
+    <path android:strokeColor="#FF0B0B0B" android:strokeWidth="2.7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M22 17.5v-5.2M22 9.3c1.1 0 1.9.9 1.9 1.9S23 13.1 22 13.1s-1.9-.8-1.9-1.9.8-1.9 1.9-1.9zM14.2 17.6c4.2-.2 8.4-.2 12.6 0 5.4.3 9.4 4.6 9.3 10-.1 5.4-4.3 9.7-9.6 9.8-4.1.1-8.2.1-12.3-.1-1.1-.1-1.9-.9-1.9-2-.2-5.2-.2-10.4 0-15.6 0-1.2.8-2.1 1.9-2.1zM19.6 26.4h.1M27.4 26.5h.1M19.9 31.6c2.2 1.6 5.2 1.6 7.3-.1"/>
+    <path android:fillColor="#FF0B0B0B" android:pathData="M22,11.2m-2.2,0a2.2,2.2 0 1,1 4.4,0a2.2,2.2 0 1,1 -4.4,0"/>
   </group>
 </vector>

@@ -1,0 +1,761 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-28T03:39:09.422700+00:00",
+  "title": "Design System: DanDroid",
+  "extensions": {
+    "colorMeta": {
+      "signal-yellow": {
+        "role": "primary",
+        "displayName": "Signal Yellow",
+        "canonical": "#ffcc00",
+        "oklch": "oklch(86.5% 0.177 90.4)",
+        "tonalRamp": [
+          "#140900",
+          "#382000",
+          "#5f3a00",
+          "#875700",
+          "#ab7a00",
+          "#cf9d00",
+          "#ecc550",
+          "#ffeda3"
+        ]
+      },
+      "sign-black": {
+        "role": "primary",
+        "displayName": "Sign Black",
+        "canonical": "#0b0b0b",
+        "oklch": "oklch(15.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ],
+        "note": "Also the light-mode strong-rule (frame) colour; night-ink takes that role in dark mode."
+      },
+      "on-sign-muted": {
+        "role": "secondary",
+        "displayName": "Sign Shadow Ink",
+        "canonical": "#4a3d00",
+        "oklch": "oklch(36.3% 0.075 95.4)",
+        "tonalRamp": [
+          "#0e0b02",
+          "#2b250a",
+          "#4c4218",
+          "#6e612b",
+          "#90824d",
+          "#b3a56f",
+          "#d5ca9e",
+          "#f6efd1"
+        ]
+      },
+      "pictogram-white": {
+        "role": "secondary",
+        "displayName": "Pictogram White",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "hall-grey": {
+        "role": "neutral",
+        "displayName": "Daylight Hall",
+        "canonical": "#f1f1ee",
+        "oklch": "oklch(95.7% 0.004 106.5)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252524",
+          "#424240",
+          "#61615f",
+          "#828280",
+          "#a5a5a2",
+          "#c9c9c7",
+          "#eeeeed"
+        ]
+      },
+      "panel-white": {
+        "role": "neutral",
+        "displayName": "Panel White",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "panel-grey": {
+        "role": "neutral",
+        "displayName": "Concourse Grey",
+        "canonical": "#e8e8e3",
+        "oklch": "oklch(93.0% 0.007 106.5)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252523",
+          "#42423f",
+          "#61615d",
+          "#83837e",
+          "#a5a5a1",
+          "#c9c9c5",
+          "#efefec"
+        ]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "#4d4d48",
+        "oklch": "oklch(41.9% 0.008 106.7)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252523",
+          "#42423e",
+          "#62625c",
+          "#83837d",
+          "#a5a5a0",
+          "#c9c9c5",
+          "#efefeb"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#d4d4cd",
+        "oklch": "oklch(86.8% 0.010 106.6)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252522",
+          "#42423e",
+          "#62625c",
+          "#83837c",
+          "#a5a59f",
+          "#c9c9c4",
+          "#efefeb"
+        ]
+      },
+      "danger-red": {
+        "role": "status",
+        "displayName": "Danger Red",
+        "canonical": "#c4262e",
+        "oklch": "oklch(53.4% 0.193 24.6)",
+        "tonalRamp": [
+          "#1f0001",
+          "#4e0005",
+          "#82000f",
+          "#b50f21",
+          "#de4244",
+          "#ff6a66",
+          "#ff9f97",
+          "#ffd3cc"
+        ]
+      },
+      "ok-green": {
+        "role": "status",
+        "displayName": "Go Green",
+        "canonical": "#16794a",
+        "oklch": "oklch(51.0% 0.115 156.6)",
+        "tonalRamp": [
+          "#001005",
+          "#002e17",
+          "#00502c",
+          "#0c7445",
+          "#3c9765",
+          "#62bb87",
+          "#98dbb1",
+          "#cefcde"
+        ]
+      },
+      "warn-amber": {
+        "role": "status",
+        "displayName": "Caution Amber",
+        "canonical": "#9a5a00",
+        "oklch": "oklch(52.9% 0.119 64.3)",
+        "tonalRamp": [
+          "#160700",
+          "#3b1c00",
+          "#653400",
+          "#8f4f00",
+          "#b37128",
+          "#d9944e",
+          "#f5bd88",
+          "#ffe6c2"
+        ]
+      },
+      "night-hall": {
+        "role": "neutral",
+        "displayName": "Night Hall",
+        "canonical": "#0c0c0c",
+        "oklch": "oklch(15.4% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "night-panel": {
+        "role": "neutral",
+        "displayName": "Night Panel",
+        "canonical": "#151515",
+        "oklch": "oklch(19.6% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "night-raised": {
+        "role": "neutral",
+        "displayName": "Night Raised",
+        "canonical": "#1a1a19",
+        "oklch": "oklch(21.7% 0.002 106.6)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252524",
+          "#424241",
+          "#616160",
+          "#828281",
+          "#a5a5a4",
+          "#c9c9c8",
+          "#eeeeee"
+        ]
+      },
+      "night-panel-grey": {
+        "role": "neutral",
+        "displayName": "Night Concourse",
+        "canonical": "#232321",
+        "oklch": "oklch(25.5% 0.004 106.7)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252524",
+          "#424240",
+          "#61615f",
+          "#828280",
+          "#a5a5a3",
+          "#c9c9c7",
+          "#eeeeed"
+        ]
+      },
+      "night-ink": {
+        "role": "neutral",
+        "displayName": "Night Ink",
+        "canonical": "#f3f3ef",
+        "oklch": "oklch(96.3% 0.005 106.5)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252523",
+          "#42423f",
+          "#61615e",
+          "#82827f",
+          "#a5a5a1",
+          "#c9c9c6",
+          "#eeeeec"
+        ],
+        "note": "Dark-mode text, primary fill and strong-rule (frame) colour."
+      },
+      "night-muted": {
+        "role": "neutral",
+        "displayName": "Night Muted",
+        "canonical": "#aaaaa2",
+        "oklch": "oklch(73.6% 0.011 106.7)",
+        "tonalRamp": [
+          "#0b0b09",
+          "#252522",
+          "#42423d",
+          "#62625a",
+          "#83837b",
+          "#a6a69e",
+          "#cacac3",
+          "#efefea"
+        ]
+      },
+      "night-hairline": {
+        "role": "neutral",
+        "displayName": "Night Hairline",
+        "canonical": "#2e2e2b",
+        "oklch": "oklch(30.0% 0.005 106.7)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252523",
+          "#42423f",
+          "#61615e",
+          "#82827f",
+          "#a5a5a1",
+          "#c9c9c6",
+          "#eeeeec"
+        ]
+      },
+      "night-picto-black": {
+        "role": "neutral",
+        "displayName": "Night Picto Black",
+        "canonical": "#000000",
+        "oklch": "oklch(0.0% 0.000 0.0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "night-danger": {
+        "role": "status",
+        "displayName": "Night Danger Red",
+        "canonical": "#ff6b6b",
+        "oklch": "oklch(71.2% 0.181 22.8)",
+        "tonalRamp": [
+          "#1e0002",
+          "#4c020a",
+          "#7f0618",
+          "#b11d2c",
+          "#d9484c",
+          "#ff6e6e",
+          "#ffa29d",
+          "#ffd5d0"
+        ]
+      },
+      "night-ok": {
+        "role": "status",
+        "displayName": "Night Go Green",
+        "canonical": "#4cd391",
+        "oklch": "oklch(77.7% 0.152 158.3)",
+        "tonalRamp": [
+          "#001104",
+          "#003114",
+          "#005427",
+          "#00793e",
+          "#009c5e",
+          "#34c180",
+          "#80e1ac",
+          "#c0ffda"
+        ]
+      },
+      "night-warn": {
+        "role": "status",
+        "displayName": "Night Caution Amber",
+        "canonical": "#f5b041",
+        "oklch": "oklch(80.4% 0.146 75.3)",
+        "tonalRamp": [
+          "#160700",
+          "#3b1c00",
+          "#653500",
+          "#8f5000",
+          "#b47300",
+          "#d9961a",
+          "#f5be70",
+          "#ffe8b3"
+        ]
+      },
+      "night-bubble": {
+        "role": "neutral",
+        "displayName": "Night Bubble",
+        "canonical": "#1f1f1e",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252524",
+          "#424241",
+          "#616160",
+          "#828281",
+          "#a5a5a4",
+          "#c9c9c8",
+          "#eeeeee"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The needs-you count in the next-decision band; one per screen, home only."
+      },
+      "headline-sign": {
+        "displayName": "Sign headline",
+        "purpose": "The desktop empty-pane sign."
+      },
+      "headline-call": {
+        "displayName": "Call headline",
+        "purpose": "The bot's name on the call screen."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The 'things need you' label beside the count."
+      },
+      "brand": {
+        "displayName": "Brand",
+        "purpose": "The DanDroid name in the home sign band."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Destination name in every sign band."
+      },
+      "title-section": {
+        "displayName": "Section title",
+        "purpose": "Settings section headings, 'Nothing needs you', the call button."
+      },
+      "title-row": {
+        "displayName": "Row title",
+        "purpose": "Bot names, the next item's text, the 'Your bots' heading."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Messages and running text; bubbles at line-height 1.5, capped at 42rem."
+      },
+      "title-card": {
+        "displayName": "Card title",
+        "purpose": "Approval card headers, sheet headings, the empty-pane sign's small line."
+      },
+      "body-call": {
+        "displayName": "Call body",
+        "purpose": "Call transcript lines."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Segments and the 'Also N notifications' link."
+      },
+      "body-compact": {
+        "displayName": "Body compact",
+        "purpose": "Toasts, share-menu items, suggestion text, next-panel supporting line."
+      },
+      "note": {
+        "displayName": "Note",
+        "purpose": "Banners, slash-command items, inline notes."
+      },
+      "body-small": {
+        "displayName": "Body small",
+        "purpose": "Row previews and small buttons."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Tabs, chips, sign bar captions, share-menu headings."
+      },
+      "help": {
+        "displayName": "Help",
+        "purpose": "Muted help text under settings."
+      },
+      "label-group": {
+        "displayName": "Group label",
+        "purpose": "List group labels (Pinned, Others) and the location banner; sentence case."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Field labels, tool rows, small inline metadata."
+      },
+      "sub": {
+        "displayName": "Subtitle",
+        "purpose": "Band subtitles and centred notes."
+      },
+      "micro": {
+        "displayName": "Micro",
+        "purpose": "Service tags, URLs, code blocks."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Times, badges, pills, day dividers; tabular."
+      },
+      "stamp": {
+        "displayName": "Stamp",
+        "purpose": "Message timestamps; tabular."
+      },
+      "badge-mini": {
+        "displayName": "Mini badge",
+        "purpose": "The count badge on a header icon button."
+      }
+    },
+    "themes": {
+      "light": "Daylight concourse: hall-grey ground, panel-white panels, sign-black ink.",
+      "dark": "Terminal at night: night-hall ground, night-panel panels, night-ink text, primary fills and frame outlines; signal-yellow bands, the black next panel, the empty-pane sign, the toast, the location banner and the black sign bar stay unchanged. Dark danger buttons carry black text (prefers-color-scheme, overridable with data-theme)."
+    },
+    "shadows": [
+      {
+        "name": "notice-edge",
+        "value": "0 0 0 2px #ffcc00",
+        "purpose": "Toast and location banner: a crisp yellow outline on a black slab, not a lift."
+      },
+      {
+        "name": "menu-lift",
+        "value": "0 1px 0 rgba(0,0,0,.06), 0 6px 14px -8px rgba(0,0,0,.25)",
+        "purpose": "Open share menu only, with a 2px strong-rule border. Dark: 0 1px 0 rgba(0,0,0,.5)."
+      },
+      {
+        "name": "focus",
+        "value": "0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b",
+        "purpose": "Keyboard focus ring on every control."
+      },
+      {
+        "name": "frame-rule",
+        "value": "border-bottom: 3px solid #0b0b0b",
+        "purpose": "Closes every yellow band and opens the sign bar; the system's main depth device."
+      },
+      {
+        "name": "panel-outline",
+        "value": "inset 0 0 0 2px var(--rule-strong) (1.5px on settings sections)",
+        "purpose": "Cards, Reply Desk cards, share menu, list heading rule; black by day, near-white by night."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "House easing for presses, flips and typing dots."
+      },
+      {
+        "name": "split-flap",
+        "value": "0.38s; rotateX(-88deg) to 10deg overshoot to rest, perspective 300px, origin 50% 60%",
+        "purpose": "Needs-you count changes in the next-decision band."
+      },
+      {
+        "name": "press",
+        "value": "transform scale(.97) over .12s",
+        "purpose": "Button press feedback."
+      },
+      {
+        "name": "state",
+        "value": ".15s",
+        "purpose": "Background, border and opacity changes."
+      },
+      {
+        "name": "pulse",
+        "value": "opacity to .35 at 50%, 1.2s infinite",
+        "purpose": "Live states only: working bot dot, listening call ring, recording mic."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation and transition durations .01ms, one iteration",
+        "purpose": "prefers-reduced-motion: every animation, the split-flap included, becomes instant."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow-phone",
+        "value": "460px"
+      },
+      {
+        "name": "two-pane",
+        "value": "801px",
+        "note": "24rem sidebar beside the main pane"
+      }
+    ],
+    "iconography": {
+      "grid": "24",
+      "stroke": "2.2 standalone, 2.3 inside sign squares",
+      "caps": "round caps and joins",
+      "style": "marker sketch: strokes cross at corners and overshoot their ends, deliberately uneven paths, inline SVG in currentColor",
+      "sizes": "1.6rem in icon buttons, 1.75rem in the sign bar, 1.4rem under chat replies, 1.45rem in the send button, 64% of a sign square",
+      "settings": "drawn sliders pictogram (three rules with knobs)",
+      "signSquare": "3rem black square at the sign radius, pictogram at 64%; inverse white square inside the black next panel",
+      "edgeArrow": "drawn arrow at the trailing edge of rows (muted) and the next panel (yellow)",
+      "source": "ui/src/icons.tsx"
+    },
+    "fonts": {
+      "family": "Hind",
+      "weights": [
+        400,
+        500,
+        600,
+        700
+      ],
+      "hosting": "self-hosted woff2, latin and latin-ext subsets, font-display swap"
+    },
+    "scaling": "html font-size is 16px times the user's text-size setting; all sizes in rem.",
+    "layout": {
+      "shell": "100dvh; each area scrolls inside",
+      "sidebar": "24rem from 801px",
+      "listHeading": "sticky 'Your bots' heading with a black small New bot button; no floating button"
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Sign-black action with white semibold text; the only action colour.",
+      "html": "<button class=\"ds-btn\">Send reply</button>",
+      "css": ".ds-btn { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; border: 0; background: #0b0b0b; color: #fff; padding: .6rem 1.1rem; min-height: 2.9rem; border-radius: .45rem; font-weight: 600; font-size: 1rem; cursor: pointer; transition: transform .12s cubic-bezier(.16,1,.3,1), background .15s; } .ds-btn:hover { background: #000; } .ds-btn:active { transform: scale(.97); background: #000; } .ds-btn:focus-visible { box-shadow: 0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b; outline: none; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Transparent with a 2px inset outline in the text colour.",
+      "html": "<button class=\"ds-btn-sec\">Options</button>",
+      "css": ".ds-btn-sec { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; border: 0; background: transparent; color: #0b0b0b; box-shadow: inset 0 0 0 2px #0b0b0b; padding: .6rem 1.1rem; min-height: 2.9rem; border-radius: .45rem; font-weight: 600; font-size: 1rem; cursor: pointer; transition: transform .12s cubic-bezier(.16,1,.3,1), background .15s; } .ds-btn-sec:hover { background: rgba(11,11,11,.07); } .ds-btn-sec:active { transform: scale(.97); } .ds-btn-sec:focus-visible { box-shadow: 0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b; outline: none; }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Concourse-grey field that turns white with a black border on focus.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search bots\">",
+      "css": ".ds-input { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; font-size: 1.03rem; color: #0b0b0b; background: #e8e8e3; border: 1px solid transparent; border-radius: .45rem; padding: .7rem .85rem; width: 100%; outline: none; caret-color: #0b0b0b; transition: border-color .15s, background .15s; } .ds-input:hover { border-color: #d4d4cd; } .ds-input:focus { background: #fff; border-color: #0b0b0b; } .ds-input:focus-visible { box-shadow: 0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b; }"
+    },
+    {
+      "name": "Sign Band",
+      "kind": "nav",
+      "refersTo": "sign-band",
+      "description": "Every screen header: yellow band, destination in bold black, 3px black rule.",
+      "html": "<header class=\"ds-band\"><button class=\"ds-band-ib\" aria-label=\"Back\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15.2 4.9c-2.3 2.2-4.5 4.6-6.8 7.3 2.2 2.3 4.3 4.6 6.4 7\"/></svg></button><h1>Reply Desk<span>3 to look at</span></h1></header>",
+      "css": ".ds-band { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; display: flex; align-items: center; gap: .3rem; padding: .5rem; min-height: 3.8rem; background: #ffcc00; color: #0b0b0b; border-bottom: 3px solid #0b0b0b; } .ds-band h1 { margin: 0 0 0 .2rem; font-size: 1.25rem; font-weight: 700; letter-spacing: -.01em; } .ds-band h1 span { display: block; font-size: .78rem; font-weight: 500; color: #4a3d00; } .ds-band-ib { width: 3rem; height: 3rem; border: 0; background: transparent; color: #0b0b0b; border-radius: .45rem; display: grid; place-items: center; cursor: pointer; } .ds-band-ib svg { width: 1.6rem; height: 1.6rem; } .ds-band-ib:hover, .ds-band-ib:active { background: rgba(0,0,0,.1); } .ds-band-ib:focus-visible { box-shadow: 0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b; outline: none; }"
+    },
+    {
+      "name": "Next-Decision Band",
+      "kind": "custom",
+      "refersTo": "next-band",
+      "description": "Signature: the monumental needs-you count and the single next item in a black panel, with a split-flap flip on change.",
+      "html": "<section class=\"ds-next\"><div class=\"ds-next-count\"><span class=\"ds-next-num\">1</span><span class=\"ds-next-lbl\">thing needs you<small>Next: a message to reply to</small></span></div><button class=\"ds-next-panel\"><span class=\"ds-next-sq\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M2.6 13.4c1.2-2.9 2.3-5.6 3.4-8.4M5.3 5.2c4.6-.4 9.2-.3 13.8.3M18.2 4.4c1.2 3 2.3 6 3.2 9.2M2.9 12.6c-.3 2.4-.1 4.8.6 7.2M2.9 19.4c6-.3 12-.2 18.1.4M20.6 20.4c.4-2.6.4-5.1.1-7.8M2.4 13.3c1.9-.3 3.8-.3 5.6 0 .4 1.6 1.9 2.6 3.9 2.6s3.4-1.1 3.9-2.7c1.9-.2 3.9-.2 5.9.1\"/></svg></span><span class=\"ds-next-what\"><b>Are you coming Saturday?</b><span>Sam · WhatsApp</span></span><span class=\"ds-next-go\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.8 12.4c5.3-.5 10.6-.4 15.6.2M13.1 5.9c2.1 1.9 4.2 4 6.3 6.4-2 2-4.1 4-6.4 5.9\"/></svg></span></button></section>",
+      "css": ".ds-next { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; background: #ffcc00; color: #0b0b0b; padding: .3rem 1rem 1rem; border-bottom: 3px solid #0b0b0b; } .ds-next-count { display: flex; align-items: flex-end; gap: .7rem; } .ds-next-num { font-size: 4.6rem; line-height: .82; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; display: inline-block; animation: ds-flap .38s cubic-bezier(.16,1,.3,1); transform-origin: 50% 60%; } .ds-next-lbl { font-size: 1.35rem; font-weight: 700; line-height: 1.1; padding-bottom: .2rem; } .ds-next-lbl small { display: block; font-size: .9rem; font-weight: 500; color: #4a3d00; } .ds-next-panel { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; margin-top: .8rem; width: 100%; display: flex; gap: .8rem; align-items: center; text-align: left; border: 0; background: #0b0b0b; color: #fff; padding: .75rem; border-radius: .45rem; min-height: 3.5rem; cursor: pointer; } .ds-next-panel:hover { background: #000; } .ds-next-panel:focus-visible { box-shadow: 0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b; outline: none; } .ds-next-sq { width: 2.9rem; height: 2.9rem; border-radius: .35rem; background: #fff; color: #0b0b0b; display: grid; place-items: center; flex: none; } .ds-next-sq svg { width: 64%; height: 64%; } .ds-next-what { flex: 1; min-width: 0; } .ds-next-what b { display: block; font-size: 1.05rem; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-next-what span { color: #ffcc00; font-size: .9rem; font-weight: 500; } .ds-next-go { width: 1.8rem; height: 1.8rem; color: #ffcc00; flex: none; } @keyframes ds-flap { 0% { transform: perspective(300px) rotateX(-88deg); opacity: .2; } 60% { transform: perspective(300px) rotateX(10deg); opacity: 1; } 100% { transform: none; } } @media (prefers-reduced-motion: reduce) { .ds-next-num { animation: none; } }"
+    },
+    {
+      "name": "Bot Row with Sign Square",
+      "kind": "card",
+      "refersTo": "list-row",
+      "description": "List row: hand-drawn pictogram in a black sign square, bold name, muted preview, badge, edge arrow.",
+      "html": "<button class=\"ds-row\"><span class=\"ds-sq\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15.6 3.6c-2.6.4-4.2 2.8-3.4 5.6-2.8 2.6-5.6 5.4-8.3 8.4-.8 1-.6 2.3.4 3 .9.7 2.1.5 2.9-.4 2.7-2.8 5.4-5.6 8.2-8.2 2.7.7 5-1 5.4-3.6M21 8.1l-3.6 1.1-2.3-2.5.8-3.7M6.1 18.6l.1.1\"/></svg></span><span class=\"ds-row-meta\"><span class=\"ds-row-top\"><b>Improver</b><time>3:27 AM</time></span><span class=\"ds-row-prev\">Two suggestions waiting for your OK</span></span><span class=\"ds-badge\">2</span><span class=\"ds-chev\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.8 12.4c5.3-.5 10.6-.4 15.6.2M13.1 5.9c2.1 1.9 4.2 4 6.3 6.4-2 2-4.1 4-6.4 5.9\"/></svg></span></button>",
+      "css": ".ds-row { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; display: flex; gap: .8rem; align-items: center; padding: .65rem .9rem; width: 100%; border: 0; border-bottom: 1px solid #d4d4cd; background: #fff; color: #0b0b0b; text-align: left; cursor: pointer; } .ds-row:hover, .ds-row:active { background: rgba(11,11,11,.07); } .ds-row:focus-visible { box-shadow: 0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b; outline: none; } .ds-sq { width: 3rem; height: 3rem; border-radius: .45rem; background: #0b0b0b; color: #fff; display: grid; place-items: center; flex: none; } .ds-sq svg { width: 64%; height: 64%; } .ds-row-meta { flex: 1; min-width: 0; } .ds-row-top { display: flex; align-items: baseline; gap: .4rem; } .ds-row-top b { flex: 1; font-size: 1.05rem; } .ds-row-top time { font-size: .72rem; color: #4d4d48; font-variant-numeric: tabular-nums; } .ds-row-prev { display: block; color: #4d4d48; font-size: .86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-badge { background: #0b0b0b; color: #ffcc00; border-radius: .3rem; font-size: .72rem; padding: .05rem .45rem; font-weight: 700; font-variant-numeric: tabular-nums; } .ds-chev { width: 1.3rem; height: 1.3rem; color: #4d4d48; flex: none; }"
+    },
+    {
+      "name": "Your Bots Heading",
+      "kind": "custom",
+      "refersTo": "list-heading",
+      "description": "Sticky list heading with the always-visible black New bot button; replaces any floating action button.",
+      "html": "<div class=\"ds-listhead\"><span>Your bots</span><button class=\"ds-btn-small\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M11.7 3.9c-.5 5.4-.3 10.9.5 16.2M3.9 12.4c5.3-.7 10.7-.6 16.2.3\"/></svg>New bot</button></div>",
+      "css": ".ds-listhead { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .7rem 1rem .5rem 1.1rem; background: #fff; color: #0b0b0b; border-bottom: 2px solid #0b0b0b; } .ds-listhead > span { font-weight: 700; font-size: 1.05rem; } .ds-btn-small { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; display: inline-flex; align-items: center; gap: .35rem; border: 0; background: #0b0b0b; color: #fff; padding: .45rem .9rem; min-height: 2.5rem; border-radius: .45rem; font-weight: 600; font-size: .86rem; cursor: pointer; transition: transform .12s cubic-bezier(.16,1,.3,1), background .15s; } .ds-btn-small svg { width: 1.15rem; height: 1.15rem; } .ds-btn-small:hover, .ds-btn-small:active { background: #000; } .ds-btn-small:active { transform: scale(.97); } .ds-btn-small:focus-visible { box-shadow: 0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b; outline: none; }"
+    },
+    {
+      "name": "Black Sign Bar",
+      "kind": "nav",
+      "refersTo": "sign-bar",
+      "description": "Home navigation at the foot; black in both themes, current destination in signal yellow.",
+      "html": "<nav class=\"ds-signbar\"><button class=\"on\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M2.6 13.4c1.2-2.9 2.3-5.6 3.4-8.4M5.3 5.2c4.6-.4 9.2-.3 13.8.3M18.2 4.4c1.2 3 2.3 6 3.2 9.2M2.9 12.6c-.3 2.4-.1 4.8.6 7.2M2.9 19.4c6-.3 12-.2 18.1.4M20.6 20.4c.4-2.6.4-5.1.1-7.8M2.4 13.3c1.9-.3 3.8-.3 5.6 0 .4 1.6 1.9 2.6 3.9 2.6s3.4-1.1 3.9-2.7c1.9-.2 3.9-.2 5.9.1\"/></svg>Home</button><button><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.9 4.4c4.3-.5 8.6-.4 12.9.2M16.1 3.6c.3 5.1.3 10.2 0 15.3M4.7 3.5c-.5 5-.5 10.1 0 15.1.1 1.1.9 1.8 2 1.8 4.4.2 8.8.2 13.2-.2M16.6 8.6c1.1-.1 2.1 0 3.1.2.2 3.5.2 7-.1 10.5-.1.9-.8 1.5-1.7 1.5M7.4 8.2c2.1-.2 4.3-.2 6.4.1M7.3 11.8c2-.2 4.1-.1 6.1.1M7.2 15.3c1.4-.1 2.8-.1 4.2.1\"/></svg>Brief</button></nav>",
+      "css": ".ds-signbar { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; display: flex; background: #0b0b0b; color: #fff; border-top: 3px solid #0b0b0b; padding: .35rem .3rem .45rem; } .ds-signbar button { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; flex: 1; border: 0; background: transparent; color: inherit; display: flex; flex-direction: column; align-items: center; gap: .15rem; font-size: .85rem; font-weight: 600; min-height: 3.4rem; padding: .3rem 0; border-radius: .45rem; cursor: pointer; } .ds-signbar svg { width: 1.75rem; height: 1.75rem; } .ds-signbar button.on { color: #ffcc00; } .ds-signbar button:hover, .ds-signbar button:active { background: rgba(255,255,255,.1); } .ds-signbar button:focus-visible { box-shadow: 0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b; outline: none; }"
+    },
+    {
+      "name": "Tab / Chip",
+      "kind": "chip",
+      "refersTo": "tab",
+      "description": "Outlined squared tab; the selected one fills signal yellow.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab on\">AI</button><button class=\"ds-tab\">Appearance</button></div>",
+      "css": ".ds-tabs { display: flex; gap: .4rem; } .ds-tab { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; border: 0; background: transparent; color: #0b0b0b; box-shadow: inset 0 0 0 2px #0b0b0b; padding: .5rem .9rem; border-radius: .45rem; min-height: 2.6rem; font-size: .85rem; font-weight: 500; cursor: pointer; } .ds-tab:hover { background: rgba(11,11,11,.07); } .ds-tab.on { background: #ffcc00; font-weight: 700; } .ds-tab:focus-visible { box-shadow: 0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b; outline: none; }"
+    },
+    {
+      "name": "Approval Card",
+      "kind": "card",
+      "refersTo": "card-header",
+      "description": "Bot approval or question card in chat: outlined panel with a yellow header strip.",
+      "html": "<div class=\"ds-card\"><h3>Maus needs your OK</h3><p>Send the excursion form reply to the office?</p><div class=\"ds-card-acts\"><button class=\"ds-btn\">Approve</button><button class=\"ds-btn-sec\">Not now</button></div></div>",
+      "css": ".ds-card { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; background: #fff; color: #0b0b0b; border-radius: .45rem; padding: .9rem; box-shadow: inset 0 0 0 2px #0b0b0b; overflow: hidden; } .ds-card h3 { margin: -.9rem -.9rem .6rem; padding: .6rem .9rem; font-size: 1rem; background: #ffcc00; border-bottom: 2px solid #0b0b0b; } .ds-card p { margin: 0; } .ds-card-acts { display: flex; gap: .5rem; margin-top: .6rem; } .ds-card .ds-btn { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; border: 0; background: #0b0b0b; color: #fff; padding: .6rem 1.1rem; min-height: 2.9rem; border-radius: .45rem; font-weight: 600; cursor: pointer; } .ds-card .ds-btn:hover { background: #000; } .ds-card .ds-btn-sec { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; border: 0; background: transparent; box-shadow: inset 0 0 0 2px #0b0b0b; padding: .6rem 1.1rem; min-height: 2.9rem; border-radius: .45rem; font-weight: 600; cursor: pointer; } .ds-card button:focus-visible { box-shadow: 0 0 0 3px #ffcc00, 0 0 0 5px #0b0b0b; outline: none; }"
+    },
+    {
+      "name": "Toast",
+      "kind": "custom",
+      "refersTo": "toast",
+      "description": "Black notice edged with a 2px signal-yellow outline instead of a drop shadow.",
+      "html": "<div class=\"ds-toast\" role=\"status\">Copied</div>",
+      "css": ".ds-toast { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; display: inline-block; background: #0b0b0b; color: #fff; padding: .75rem 1rem; border-radius: .45rem; box-shadow: 0 0 0 2px #ffcc00; font-size: .9rem; }"
+    },
+    {
+      "name": "Desktop Empty-Pane Sign",
+      "kind": "custom",
+      "refersTo": "sign-pane",
+      "description": "The yellow sign centred in the empty main pane on wide screens.",
+      "html": "<div class=\"ds-signpane\"><span class=\"ds-signpane-sq\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15.2 4.9c-2.3 2.2-4.5 4.6-6.8 7.3 2.2 2.3 4.3 4.6 6.4 7\"/></svg></span><span>Choose a bot<small>Pick one from the list to start</small></span></div>",
+      "css": ".ds-signpane { font-family: Hind, Roboto, \"Noto Sans\", sans-serif; display: inline-flex; align-items: center; gap: 1rem; background: #ffcc00; color: #0b0b0b; padding: 1.1rem 1.4rem; border-radius: .45rem; box-shadow: inset 0 0 0 3px #0b0b0b; font-size: 2rem; font-weight: 700; line-height: 1.1; } .ds-signpane small { display: block; font-size: 1rem; font-weight: 500; color: #4a3d00; margin-top: .3rem; } .ds-signpane-sq { width: 3.6rem; height: 3.6rem; background: #0b0b0b; color: #fff; border-radius: .4rem; display: grid; place-items: center; flex: none; } .ds-signpane-sq svg { width: 2.2rem; height: 2.2rem; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Terminal Sign",
+    "overview": "DanDroid is signposted like a good international airport. The traveller never hunts: one signal-yellow band says how many things need him and names the single next one, with an arrow pointing the way. Everything else in the hall is calm sign black on white and pale grey, ruled with hairlines and heavy frame rules, carried by one humanist sans in sentence case. Yellow is not decoration; it means \"this is where you are going\" or \"this needs you\", and nothing else.\n\nThe system is a sign system first and an app second. Every screen opens on a yellow sign band naming its destination in bold black, closed off by a heavy black rule; the home screen closes at the foot with a black sign bar. Destinations are identified by marker-drawn pictograms set in black inset squares, the way a terminal marks gates, toilets and baggage. The drawn line is the personal part: strokes cross at the corners and overshoot their ends like a marker sketch, which keeps the rigour of wayfinding from turning corporate. Density is phone-first and glanceable, built for one-handed taps between lessons, in the car and on the couch.\n\nLight mode is the daylit concourse (pale grey hall, white panels, black frames). Dark mode is the terminal at night: the hall goes black, frames turn near-white, and the yellow sign stays lit at full strength. It replaced the earlier teal and purple gradient look outright; no gradient, glow or brand tint survives in the system.",
+    "keyCharacteristics": [
+      "Signal yellow reserved for wayfinding: sign bands, needs-you counts, the selected or followed item, and outlines on black notices.",
+      "Sign black carries text, primary actions, frames, rules, pictogram squares and the foot sign bar.",
+      "One face, Hind, self-hosted; bold for destinations, sentence case throughout.",
+      "Marker-sketch pictograms with crossing corners and overshoots, drawn large; arrows locked to the edge they point past.",
+      "Squared panels (about 7px), hairline and heavy rules, no gradients, no drop shadows on panels.",
+      "The next-decision band is the signature: a monumental count with a split-flap flip."
+    ],
+    "rules": [
+      {
+        "name": "The Wayfinding-Only Rule",
+        "body": "Signal yellow appears only where it guides or alerts: a band naming where you are, a count of what needs you, the item you have selected, or the edge of a black notice. If a yellow element does not answer \"where am I\" or \"what needs me\", it is not yellow.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Inks Rule",
+        "body": "Actions and emphasis are black (near-white in dark mode), never a third accent colour. The accent tokens in the build alias to sign black on purpose.",
+        "section": "colors"
+      },
+      {
+        "name": "The Lit Sign Rule",
+        "body": "Dark mode inverts the hall, not the signs: bands, the next panel, the empty-pane sign, the sign bar, the toast and the location banner keep their light-mode yellow and black.",
+        "section": "colors"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Every label, heading and button is in sentence case. No all-caps signage.",
+        "section": "typography"
+      },
+      {
+        "name": "The Bold Destination Rule",
+        "body": "Weight 700 marks a destination or a decision (screen names, bot names, the count, the next item, the \"Your bots\" heading). Running text stays 400; 500 and 600 are for supporting lines and controls.",
+        "section": "typography"
+      },
+      {
+        "name": "The Ruled Not Raised Rule",
+        "body": "Separate things with a rule or an outline. A soft shadow is allowed only on an open menu; notices that sit above the page are edged in yellow, not lifted.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Hand-Drawn Pictogram Rule",
+        "body": "Every icon in the product is a drawn pictogram from the house set, never an emoji, icon font or library glyph, and a destination's pictogram sits in a black sign square.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do reserve signal yellow (#ffcc00) for sign bands, needs-you counts, the selected item and the edge of black notices.",
+      "Do open every screen with a yellow sign band naming the destination in bold black, closed by a 3px black rule.",
+      "Do mark destinations with a marker-drawn pictogram in a 3rem black sign square, and end tappable rows with the drawn edge arrow.",
+      "Do keep the next-decision band to one count and one next item, collapsing to \"Nothing needs you\" when clear.",
+      "Do keep bands, the next panel, the empty-pane sign, notices and the black sign bar lit at full strength in dark mode.",
+      "Do put list actions in the list's own sticky heading as a black button, not in a floating button over the content.",
+      "Do frame panels in the strong-rule colour (black by day, near-white by night).",
+      "Do size everything in rem so the text-size setting scales the whole interface, and keep targets at 3rem (48dp).",
+      "Do let every animation, including the split-flap count, collapse to instant under reduced motion."
+    ],
+    "donts": [
+      "Don't use gradients, glows, tinted brand washes or the previous teal and purple palette.",
+      "Don't introduce a third accent colour for actions; actions are black (near-white in dark mode).",
+      "Don't use emoji, icon fonts or stock icon libraries in place of the drawn pictogram set.",
+      "Don't use yellow as a decorative fill, a background for body content, or for anything that is not wayfinding.",
+      "Don't set labels or headings in all caps; signage here is sentence case.",
+      "Don't lift panels or notices with drop shadows; separate them with rules and outlines.",
+      "Don't float buttons over the list or the page.",
+      "Don't round panels, pills or buttons into capsules; outside chat bubbles and nested blocks (0.6rem) and the logo, corners stay at the sign radius or tighter."
+    ]
+  }
+}

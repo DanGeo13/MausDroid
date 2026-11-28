@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import qrcode from "qrcode-generator";
 import { api } from "./api.ts";
 import type { Bot, Provider } from "./types.ts";
-import { IconBack } from "./icons.tsx";
+import { IconBack, IconRing, IconSpark } from "./icons.tsx";
 import { Routines } from "./routines.tsx";
 import { Calendars } from "./calendars.tsx";
 import { AddEndpoint, ModelPicker } from "./models.tsx";
@@ -150,10 +150,10 @@ function ProviderRow({ p, isDefault, reload }: { p: Provider; isDefault: boolean
   );
 }
 
-const SUB_LOOK: Record<string, { color: string; mark: string }> = {
-  claude: { color: "#D97757", mark: "✳︎" },
-  chatgpt: { color: "#10A37F", mark: "◎" },
-  gemini: { color: "#4C8DF6", mark: "✦" },
+const SUB_LOOK: Record<string, { mark: () => any }> = {
+  claude: { mark: IconSpark },
+  chatgpt: { mark: IconRing },
+  gemini: { mark: IconSpark },
 };
 
 function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider; isDefault: boolean; reload: () => void }) {
@@ -163,7 +163,7 @@ function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider
   const [computerToken, setComputerToken] = useState("");
   const [runOn, setRunOn] = useState(p.runOn ?? "phone");
   const [model, setModel] = useState(p.defaultModel);
-  const look = SUB_LOOK[sub.id] ?? { color: "#666", mark: "•" };
+  const look = SUB_LOOK[sub.id] ?? { mark: IconRing };
   const busy = sub.stage === "installing" || sub.stage === "signing-in";
   const signedIn = sub.stage === "signed-in";
   const stageText: Record<string, string> = {
@@ -177,8 +177,8 @@ function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider
   return (
     <div class="section">
       <div class="inline" style={{ flexWrap: "nowrap" }}>
-        <div class="avatar" style={{ background: look.color, width: "2.8rem", height: "2.8rem", fontSize: "1.3rem" }}>
-          {look.mark}
+        <div class="avatar" style={{ width: "2.8rem", height: "2.8rem" }}>
+          <look.mark />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <strong>{sub.label}</strong> {isDefault ? <span class="pill">default</span> : null}
@@ -424,7 +424,7 @@ function AppsTab() {
                 const alias = (conns ?? []).some((c) => c.toolkit === k.slug) ? prompt(`Name this extra ${k.name} account (e.g. work, personal):`) ?? undefined : undefined;
                 try {
                   const r = await api("composio/link", { body: { toolkit: k.slug, alias } });
-                  if (!(window as any).MausDroidNative) window.open(r.url, "_blank");
+                  if (!(window as any).DanDroidNative) window.open(r.url, "_blank");
                   toast("Finish signing in, then come back and tap Refresh");
                 } catch (e) {
                   // Apps Composio doesn't sign in for (e.g. eBay) need your own developer app first.
@@ -478,7 +478,7 @@ function AppSignInSetup({ slug, name, onClose }: { slug: string; name: string; o
   const connect = async () => {
     try {
       const r = await api("composio/link", { body: { toolkit: slug } });
-      if (!(window as any).MausDroidNative) window.open(r.url, "_blank");
+      if (!(window as any).DanDroidNative) window.open(r.url, "_blank");
       toast("Finish signing in, then come back and tap Refresh");
       onClose();
     } catch (e) {
@@ -693,7 +693,7 @@ function NotificationReading() {
     <div class="section">
       <h2>Notification reading</h2>
       <p class="help">
-        MausDroid reads notifications from the apps you choose — by default Meta's <b>Muse</b> — so it can learn what a good assistant anticipates, start routines, and let bots look at them. Read-only: it never acts in those apps. Android only lets apps read notifications still in your notification shade and new ones; dismissed ones can't be read by any app.
+        DanDroid reads notifications from the apps you choose — by default Meta's <b>Muse</b> — so it can learn what a good assistant anticipates, start routines, and let bots look at them. Read-only: it never acts in those apps. Android only lets apps read notifications still in your notification shade and new ones; dismissed ones can't be read by any app.
       </p>
       {!n ? (
         <p class="help">Notification reading needs the Android app.</p>
@@ -711,7 +711,7 @@ function NotificationReading() {
               </button>
             )}
           </div>
-          {!n.access ? <p class="help">Tap Allow, find <b>MausDroid (notifications you choose)</b> in the list and switch it on, then come back.</p> : null}
+          {!n.access ? <p class="help">Tap Allow, find <b>DanDroid (notifications you choose)</b> in the list and switch it on, then come back.</p> : null}
           <p class="help" style={{ marginTop: ".5rem" }}>Apps to read {chosen.length ? "" : "(none chosen: any app called Muse)"}:</p>
           <div class="seg" style={{ flexWrap: "wrap" }}>
             {Object.entries(seen)
@@ -784,13 +784,13 @@ function PhoneTab() {
             Open
           </button>
         </div>
-        <p class="help">Tip: also lock MausDroid in Recent apps (pull the card down → lock icon).</p>
+        <p class="help">Tip: also lock DanDroid in Recent apps (pull the card down → lock icon).</p>
       </div>
       <LocationSection />
       <div class="section">
         <h2>Tailscale (built in)</h2>
         <p class="help">
-          MausDroid joins your tailnet by itself — you never need to open the Tailscale app. Create an auth key at <a href="https://login.tailscale.com/admin/settings/keys" target="_blank">Tailscale → Settings → Keys</a> (tick "Reusable"), paste it once.
+          DanDroid joins your tailnet by itself — you never need to open the Tailscale app. Create an auth key at <a href="https://login.tailscale.com/admin/settings/keys" target="_blank">Tailscale → Settings → Keys</a> (tick "Reusable"), paste it once.
         </p>
         <div class="toggle">
           <span>
@@ -835,7 +835,7 @@ function PhoneTab() {
       </div>
       <div class="section">
         <h2>Updates</h2>
-        <p class="help">MausDroid updates itself in the background: new screens and features arrive without reinstalling. A new app file is only needed for rare core changes, and you'd get a one-tap prompt.</p>
+        <p class="help">DanDroid updates itself in the background: new screens and features arrive without reinstalling. A new app file is only needed for rare core changes, and you'd get a one-tap prompt.</p>
         <div class="muted" style={{ fontSize: 13 }}>
           App {upd?.apkVersion ?? "?"} · Engine {upd?.engineVersion ?? "?"} · {upd?.state ?? ""} {upd?.lastChecked ? `· checked ${new Date(upd.lastChecked).toLocaleString()}` : ""}
           {upd?.message ? <div>{upd.message}</div> : null}
@@ -922,7 +922,7 @@ function WebsiteTab() {
     setLinkMsg("Linking…");
     try {
       await api("pair/link", { body: { text } });
-      setLinkMsg("✅ Linked — the PC is opening MausDroid. Enter your website password there.");
+      setLinkMsg("✅ Linked — the PC is opening DanDroid. Enter your website password there.");
       setCode("");
       setTimeout(reloadD, 4000);
     } catch (e) {
@@ -944,7 +944,7 @@ function WebsiteTab() {
       <div class="section">
         <h2>Always-on website</h2>
         <p class="help">
-          Control your bots from any browser. Uses a free Cloudflare Worker you deploy once (instructions in the MausDroid repo: <code>relay/README.md</code>). The website only passes messages to your phone; your data stays on the phone, and every device must be linked from this phone and know your password.
+          Control your bots from any browser. Uses a free Cloudflare Worker you deploy once (instructions in the DanDroid repo: <code>relay/README.md</code>). The website only passes messages to your phone; your data stays on the phone, and every device must be linked from this phone and know your password.
         </p>
         <div class="field">
           <label>Website address (your Worker URL)</label>
@@ -973,7 +973,7 @@ function WebsiteTab() {
               <li>
                 On the PC or tablet, open <b style={{ wordBreak: "break-all" }}>{s.website.relayUrl}</b> — it shows a QR code.
               </li>
-              <li>Scan it here. That device opens your MausDroid and asks for your password.</li>
+              <li>Scan it here. That device opens your DanDroid and asks for your password.</li>
             </ol>
             {(window as any).MausDroidShell?.scanQr ? (
               <button class="btn" disabled={!s.website.passwordSet || linking} onClick={scan}>
@@ -1068,7 +1068,7 @@ function VoicePicker({ s, save }: { s: any; save: (b: object) => void }) {
           // A voice for another language reads English with the wrong sounds (garbled speech).
           const chosen = usable.find((v) => v.name === s.voice?.voiceName);
           return chosen?.locale && !String(chosen.locale).toLowerCase().startsWith(lang) ? (
-            <p class="help" style={{ color: "var(--warn, #c80)" }}>
+            <p class="help" style={{ color: "var(--warn)" }}>
               ⚠️ This voice speaks {chosen.locale}, not your phone's language, so English may sound garbled. Pick a voice marked {lang}-….
             </p>
           ) : null;
@@ -1188,13 +1188,13 @@ function SpeechService({ s, save }: { s: any; save: (b: object) => void }) {
       </select>
       <p class="help">
         Your phone's default speech service is {nameOf(r.phoneDefault) || "not set"}
-        {r.inUse ? `; MausDroid last used ${nameOf(r.inUse)}` : ""}. Assistant apps (e.g. Grok) often refuse to listen for other apps, so Automatic tries Google's first. Calls also use on-device recognition after you interrupt and while on hold.
+        {r.inUse ? `; DanDroid last used ${nameOf(r.inUse)}` : ""}. Assistant apps (e.g. Grok) often refuse to listen for other apps, so Automatic tries Google's first. Calls also use on-device recognition after you interrupt and while on hold.
       </p>
     </div>
   );
 }
 
-/** MausDroid checks its own voice offline against your success criteria; Improver uses the results. */
+/** DanDroid checks its own voice offline against your success criteria; Improver uses the results. */
 /** How to say names the voice gets wrong: "Odette" → "Oh-DET". Spoken only; the text keeps the real spelling. */
 function Pronunciations({ s, save }: { s: any; save: (b: object) => void }) {
   const list: { from: string; to: string }[] = s.voice?.pronunciations ?? [];
@@ -1287,7 +1287,7 @@ function VoiceQuality({ save }: { save: (b: object) => void }) {
   return (
     <div class="section">
       <h2>Voice quality</h2>
-      <p class="help">MausDroid checks its own voice offline: it speaks test sentences silently, the phone's on-device recognizer listens, and it compares what was heard with what it meant to say. Podcasts and calls are checked too. Each night Improver reviews the results and suggests a fix (another voice, a different speed) if they fall short — you approve it.</p>
+      <p class="help">DanDroid checks its own voice offline: it speaks test sentences silently, the phone's on-device recognizer listens, and it compares what was heard with what it meant to say. Podcasts and calls are checked too. Each night Improver reviews the results and suggests a fix (another voice, a different speed) if they fall short — you approve it.</p>
       <div class="inline" style={{ gap: ".6rem", flexWrap: "wrap" }}>
         {num("clarity", "Clarity ≥ %", 1, 100)}
         {num("minWps", "Speed from", 0.1)}
@@ -1342,14 +1342,14 @@ function VoiceTab({ bots }: { bots: Bot[] }) {
     <>
       <div class="section">
         <h2>Digital assistant</h2>
-        <p class="help">Use MausDroid instead of Google Assistant or ChatGPT: long-press the home button (or hold power), and your chosen bot listens straight away and answers out loud.</p>
+        <p class="help">Use DanDroid instead of Google Assistant or ChatGPT: long-press the home button (or hold power), and your chosen bot listens straight away and answers out loud.</p>
         <div class="toggle">
-          <span>MausDroid is your assistant {sys?.isDefaultAssistant ? <span class="pill ok">yes</span> : <span class="pill warn">not yet</span>}</span>
+          <span>DanDroid is your assistant {sys?.isDefaultAssistant ? <span class="pill ok">yes</span> : <span class="pill warn">not yet</span>}</span>
           <button class="btn secondary small" onClick={run(async () => api("system/assistant", { body: {} }))}>
             {sys?.isDefaultAssistant ? "Change" : "Set up"}
           </button>
         </div>
-        {!sys?.isDefaultAssistant ? <p class="help">In the screen that opens, choose “Digital assistant app” (or “Default assistant”) → MausDroid.</p> : null}
+        {!sys?.isDefaultAssistant ? <p class="help">In the screen that opens, choose “Digital assistant app” (or “Default assistant”) → DanDroid.</p> : null}
         <div class="toggle">
           <span>Microphone {sys?.microphoneAllowed ? <span class="pill ok">allowed</span> : <span class="pill warn">needed</span>}</span>
           {!sys?.microphoneAllowed ? (
@@ -1577,7 +1577,7 @@ function MemoryTab() {
       </div>
       <div class="section">
         <h2>GitHub token (optional)</h2>
-        <p class="help">Raises GitHub's limit for skills searches from 60 to 5,000 an hour. For the weekly audit's wiki, use a fine-grained token with "Contents: read and write" on the private repo DanGeo13/mausdroid-routine-wiki only. MausDroid never writes to a public repo.</p>
+        <p class="help">Raises GitHub's limit for skills searches from 60 to 5,000 an hour. For the weekly audit's wiki, use a fine-grained token with "Contents: read and write" on the private repo DanGeo13/mausdroid-routine-wiki only. DanDroid never writes to a public repo.</p>
         <div class="inline">
           <input type="password" value={gh} onInput={(e) => setGh(val(e))} placeholder="github_pat_…" />
           <button class="btn secondary" onClick={run(async () => (await api("settings/github", { method: "PUT", body: { token: gh } }), setGh("")), "Saved")}>

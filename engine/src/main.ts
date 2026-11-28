@@ -3,7 +3,7 @@ import path from "node:path";
 import { installNodeFetch } from "./net-fetch.ts";
 import { config } from "./config.ts";
 
-// On the phone, use MausDroid's own fetch (see net-fetch.ts) before anything else runs.
+// On the phone, use DanDroid's own fetch (see net-fetch.ts) before anything else runs.
 if (config.platform === "android" || process.env.MAUSDROID_NODE_FETCH === "1" || typeof (globalThis as any).WebAssembly === "undefined") installNodeFetch();
 
 const statusFile = () => path.join(config.dataDir, "engine-status.json");
@@ -91,7 +91,7 @@ async function main() {
   const ts = settings().tailscale;
   if (bridgeAvailable() && ts.enabled) await step("tailscale", () => bridge("/tailscale/start", { hostname: ts.hostname, authKey: getSecret("tailscale:authkey") ?? "" }));
   if (bridgeAvailable()) await step("ready", () => bridge("/engine/ready", { version: config.version, port: config.port }));
-  console.log(`MausDroid engine ${config.version} on http://127.0.0.1:${config.port}/?t=${config.platform === "desktop-dev" ? config.localToken : "…"}`);
+  console.log(`DanDroid engine ${config.version} on http://127.0.0.1:${config.port}/?t=${config.platform === "desktop-dev" ? config.localToken : "…"}`);
 }
 
 process.on("uncaughtException", (e) => record("uncaught", e));

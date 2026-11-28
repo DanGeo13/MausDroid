@@ -38,7 +38,7 @@ export interface AudioOverview {
   segments?: Segment[];
   /** The source the hosts discussed is kept on the phone (for "explain that last bit"). */
   hasSource?: boolean;
-  /** The source and its resources as PDFs, in Downloads › MausDroid Review Podcast (removed when the next overview is made). */
+  /** The source and its resources as PDFs, in Downloads › DanDroid Review Podcast (removed when the next overview is made). */
   pdfs?: PodcastPdf[];
   pdfNote?: string;
 }
@@ -50,7 +50,7 @@ export interface PodcastPdf {
   uri: string;
   kind: "source" | "resource";
 }
-export const PDF_FOLDER = "MausDroid Review Podcast";
+export const PDF_FOLDER = "DanDroid Review Podcast";
 
 export interface PodcastInput {
   title: string;
@@ -216,7 +216,7 @@ async function synth(text: string, v: { voice: string; pitch: number }, engine: 
     // A phrase's delivery cue (speed / pitch) is applied on the phone with Sonic.
     await bridge("/voice/synthesize", { text, engine, voice: v.voice, pitch: v.pitch, rate, out, ...(cue.rate ? { sonicRate: cue.rate } : {}), ...(cue.pitch ? { sonicPitch: cue.pitch } : {}) }, 180_000);
   } catch (e) {
-    if (/unknown \/voice\/synthesize/.test(errorText(e))) throw new Error("Recording audio needs the newer MausDroid app (0.11.0 or later): Settings → Updates → install the app update.");
+    if (/unknown \/voice\/synthesize/.test(errorText(e))) throw new Error("Recording audio needs the newer DanDroid app (0.11.0 or later): Settings → Updates → install the app update.");
     throw e;
   }
   if (!fs.existsSync(out) || fs.statSync(out).size < 100) throw new Error("The phone's voice engine didn't record anything. Check Settings → Voice (try another voice engine).");
@@ -305,7 +305,7 @@ export function createOverview(input: PodcastInput): AudioOverview {
 
 /**
  * The source (a Google Doc becomes a PDF) and any Drive / PDF resources, saved
- * to Downloads › MausDroid Review Podcast. Web pages that aren't PDFs stay links.
+ * to Downloads › DanDroid Review Podcast. Web pages that aren't PDFs stay links.
  */
 async function preparePdfs(o: AudioOverview, input: PodcastInput): Promise<{ pdfs: PodcastPdf[]; notes: string[] }> {
   const want: { name: string; kind: PodcastPdf["kind"]; drive_file_id?: string; url?: string }[] = [];

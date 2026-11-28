@@ -131,7 +131,7 @@ class BridgeServer(
                 "/voice/call-mode" -> { voice.setCallMode(body.optBoolean("on")); if (!body.optBoolean("on")) watch.stop(); ok() }
                 "/voice/synthesize" -> {
                     val out = java.io.File(body.getString("out"))
-                    // Only into MausDroid's own storage.
+                    // Only into DanDroid's own storage.
                     if (!out.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Not allowed there")
                     var size = recorder.record(body.getString("text"), body.optString("engine"), body.optString("voice"), body.optDouble("pitch", 1.0).toFloat(), body.optDouble("rate", 1.0).toFloat(), out)
                     // A delivery cue for this phrase: speed and pitch changed independently (Sonic).
@@ -146,8 +146,8 @@ class BridgeServer(
                 }
                 "/files/save-download" -> {
                     val src = java.io.File(body.getString("path"))
-                    if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only MausDroid's own files")
-                    ok(Downloads.save(ctx, src.path, body.optString("name", src.name), body.optString("mime"), body.optString("folder", "MausDroid")))
+                    if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only DanDroid's own files")
+                    ok(Downloads.save(ctx, src.path, body.optString("name", src.name), body.optString("mime"), body.optString("folder", "DanDroid")))
                 }
                 "/speech/enqueue" -> {
                     val list = items(body.optJSONArray("items") ?: org.json.JSONArray(), body.optString("turn").ifBlank { null })
@@ -202,19 +202,19 @@ class BridgeServer(
                 "/files/delete-download" -> ok(JSONObject().put("deleted", Downloads.delete(ctx, body.getString("uri"))))
                 "/pdf/find" -> {
                     val src = java.io.File(body.getString("path"))
-                    if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only MausDroid's own files")
+                    if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only DanDroid's own files")
                     val qs = body.optJSONArray("quotes") ?: org.json.JSONArray()
                     val pages = PdfTools.findPages(src.path, (0 until qs.length()).map { qs.optString(it) })
                     ok(JSONObject().put("pages", org.json.JSONArray(pages)).put("canSearch", PdfTools.canSearch).put("pageCount", PdfTools.pageCount(src.path)))
                 }
                 "/pdf/open" -> {
                     val src = java.io.File(body.getString("path"))
-                    if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only MausDroid's own files")
+                    if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only DanDroid's own files")
                     ctx.startActivity(Intent(ctx, PdfViewActivity::class.java).putExtra("path", src.path).putExtra("page", body.optInt("page", 0)).putExtra("quote", body.optString("quote")).putExtra("title", body.optString("title")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     ok()
                 }
                 "/voice/recognizers" -> ok(voice.recognizerList())
-                // Reply Desk and the Share menu: the person stays in control (MausDroid never presses Send in another app).
+                // Reply Desk and the Share menu: the person stays in control (DanDroid never presses Send in another app).
                 "/conversation/open" -> ok(JSONObject().put("opened", Conversations.open(ctx, body.optString("key").ifBlank { null }, body.optString("pkg").ifBlank { null })))
                 "/clipboard" -> { Conversations.copy(ctx, body.getString("text")); ok() }
                 "/share/send" -> ok(JSONObject().put("done", Conversations.send(ctx, body.optString("kind"), body.optString("text"), body.optString("pkg").ifBlank { null }, body.optString("subject").ifBlank { null }, body.optString("to").ifBlank { null })))
@@ -223,14 +223,14 @@ class BridgeServer(
                     ok(JSONObject().put("installed", org.json.JSONArray((0 until arr.length()).map { arr.optString(it) }.filter { Conversations.installed(ctx, it) })))
                 }
                 "/voice/self-check" -> {
-                    // How clearly MausDroid speaks: make (or take) the audio, then recognise it offline.
+                    // How clearly DanDroid speaks: make (or take) the audio, then recognise it offline.
                     val audio: SpeechPlayer.Pcm = if (body.has("text")) {
                         val f = java.io.File(ctx.cacheDir, "self-check.wav")
                         recorder.record(body.getString("text"), body.optString("engine"), body.optString("voice"), body.optDouble("pitch", 1.0).toFloat(), body.optDouble("rate", 1.0).toFloat(), f)
                         SpeechPlayer.readWav(f.readBytes())
                     } else {
                         val src = java.io.File(body.getString("path"))
-                        if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only MausDroid's own files")
+                        if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only DanDroid's own files")
                         val all = SpeechPlayer.readWav(src.readBytes())
                         val a = (body.optLong("startMs", 0) * all.rate / 1000).toInt().coerceIn(0, all.samples.size)
                         val b = if (body.has("endMs")) (body.getLong("endMs") * all.rate / 1000).toInt().coerceIn(a, all.samples.size) else all.samples.size

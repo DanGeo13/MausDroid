@@ -8,7 +8,7 @@ import { getBot, listBots, type Bot } from "./bots.ts";
 /**
  * Your playbook: how your assistant should work with you (e.g. documents
  * written for a previous assistant). Kept only on this phone — never in
- * MausDroid's code. Documents set to "always" are part of the main
+ * DanDroid's code. Documents set to "always" are part of the main
  * assistant's instructions; "reference" ones are looked up when needed.
  * Corrections are added to it straight away, with a change log line.
  */
@@ -100,8 +100,8 @@ export function appliesTo(bot: Bot): boolean {
 const HEADER = (bot: Bot) => `\n\n# The person's playbook (how to work with them)
 These are the person's own rules, imported from documents they wrote with a previous assistant. Follow them closely; they're the person's standing instructions.
 - If they name a previous assistant (e.g. "Tilly"), that now means you, ${bot.name}. Treat other assistant or bot names in them as the previous system's.
-- Tools, scripts or boards they name that MausDroid doesn't have (e.g. run_script, named scripts, Cron 1, an Email board): use MausDroid's own tools for the same job, or say plainly it isn't set up here yet — never pretend.
-- MausDroid's approval cards always apply. Where the playbook is stricter (e.g. never send a first draft, never delete email), follow the playbook.
+- Tools, scripts or boards they name that DanDroid doesn't have (e.g. run_script, named scripts, Cron 1, an Email board): use DanDroid's own tools for the same job, or say plainly it isn't set up here yet — never pretend.
+- DanDroid's approval cards always apply. Where the playbook is stricter (e.g. never send a first draft, never delete email), follow the playbook.
 - When the person corrects you or sets a new rule, add it with playbook_add straight away so they never have to repeat it.`;
 
 /** The playbook part of a bot's instructions. */
@@ -159,10 +159,10 @@ export function addRule(section: string, rule: string, by: string): { doc: strin
   return { doc: target.name };
 }
 
-export const REVIEW_PROMPT = `Review the person's playbook (in your instructions; open reference documents with playbook_read) against MausDroid's set-up (bot_list, routine_admin_list, tool_list).
-1. List the routines and checks it describes (e.g. weekday checks, reply watches with stop conditions, briefs) and which MausDroid already does.
+export const REVIEW_PROMPT = `Review the person's playbook (in your instructions; open reference documents with playbook_read) against DanDroid's set-up (bot_list, routine_admin_list, tool_list).
+1. List the routines and checks it describes (e.g. weekday checks, reply watches with stop conditions, briefs) and which DanDroid already does.
 2. Suggest the few most useful changes with improve_propose (at most 5): new routines for the main assistant, better wording, bot instructions — don't change anything now; the person approves the cards.
-3. Note anything it relies on that MausDroid can't do yet (e.g. a connection or script), in one line each.
+3. Note anything it relies on that DanDroid can't do yet (e.g. a connection or script), in one line each.
 Reply with a short summary. Never copy private details (account numbers, family details) into suggestion titles.`;
 
 export const getMainBotId = () => mainBot()?.id;

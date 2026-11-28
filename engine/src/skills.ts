@@ -19,7 +19,7 @@ const root = () => path.dirname(dataPath("skills", ".keep"));
 const API = "https://api.github.com";
 
 function ghHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "user-agent": "MausDroid-skills", accept: "application/vnd.github+json" };
+  const h: Record<string, string> = { "user-agent": "DanDroid-skills", accept: "application/vnd.github+json" };
   const t = getSecret("github");
   if (t) h.authorization = `Bearer ${t}`;
   return h;
@@ -143,7 +143,7 @@ export async function installFromGitHub(ref: string, only?: string[]) {
   return installed;
 }
 
-/** Skills that come with MausDroid (added once; your edits are kept). */
+/** Skills that come with DanDroid (added once; your edits are kept). */
 const BUILTIN_SKILLS: Record<string, string> = {
   gumtree: `---
 name: gumtree

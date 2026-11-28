@@ -24,12 +24,12 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
     @Volatile private var running = false
     @Volatile private var speech = false
     @Volatile private var level = -90.0
-    /** Time from the start of your voice to MausDroid going quiet, for the last interruption (ms). */
+    /** Time from the start of your voice to DanDroid going quiet, for the last interruption (ms). */
     @Volatile var lastInterruptMs: Long = -1
         private set
     private var thread: Thread? = null
     @Volatile var bargeIn = true
-    /** Other speech that counts as MausDroid talking (the phrase player), and how to stop it. */
+    /** Other speech that counts as DanDroid talking (the phrase player), and how to stop it. */
     @Volatile var otherSpeaking: () -> Boolean = { false }
     @Volatile var stopOther: () -> Unit = {}
     private fun anySpeaking() = voice.isSpeaking() || otherSpeaking()
@@ -111,7 +111,7 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
     private fun start(): String? {
         if (running) return null
         if (ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
-            return "MausDroid needs microphone permission (Settings → Voice & assistant → Microphone)."
+            return "DanDroid needs microphone permission (Settings → Voice & assistant → Microphone)."
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val rec = try {
             AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, max(min, FRAME * 8))

@@ -6,7 +6,7 @@ import { clip, errorText, id as newId, now } from "./util.ts";
 import { plainForSpeech, pronounce } from "./speech-style.ts";
 
 /**
- * MausDroid checks its own voice: it makes (or takes) speech, recognises it
+ * DanDroid checks its own voice: it makes (or takes) speech, recognises it
  * offline with the phone's on-device recognizer, and compares what was heard
  * with what it meant to say — clarity (word accuracy) and speed (words a
  * second). Calls add first-audio and interruption times. Results are judged
@@ -143,7 +143,7 @@ async function selfCheck(body: Record<string, unknown>): Promise<SelfCheck> {
     return await bridge<SelfCheck>("/voice/self-check", body, 150_000);
   } catch (e) {
     const msg = errorText(e);
-    return { error: /unknown \/voice\/self-check/.test(msg) ? "Voice checks need the newer MausDroid app." : msg };
+    return { error: /unknown \/voice\/self-check/.test(msg) ? "Voice checks need the newer DanDroid app." : msg };
   }
 }
 

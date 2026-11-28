@@ -108,9 +108,9 @@ test("new Staff Update → Maus writes it → recorded under the limit → Downl
     const voices = new Set(br.st.synth.map((s) => s.voice));
     assert.deepEqual([...voices].sort(), ["af_heart", "am_adam"]);
     assert.ok(br.st.synth.some((s) => /full Staff Update/.test(s.text)));
-    for (const s of br.st.synth) assert.ok(s.out.startsWith(e.dir), "recordings stay in MausDroid's own storage");
+    for (const s of br.st.synth) assert.ok(s.out.startsWith(e.dir), "recordings stay in DanDroid's own storage");
     // Saved to Downloads, size checked.
-    assert.equal(o.downloads.location, "Download/MausDroid/Week 8 audio overview.wav");
+    assert.equal(o.downloads.location, "Download/DanDroid/Week 8 audio overview.wav");
     // Listed in Notifications (as an update: it doesn't buzz the phone unless updates are on) with a link to it.
     assert.ok(!br.st.notify.some((x) => x.type === "audio-overview"), "updates don't buzz the phone by default");
     const n = (await e.call("/api/alerts")).data.find((x) => x.type === "audio-overview");
@@ -133,7 +133,7 @@ test("new Staff Update → Maus writes it → recorded under the limit → Downl
   }
 });
 
-test("save_to_downloads: a MausDroid file to Downloads, checked; older app gets a clear message", async () => {
+test("save_to_downloads: a DanDroid file to Downloads, checked; older app gets a clear message", async () => {
   const br = await fakeBridge();
   const m = await fakeModel((body) => {
     const last = JSON.stringify(body.messages.at(-1));
@@ -149,13 +149,13 @@ test("save_to_downloads: a MausDroid file to Downloads, checked; older app gets 
     await e.call(`/api/bots/${maus.id}/messages`, "POST", { text: "save it" });
     const t = await e.until(async () => (await e.call(`/api/bots/${maus.id}/messages`)).data.find((x) => x.tool?.name === "save_to_downloads" && x.tool.status !== "running")?.tool, "saved");
     assert.ok(!t.isError, t.result);
-    assert.match(t.result, /Download\/MausDroid\/Week 8 TAS Update\.pdf/);
+    assert.match(t.result, /Download\/DanDroid\/Week 8 TAS Update\.pdf/);
     assert.equal(br.st.saved[0].mime, "application/pdf");
     assert.equal((await e.call("/api/cards")).data.length, 0, "saving to the phone doesn't ask");
     // An older app without these features: a clear message, not a crash.
     br.st.old = true;
     const r = await e.call(`/api/files/${f.id}/save-to-downloads`, "POST", {});
-    assert.match(r.data.error, /newer MausDroid app \(0\.11\.0/);
+    assert.match(r.data.error, /newer DanDroid app \(0\.11\.0/);
   } finally {
     await e.stop();
     m.close();

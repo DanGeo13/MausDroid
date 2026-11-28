@@ -1,4 +1,4 @@
-# Builds MausDroid and publishes over-the-air updates to the `updates` branch.
+# Builds DanDroid and publishes over-the-air updates to the `updates` branch.
 # Engine/UI changes ship as a signed engine bundle (no reinstall).
 # A new APK is built only when version.json's "apk" number changes.
 #
@@ -72,11 +72,11 @@ jobs:
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           ./scripts/fetch-native.sh
           cd android && ./gradlew assembleRelease --no-daemon
-          cp app/build/outputs/apk/release/app-release.apk ../dist/MausDroid.apk
+          cp app/build/outputs/apk/release/app-release.apk ../dist/DanDroid.apk
           apksigner="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          new_certs=$("$apksigner" verify --print-certs ../dist/MausDroid.apk)
+          new_certs=$("$apksigner" verify --print-certs ../dist/DanDroid.apk)
           if [ -n "$PREVIOUS_APK_VERSION" ]; then
-            curl -fsSL --retry 3 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/updates/MausDroid-$PREVIOUS_APK_VERSION.apk" -o /tmp/previous.apk
+            curl -fsSL --retry 3 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/updates/DanDroid-$PREVIOUS_APK_VERSION.apk" -o /tmp/previous.apk
             old_certs=$("$apksigner" verify --print-certs /tmp/previous.apk)
             cert_sha() { awk '/^Signer #[0-9]+ certificate SHA-256 digest:/ { print $NF }' | sort; }
             previous_sha=$(cert_sha <<< "$old_certs")
@@ -90,7 +90,7 @@ jobs:
         env:
           MAUSDROID_UPDATE_KEY_PEM: ${{ secrets.MAUSDROID_UPDATE_KEY_PEM }}
         run: |
-          if [ -f dist/MausDroid.apk ]; then node scripts/publish-update.mjs dist/MausDroid.apk; else
+          if [ -f dist/DanDroid.apk ]; then node scripts/publish-update.mjs dist/DanDroid.apk; else
             # Keep offering the current APK in the manifest.
             curl -sf https://raw.githubusercontent.com/${{ github.repository }}/updates/update.json -o /tmp/prev.json || true
             KEEP_APK_FROM=/tmp/prev.json node scripts/publish-update.mjs
@@ -110,6 +110,6 @@ jobs:
           cp "$GITHUB_WORKSPACE"/dist/updates/* .
           # Keep only the newest 3 engine bundles and APKs.
           ls -t engine-*.zip 2>/dev/null | tail -n +4 | xargs -r git rm -q --ignore-unmatch
-          ls -t MausDroid-*.apk 2>/dev/null | tail -n +4 | xargs -r git rm -q --ignore-unmatch
+          ls -t DanDroid-*.apk 2>/dev/null | tail -n +4 | xargs -r git rm -q --ignore-unmatch
           git add -A && git commit -qm "Release $(node -p 'require(process.env.GITHUB_WORKSPACE+"/version.json").engine')" || echo "nothing new"
           git push origin HEAD:updates

@@ -14,7 +14,7 @@ import java.net.URL
 /**
  * Reads notifications from the apps you choose (by default Meta's Muse) —
  * read-only, never acting in those apps. Only the chosen apps' notifications
- * are passed to MausDroid; for other apps only their names are noted, so you
+ * are passed to DanDroid; for other apps only their names are noted, so you
  * can pick them. Android only lets an app see notifications still in the
  * shade (sent when access is allowed or when asked to re-read) and new ones.
  */

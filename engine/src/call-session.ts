@@ -65,7 +65,7 @@ export function shortGreeting(name: string, at = new Date(), pick = Math.random)
   return list[Math.floor(pick() * list.length) % list.length].replace("{, n}", n ? `, ${n}` : "").replace("{ n}", n ? ` ${n}` : "");
 }
 
-/** Your name: set in Calls settings, or found in what MausDroid knows about you. */
+/** Your name: set in Calls settings, or found in what DanDroid knows about you. */
 export function userName(): string {
   const set = callSettings().userName?.trim();
   if (set) return set;
@@ -422,7 +422,7 @@ type Heard = { text?: string; missed?: boolean; error?: string; nods?: number };
 export async function listen(l: Pick<Live, "local">, opts: { preroll?: number; silenceMs?: number; timeoutSec?: number } = {}): Promise<Heard> {
   const silenceMs = opts.silenceMs ?? silenceFor(speechPrefs().beat);
   const timeoutSec = opts.timeoutSec ?? 30;
-  // On-device recognition from MausDroid's own microphone whenever the phone has it: it doesn't depend on
+  // On-device recognition from DanDroid's own microphone whenever the phone has it: it doesn't depend on
   // the phone's default speech app (which can be an assistant like Grok that won't listen) and makes no beeps.
   if (l.local) {
     const nod = speechPrefs().natural && allowListenSound(true) ? { backchannel: true, ...voiceParams() } : {};

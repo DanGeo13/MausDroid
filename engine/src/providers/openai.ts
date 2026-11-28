@@ -37,8 +37,8 @@ export async function openaiTurn(req: ModelRequest, baseUrl: string, apiKey: str
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
   if (baseUrl.includes("openrouter.ai")) {
-    headers["HTTP-Referer"] = "https://github.com/DanGeo13/MausDroid";
-    headers["X-Title"] = "MausDroid";
+    headers["HTTP-Referer"] = "https://github.com/DanGeo13/DanDroid";
+    headers["X-Title"] = "DanDroid";
   }
   const res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",

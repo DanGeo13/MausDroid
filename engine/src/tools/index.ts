@@ -53,7 +53,7 @@ interface Tool {
   risk?: (input: any) => string | null;
   /** Ask even in "never ask" mode (e.g. changing or deleting a routine). */
   alwaysAsk?: boolean;
-  /** MausDroid admin: Improver may use it without asking (you gave it admin rights). */
+  /** DanDroid admin: Improver may use it without asking (you gave it admin rights). */
   admin?: boolean;
   /** The type of access, for "Always allow this type" (default: the tool's name). */
   permission?: (input: any) => { key: string; label: string };
@@ -171,7 +171,7 @@ const builtins: Tool[] = [
   },
   {
     group: "core",
-    spec: { name: "notify_user", description: "Tell the person something through MausDroid's alerts. They only want interruptions that need them: use priority high ONLY when they must act or decide something soon (it buzzes the phone and breaks quiet hours). normal = an update (listed in Notifications, no buzz unless they turned updates on). low = a quiet record. Don't notify about routine success, things they'll see anyway, or the same thing twice. Be brief.", inputSchema: obj({ title: str("Short title"), body: str("One or two sentences"), priority: { type: "string", enum: ["low", "normal", "high"] } }, ["title", "body"]) },
+    spec: { name: "notify_user", description: "Tell the person something through DanDroid's alerts. They only want interruptions that need them: use priority high ONLY when they must act or decide something soon (it buzzes the phone and breaks quiet hours). normal = an update (listed in Notifications, no buzz unless they turned updates on). low = a quiet record. Don't notify about routine success, things they'll see anyway, or the same thing twice. Be brief.", inputSchema: obj({ title: str("Short title"), body: str("One or two sentences"), priority: { type: "string", enum: ["low", "normal", "high"] } }, ["title", "body"]) },
     run: async (c, i) => {
       const runId = currentRunTags(c.bot.id).find((t) => t.startsWith("run_"));
       await notifyUser({ title: `${c.bot.emoji} ${i.title}`, body: i.body, botId: c.bot.id, priority: i.priority, source: c.bot.name, routineId: runId ? getRun(runId)?.routineId : undefined, link: i.link });
@@ -318,7 +318,7 @@ const scheduleSchema = {
   },
   window: { type: "object", description: "Only run between {start:'HH:MM', end:'HH:MM', days?:[0-6]}" },
   conditions: str("Plain-language condition checked before acting"),
-  alert: { type: "object", description: "alert: {type? (e.g. \"share\" = something the person shares to MausDroid; source is then the kind, e.g. \"YouTube video\"), source?, minPriority?: low|normal|high, contains?, dedupeMinutes?}" },
+  alert: { type: "object", description: "alert: {type? (e.g. \"share\" = something the person shares to DanDroid; source is then the kind, e.g. \"YouTube video\"), source?, minPriority?: low|normal|high, contains?, dedupeMinutes?}" },
   missed_policy: { type: "string", enum: ["run-once", "skip"], description: "If a run is missed: run once late (default) or skip" },
   at: str("once: ISO date-time"),
   minutes: { type: "number", description: "interval: minutes (15 or more)" },
@@ -529,14 +529,14 @@ function mediaTools(): Tool[] {
       spec: {
         name: "save_to_downloads",
         description:
-          "Save a file to the phone's Downloads folder (Download/MausDroid), where every app's file picker (Gemini, Gmail, Files…) can find it. The phone checks it arrived with the right size. Give ONE of: url (a direct download link), file_id (a MausDroid file, e.g. an attachment), or drive_file_id (a Google Drive file; Google Docs are exported as PDF). Use this instead of opening a PDF in the browser.",
-        inputSchema: obj({ url: str("Direct download link"), file_id: str("MausDroid file id"), drive_file_id: str("Google Drive file id"), name: str("File name to save as, e.g. 'Week 8 TAS Update.pdf'"), account_id: str("Drive account (optional)") }),
+          "Save a file to the phone's Downloads folder (Download/DanDroid), where every app's file picker (Gemini, Gmail, Files…) can find it. The phone checks it arrived with the right size. Give ONE of: url (a direct download link), file_id (a DanDroid file, e.g. an attachment), or drive_file_id (a Google Drive file; Google Docs are exported as PDF). Use this instead of opening a PDF in the browser.",
+        inputSchema: obj({ url: str("Direct download link"), file_id: str("DanDroid file id"), drive_file_id: str("Google Drive file id"), name: str("File name to save as, e.g. 'Week 8 TAS Update.pdf'"), account_id: str("Drive account (optional)") }),
       },
       run: async (_c, i) => {
         const a = await fetchForDownload(i);
         const saved = await saveToDownloads(a, i.name);
         res.saveResource({ kind: "doc", fileId: a.id, title: saved.name, keywords: [] });
-        return `Saved to ${saved.location} (${Math.round(saved.size / 1024)} KB, checked on the phone). It now shows in file pickers under Downloads › MausDroid. MausDroid file id: ${a.id}.`;
+        return `Saved to ${saved.location} (${Math.round(saved.size / 1024)} KB, checked on the phone). It now shows in file pickers under Downloads › DanDroid. DanDroid file id: ${a.id}.`;
       },
     },
     {
@@ -561,7 +561,7 @@ function voiceCheckTools(): Tool[] {
   return [
     {
       group: "core",
-      spec: { name: "voice_check", description: "Check how clearly MausDroid speaks right now: speaks test sentences silently, recognises them offline on the phone, and scores clarity (word accuracy) and speed against the person's success criteria. Optional voice/rate to test another setting without changing anything.", inputSchema: obj({ voice: str("Voice name to test (default: current)"), rate: { type: "number", description: "Speed to test (default: current)" }, text: str("Your own test sentence (e.g. with a name), default: the standard sentences") }) },
+      spec: { name: "voice_check", description: "Check how clearly DanDroid speaks right now: speaks test sentences silently, recognises them offline on the phone, and scores clarity (word accuracy) and speed against the person's success criteria. Optional voice/rate to test another setting without changing anything.", inputSchema: obj({ voice: str("Voice name to test (default: current)"), rate: { type: "number", description: "Speed to test (default: current)" }, text: str("Your own test sentence (e.g. with a name), default: the standard sentences") }) },
       run: async (_c, i) => JSON.stringify(await vc.checkVoice({ voice: i.voice, rate: i.rate, text: i.text }), null, 1),
     },
     {
@@ -611,7 +611,7 @@ function replyDeskTools(): Tool[] {
     },
     {
       group: "core",
-      spec: { name: "resource_save", description: "Save a link (or a MausDroid file) to the person's Resources with keywords (e.g. christmas, Odette, kitchen project, Bali).", inputSchema: obj({ url: str("Link"), file_id: str("MausDroid file id (documents)"), title: str("Title"), keywords: { type: "array", items: { type: "string" } }, note: str("Short note") }) },
+      spec: { name: "resource_save", description: "Save a link (or a DanDroid file) to the person's Resources with keywords (e.g. christmas, Odette, kitchen project, Bali).", inputSchema: obj({ url: str("Link"), file_id: str("DanDroid file id (documents)"), title: str("Title"), keywords: { type: "array", items: { type: "string" } }, note: str("Short note") }) },
       run: async (c, i) => JSON.stringify(res.saveResource({ url: i.url, fileId: i.file_id, title: i.title, keywords: i.keywords, note: i.note, botId: c.bot.id })),
     },
     {
@@ -647,7 +647,7 @@ function auditTools(): Tool[] {
   return [
     {
       group: "web",
-      spec: { name: "skills_market_search", description: "Search GitHub for agent skills (claude-skills / agent-skills repos) installable through MausDroid's Skills marketplace. Returns owner/repo, description, stars.", inputSchema: obj({ query: str("Search words") }) },
+      spec: { name: "skills_market_search", description: "Search GitHub for agent skills (claude-skills / agent-skills repos) installable through DanDroid's Skills marketplace. Returns owner/repo, description, stars.", inputSchema: obj({ query: str("Search words") }) },
       run: async (_c, i) => JSON.stringify(await searchMarketplace(String(i.query ?? "")), null, 1),
     },
     {
@@ -811,7 +811,7 @@ function shareTools(): Tool[] {
       group: "core",
       spec: {
         name: "phone_notifications",
-        description: "Read notifications MausDroid has captured from the apps the person chose (e.g. Meta's Muse) — newest first. Read-only: MausDroid never acts in those apps.",
+        description: "Read notifications DanDroid has captured from the apps the person chose (e.g. Meta's Muse) — newest first. Read-only: DanDroid never acts in those apps.",
         inputSchema: obj({ app: str("App name to filter by, e.g. Muse"), since_hours: { type: "number", description: "Only the last N hours" }, limit: { type: "number" } }),
       },
       run: async (_c, i) => JSON.stringify(phoneNotes.recent({ app: i.app ? String(i.app) : undefined, sinceHours: Number(i.since_hours) || undefined, limit: Math.min(200, Number(i.limit) || 50) }).map(({ id, key, pkg, ...n }) => n), null, 1),
@@ -983,7 +983,7 @@ function adminTools(): Tool[] {
       admin: true,
       spec: {
         name: "improve_build",
-        description: "Change MausDroid's own program (screens, features, fixes): the chosen coding platform (GitHub + Claude Code or GitHub + Codex) makes the change in the cloud from your spec, runs every test, and if they pass it's installed and MausDroid restarts with it (usually 5–20 minutes; the person gets a notification). Write a complete, specific spec.",
+        description: "Change DanDroid's own program (screens, features, fixes): the chosen coding platform (GitHub + Claude Code or GitHub + Codex) makes the change in the cloud from your spec, runs every test, and if they pass it's installed and DanDroid restarts with it (usually 5–20 minutes; the person gets a notification). Write a complete, specific spec.",
         inputSchema: obj({ title: str("Short title"), spec: str("What to change, in detail: behaviour, screens, edge cases") }, ["title", "spec"]),
       },
       run: async (_c, i) => {
@@ -1003,17 +1003,17 @@ function adminTools(): Tool[] {
     {
       group: "core",
       admin: true,
-      spec: { name: "improve_versions", description: "MausDroid program versions kept on the phone (which is running, which were set aside) and cloud builds in progress.", inputSchema: obj({}) },
+      spec: { name: "improve_versions", description: "DanDroid program versions kept on the phone (which is running, which were set aside) and cloud builds in progress.", inputSchema: obj({}) },
       run: async () => JSON.stringify({ ...selfupdate.engineVersions(), building: improve.listProposals().filter((p) => p.status === "building").map((p) => ({ id: p.id, title: p.title, since: p.build?.startedAt, progress: p.build?.runUrl })) }, null, 1),
     },
     {
       group: "core",
       admin: true,
-      spec: { name: "improve_rollback", description: "Go back to an earlier MausDroid program version kept on the phone (default: the one before the running version). MausDroid restarts in a few seconds; the version you leave isn't installed again.", inputSchema: obj({ version: str("Version to go back to, e.g. 0.8.2 (optional)") }) },
+      spec: { name: "improve_rollback", description: "Go back to an earlier DanDroid program version kept on the phone (default: the one before the running version). DanDroid restarts in a few seconds; the version you leave isn't installed again.", inputSchema: obj({ version: str("Version to go back to, e.g. 0.8.2 (optional)") }) },
       run: async (_c, i) => {
         const r = selfupdate.rollBack(i.version ? String(i.version) : undefined);
         improve.recordApplied(`Rolled back ${r.from} → ${r.to}`, `Went back from ${r.from} to ${r.to}.`, "code");
-        return `Going back from ${r.from} to ${r.to}; MausDroid restarts in a few seconds.`;
+        return `Going back from ${r.from} to ${r.to}; DanDroid restarts in a few seconds.`;
       },
     },
     {
@@ -1061,7 +1061,7 @@ export async function gate(bot: Bot, tool: Tool, input: any, signal?: AbortSigna
     if (run?.startedAt && r?.researchCutoffMinutes && Date.now() > new Date(run.startedAt).getTime() + r.researchCutoffMinutes * 60_000)
       return { allow: false, reason: `Research cutoff reached (${r.researchCutoffMinutes} min). Stop researching and score, file and report what you have.` };
   }
-  // MausDroid admin tools: Improver has admin rights and isn't asked (other tools still follow its approval setting).
+  // DanDroid admin tools: Improver has admin rights and isn't asked (other tools still follow its approval setting).
   if (tool.admin && improve.isImprover(bot.id)) return { allow: true };
   let reason = tool.risk?.(input) ?? null;
   if (tool.spec.name === "bot_edit") {

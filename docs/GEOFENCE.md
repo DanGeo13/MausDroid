@@ -21,7 +21,7 @@
 4. Turning a fence on uses the approval framework (`permission` type `geofence`) and shows an
    "active places" indicator in Settings → Phone → Location.
 5. Needs "Allow all the time" location (Android shows this option for the app); if the person keeps
-   "only while using the app", MausDroid explains that fences can't fire in the background and offers
+   "only while using the app", DanDroid explains that fences can't fire in the background and offers
    time-based routines instead.
 
 ## Known Android limits

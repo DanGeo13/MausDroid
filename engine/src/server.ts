@@ -108,7 +108,7 @@ function auth(req: Req): "owner" | "paired" | null {
 }
 
 // ---- Static UI --------------------------------------------------------------
-const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
+const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 
 /**
  * The app's screens. Each engine version's files have their own address
@@ -236,7 +236,7 @@ route("GET", "/api/files/:id", (req, [id]) => {
   }
   return { status: 200, headers, body };
 });
-// Save one of MausDroid's files to the phone's Downloads (checked on the phone).
+// Save one of DanDroid's files to the phone's Downloads (checked on the phone).
 route("POST", "/api/files/:id/save-to-downloads", async (_r, [id]) => {
   const a = files.getFile(id);
   if (!a) throw new HttpError(404, "No such file");
@@ -462,7 +462,7 @@ route("POST", "/api/share/app", async (req) => {
 });
 route("POST", "/api/share/view", async (req) => {
   const token = randomBytes(18).toString("base64url");
-  shareViews.set(token, { title: String(req.body?.title ?? "MausDroid"), text: String(req.body?.text ?? ""), at: Date.now() });
+  shareViews.set(token, { title: String(req.body?.title ?? "DanDroid"), text: String(req.body?.text ?? ""), at: Date.now() });
   for (const [k, v] of shareViews) if (Date.now() - v.at > 30 * 60_000) shareViews.delete(k);
   const url = `http://127.0.0.1:${config.port}/api/view/${token}`;
   if (bridgeAvailable() && req.body?.open !== false) await bridge("/share/send", { kind: "url", text: url, pkg: "com.android.chrome" }).catch(() => {});
@@ -550,7 +550,7 @@ route("POST", "/api/calls/:id/end", async (_r, [id]) => (await callSession.hangU
 route("POST", "/api/calls/:id/resume", (_r, [id]) => json(callSession.resumeHold(id) ?? {}));
 route("POST", "/api/calls/:id/run", (_r, [id]) => json(badRequest(() => callSession.runCall(id))));
 route("GET", "/api/calls/:id/live", (_r, [id]) => json(callSession.liveCall(id) ?? { callId: id, phase: "ended", lines: [], note: "", active: false }));
-route("POST", "/api/calls/test", async (req) => json(await calls.ringUser(String(req.body?.reason ?? "Test call"), "Hi, this is a test call from MausDroid.")));
+route("POST", "/api/calls/test", async (req) => json(await calls.ringUser(String(req.body?.reason ?? "Test call"), "Hi, this is a test call from DanDroid.")));
 
 // Weekly audit reports and wiki status
 route("GET", "/api/audits", () => json(audit.listAudits().map(({ scored, ...a }) => ({ ...a, candidates: scored.length }))));

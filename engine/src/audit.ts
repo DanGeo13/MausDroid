@@ -4,7 +4,7 @@ import { emit } from "./events.ts";
 import { now } from "./util.ts";
 
 /**
- * Weekly MausDroid Routine & Skill Audit. The bot researches; the engine
+ * Weekly DanDroid Routine & Skill Audit. The bot researches; the engine
  * enforces the rules: scoring out of 25 with safety as a hard gate, phase
  * tags, deduplication against the wiki, filing to a PRIVATE GitHub wiki with
  * read-back verification, and a report built only from recorded data.
@@ -139,17 +139,17 @@ export function dedupe(list: Scored[], wiki: WikiEntry[]): { kept: Scored[]; dup
 function gh(path: string, init: RequestInit = {}) {
   const token = getSecret("github");
   if (!token) throw new Error("No GitHub token saved (Settings → Memory → GitHub token) with access to the private wiki repo.");
-  return fetch(`${GH}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "MausDroid-audit", "content-type": "application/json", ...(init.headers ?? {}) }, signal: AbortSignal.timeout(30_000) });
+  return fetch(`${GH}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "DanDroid-audit", "content-type": "application/json", ...(init.headers ?? {}) }, signal: AbortSignal.timeout(30_000) });
 }
 
-/** The wiki must exist and be private; MausDroid never creates or writes a public one. */
+/** The wiki must exist and be private; DanDroid never creates or writes a public one. */
 export async function checkWiki(): Promise<{ ok: boolean; detail: string }> {
   try {
     const r = await gh(`/repos/${WIKI_REPO}`);
     if (r.status === 404) return { ok: false, detail: `Wiki repo ${WIKI_REPO} not found (or the token can't see it). Create it as a PRIVATE repo and give the token access.` };
     if (!r.ok) return { ok: false, detail: `GitHub said HTTP ${r.status}.` };
     const j = (await r.json()) as any;
-    if (!j.private) return { ok: false, detail: `${WIKI_REPO} is PUBLIC. MausDroid only writes to a private wiki; nothing was filed.` };
+    if (!j.private) return { ok: false, detail: `${WIKI_REPO} is PUBLIC. DanDroid only writes to a private wiki; nothing was filed.` };
     return { ok: true, detail: `${WIKI_REPO} (private)` };
   } catch (e) {
     return { ok: false, detail: (e as Error).message };
@@ -197,11 +197,11 @@ safety_check: pass
 ## Summary
 ${c.summary}
 
-## MausDroid alignment
+## DanDroid alignment
 - **What it does:** ${a.what ?? c.summary}
 - **Why it's useful:** ${a.why ?? "—"}
 - **Required integrations:** ${a.integrations ?? (c.composio?.join(", ") || "none")}
-- **Existing MausDroid primitives:** ${c.primitives.join(", ") || "—"}
+- **Existing DanDroid primitives:** ${c.primitives.join(", ") || "—"}
 - **Implementation requirements:** ${a.implementation ?? "—"}
 - **Phase 1 workaround:** ${a.workaround ?? "—"}
 - **Upgrade path:** ${a.upgrade_path ?? "—"}
@@ -279,13 +279,13 @@ export function buildReport(rec: AuditRecord, notes = ""): string {
   const byPhase = (p: string) => filedOk.filter((f) => f.phase === p).length;
   const rejected = rec.scored.filter((c) => !c.accepted);
   const lines = [
-    `# MausDroid Routine & Skill Audit — ${rec.startedAt.slice(0, 10)}`,
+    `# DanDroid Routine & Skill Audit — ${rec.startedAt.slice(0, 10)}`,
     "",
     `Research window: ${rec.startedAt.slice(11, 16)}–${(rec.researchCutoffAt ?? rec.startedAt).slice(11, 16)} UTC (5-minute cutoff). Wiki: ${rec.wiki?.detail ?? "not checked"}.`,
     "",
     "## Top 20",
     "",
-    "| Rank | Routine / Skill | Source | Phase Tag | MausDroid Primitives | Composio / Account | Fit (1-5) | Wiki Slug |",
+    "| Rank | Routine / Skill | Source | Phase Tag | DanDroid Primitives | Composio / Account | Fit (1-5) | Wiki Slug |",
     "|---|---|---|---|---|---|---|---|",
     ...top.map((c) => `| ${c.rank} | ${cell(c.name)} (${c.total}/25) | [${cell(c.source_ecosystem)}](${c.source_url}) | ${c.phase} | ${cell(c.primitives.join(", "))} | ${cell([...(c.composio ?? []), c.account_alias ?? "personal"].join(" / "))} | ${c.scope_fit} | ${c.slug} |`),
     top.length ? "" : "_No accepted candidates._",
@@ -312,10 +312,10 @@ export function buildReport(rec: AuditRecord, notes = ""): string {
 
 export const RESEARCH_TOOLS = /^(web_search|web_fetch|browser_open|browser_read|browser_click|browser_scroll|composio__COMPOSIO_SEARCH_TOOLS|composio__COMPOSIO_MULTI_EXECUTE_TOOL|skills_market_search|tailnet_fetch)$/;
 
-export const AUDIT_PROMPT = `Run the weekly MausDroid Routine & Skill Audit. You have a strict 5-minute research window; after it, research tools stop working, so be quick. Finish before 08:00.
+export const AUDIT_PROMPT = `Run the weekly DanDroid Routine & Skill Audit. You have a strict 5-minute research window; after it, research tools stop working, so be quick. Finish before 08:00.
 1. Call audit_begin.
-2. Research (personal account aliases only; don't assume integrations are connected) useful workflows, skills and capabilities for MausDroid from: Grok Bot, Meta Muse, OpenAI Dots, Claude Duet, n8n, Nod, GitHub claude-skills and agent-skills repositories, connected Composio apps, and the Skills marketplace (skills_market_search). Use web_search, web_fetch, browser tools and Composio search. Note any source you couldn't reach.
-3. For each candidate, score utility, adoption signal, MausDroid scope fit, setup simplicity and privacy/safety (1–5 each), set safety flags honestly, mark the action type (read-only / user-approved / autonomous / unsupported), choose the phase (phase-1-ready = existing MausDroid capabilities; phase-2-queued = new integrations, Android capabilities or moderate changes; phase-3-queued = major engineering), list MausDroid primitives (e.g. notify_user, routine_create, calendar_create_event, web_fetch, composio apps), and fill the alignment fields. Never describe a rejected idea differently to get it through.
+2. Research (personal account aliases only; don't assume integrations are connected) useful workflows, skills and capabilities for DanDroid from: Grok Bot, Meta Muse, OpenAI Dots, Claude Duet, n8n, Nod, GitHub claude-skills and agent-skills repositories, connected Composio apps, and the Skills marketplace (skills_market_search). Use web_search, web_fetch, browser tools and Composio search. Note any source you couldn't reach.
+3. For each candidate, score utility, adoption signal, DanDroid scope fit, setup simplicity and privacy/safety (1–5 each), set safety flags honestly, mark the action type (read-only / user-approved / autonomous / unsupported), choose the phase (phase-1-ready = existing DanDroid capabilities; phase-2-queued = new integrations, Android capabilities or moderate changes; phase-3-queued = major engineering), list DanDroid primitives (e.g. notify_user, routine_create, calendar_create_event, web_fetch, composio apps), and fill the alignment fields. Never describe a rejected idea differently to get it through.
 4. Call audit_score with all candidates (it applies the safety gate, removes duplicates against the wiki and ranks them).
 5. Call audit_file_overflow to file every accepted candidate ranked 21 or lower in the private wiki.
 6. Call audit_finish with unavailable sources and short notes; it returns the report built from the recorded data.

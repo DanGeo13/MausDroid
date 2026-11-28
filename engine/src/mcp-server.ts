@@ -10,7 +10,7 @@ import { clip, errorText } from "./util.ts";
 import { cliPermission } from "./providers/cli.ts";
 
 /**
- * MausDroid as an MCP server, so Claude Code and Codex (on the phone or on
+ * DanDroid as an MCP server, so Claude Code and Codex (on the phone or on
  * a paired computer) can use the phone's tools and ask you for approval.
  */
 let key: string | undefined;
@@ -75,7 +75,7 @@ export async function handleMcp(botId: string, req: IncomingMessage, res: Server
       const { name, arguments: args } = body.params ?? {};
       if (name === "approval_prompt") {
         const toolName = String(args?.tool_name ?? "");
-        // MausDroid's own tools are gated when they run (reading never asks); read-only tools are fine.
+        // DanDroid's own tools are gated when they run (reading never asks); read-only tools are fine.
         if (cliPermission(toolName) === "allow") return reply({ content: [{ type: "text", text: JSON.stringify({ behavior: "allow", updatedInput: args?.input ?? {} }) }] });
         const label = toolName === "Bash" ? "running commands" : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(toolName) ? "changing files in its work folder" : `using ${toolName}`;
         const r = await requestApproval(bot.id, `cli:${toolName}`, `${bot.name} wants to use ${toolName}`, clip(JSON.stringify(args?.input ?? {}, null, 1), 1200), signal, label);

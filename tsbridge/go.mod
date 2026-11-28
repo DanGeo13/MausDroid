@@ -1,4 +1,4 @@
-module github.com/DanGeo13/MausDroid/tsbridge
+module github.com/DanGeo13/DanDroid/tsbridge
 
 go 1.24.6
 

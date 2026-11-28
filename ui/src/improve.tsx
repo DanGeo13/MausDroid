@@ -78,7 +78,7 @@ function SuggestionCard({ p, onDone }: { p: any; onDone: () => void }) {
       <Change p={p} />
       {p.area === "code" && p.build?.prUrl ? (
         <p class="help">
-          Built in the cloud and every test passed. <a href={p.build.prUrl} target="_blank" rel="noopener">See the changes</a>. Approve installs it; MausDroid restarts with it in a few minutes, and you can roll back below.
+          Built in the cloud and every test passed. <a href={p.build.prUrl} target="_blank" rel="noopener">See the changes</a>. Approve installs it; DanDroid restarts with it in a few minutes, and you can roll back below.
         </p>
       ) : p.area === "code" ? (
         <p class="help">Approving builds it in the cloud (Claude Code makes the change and runs every test), then asks you to install it.</p>
@@ -277,13 +277,13 @@ function Settings({ o, onDone }: { o: any; onDone: () => void }) {
           <option value="github-codex">GitHub + Codex (your ChatGPT subscription or an OpenAI key)</option>
           <option value="off">Off — only keep them as suggestions</option>
         </select>
-        <p class="help">Changes are built in the cloud, in the background; you get progress updates and any questions. Each platform needs its key added on GitHub once (see the MausDroid repo: .github/workflows/improver.yml).</p>
+        <p class="help">Changes are built in the cloud, in the background; you get progress updates and any questions. Each platform needs its key added on GitHub once (see the DanDroid repo: .github/workflows/improver.yml).</p>
       </div>
       <label class="inline">
         <input type="checkbox" checked={!s.askBeforeInstall} onChange={() => setS({ ...s, askBeforeInstall: !s.askBeforeInstall })} /> Program changes I ask Improver for install by themselves once every test passes
       </label>
       <p class="help">
-        Bot: {o.bot ? `${o.bot.emoji} ${o.bot.name} (${o.bot.providerId ?? "default AI"}, ${o.bot.model ?? "default model"})` : "none"} — change its AI and model by editing the bot. At most 5 suggestions a night. Nothing changes without your approval.
+        Bot: {o.bot ? `${o.bot.name} (${o.bot.providerId ?? "default AI"}, ${o.bot.model ?? "default model"})` : "none"} — change its AI and model by editing the bot. At most 5 suggestions a night. Nothing changes without your approval.
       </p>
       <button class="btn" onClick={save}>
         Save
@@ -344,7 +344,7 @@ const older = (a: string, b: string) => {
 function Versions({ v, onDone }: { v: any; onDone: () => void }) {
   if (!v?.versions?.length) return null;
   const back = async (version: string) => {
-    if (!confirm(`Go back to version ${version}? MausDroid restarts for a moment.`)) return;
+    if (!confirm(`Go back to version ${version}? DanDroid restarts for a moment.`)) return;
     try {
       const r = await api("improve/rollback", { body: { version } });
       toast(`Going back from ${r.from} to ${r.to} — restarting…`);
@@ -418,7 +418,7 @@ export function Improve({ onBack, openBot }: { onBack: () => void; openBot: (id:
         ) : (
           <>
             <p class="help">
-              {o.bot ? `${o.bot.emoji} ${o.bot.name}` : "Improver"} checks MausDroid each night at {o.settings.nightTime} and suggests up to 5 fixes, shown here at {o.settings.showTime}. Last check: {o.lastNight ? `${when(o.lastNight.startedAt)} — ${o.lastNight.summary ?? (o.lastNight.finishedAt ? "done" : "incomplete")}` : "not yet"}. Next: {when(o.routine?.nextRunAt)}.
+              {o.bot ? o.bot.name : "Improver"} checks DanDroid each night at {o.settings.nightTime} and suggests up to 5 fixes, shown here at {o.settings.showTime}. Last check: {o.lastNight ? `${when(o.lastNight.startedAt)} — ${o.lastNight.summary ?? (o.lastNight.finishedAt ? "done" : "incomplete")}` : "not yet"}. Next: {when(o.routine?.nextRunAt)}.
             </p>
             <div class="inline" style={{ gap: ".5rem", flexWrap: "wrap" }}>
               <button class="btn secondary small" onClick={runNow}>

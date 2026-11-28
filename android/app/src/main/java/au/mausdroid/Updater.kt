@@ -20,11 +20,11 @@ import java.util.zip.ZipInputStream
 
 /**
  * Self-updating without reinstalling. The engine (all bot logic and every
- * screen) is a signed bundle the app downloads from the MausDroid repo and
+ * screen) is a signed bundle the app downloads from the DanDroid repo and
  * swaps in by itself. Only rare changes to the Android shell need a new APK,
  * and then you get one notification to tap.
  *
- * Safety: every update must carry a signature made with the MausDroid
+ * Safety: every update must carry a signature made with the DanDroid
  * update key; a bundle that fails to start is rolled back automatically.
  */
 class Updater(private val ctx: Context) {
@@ -209,7 +209,7 @@ class Updater(private val ctx: Context) {
         val pi = PendingIntent.getActivity(ctx, 77, install, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(ctx, MausApp.CH_ALERTS)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("MausDroid ${apk.getString("versionName")} is ready")
+            .setContentTitle("DanDroid ${apk.getString("versionName")} is ready")
             .setContentText("Tap to install. Your bots, chats and settings stay.")
             .setContentIntent(pi).setAutoCancel(true).build()
         ctx.getSystemService(NotificationManager::class.java).notify(7700, n)

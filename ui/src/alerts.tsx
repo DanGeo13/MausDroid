@@ -61,7 +61,7 @@ export function Alerts({ onBack, openLink, openBot, openSettings }: { onBack: ()
             ? "Only these buzz your phone and count on the bell: approvals, questions, missed calls, messages that need a reply, and anything urgent."
             : tab === "info"
               ? "Things that are ready or finished. They stay here without buzzing your phone."
-              : "Quiet records (notifications MausDroid read from your apps, automatic triggers). Bots and routines use them; you don't need to."}
+              : "Quiet records (notifications DanDroid read from your apps, automatic triggers). Bots and routines use them; you don't need to."}
         </p>
         {all === null ? (
           <p class="muted">Loading…</p>

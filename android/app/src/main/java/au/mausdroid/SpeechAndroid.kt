@@ -12,7 +12,7 @@ import java.security.MessageDigest
  * engine (Phonon when it's chosen in Settings → Voice) through Android's
  * text-to-speech service, and play through one AudioTrack. In a call the
  * track uses the phone-call audio path, so the echo canceller hears it and
- * MausDroid's own voice doesn't count as you interrupting.
+ * DanDroid's own voice doesn't count as you interrupting.
  */
 class TtsPhraseSynth(private val ctx: Context, private val recorder: VoiceRecorder) : SpeechPlayer.PhraseSynth {
     private val work = File(ctx.cacheDir, "speech-work").apply { mkdirs() }

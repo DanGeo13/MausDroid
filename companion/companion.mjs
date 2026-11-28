@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// MausDroid computer companion: lets bots on your phone use Claude Code,
+// DanDroid computer companion: lets bots on your phone use Claude Code,
 // Codex and Gemini CLI (with your subscriptions) installed on this computer.
 // Reach it over Tailscale. Start:  node companion.mjs
 // It prints a pairing token; paste it in the phone under Settings → AI.
@@ -93,7 +93,7 @@ http
     });
   })
   .listen(PORT, HOST, () => {
-    console.log(`MausDroid companion on port ${PORT}`);
+    console.log(`DanDroid companion on port ${PORT}`);
     console.log(`Pairing token: ${TOKEN}`);
     console.log("On the phone: Settings → AI → Claude Code or Codex → Run on: My computer → address http://<this-computer's-tailscale-name>:" + PORT);
   });

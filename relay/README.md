@@ -1,6 +1,6 @@
-# MausDroid always-on website (relay)
+# DanDroid always-on website (relay)
 
-A tiny free Cloudflare Worker that lets you open MausDroid from any browser
+A tiny free Cloudflare Worker that lets you open DanDroid from any browser
 (PC, tablet), even when you're not on the same Wi-Fi. It doesn't store your
 chats or keys; it only passes requests to your phone. Your phone still checks
 the QR pairing and your password for every device.
@@ -23,7 +23,7 @@ You need a free Cloudflare account and Node.js on a computer.
    ```
 
 4. Copy the address it prints (like `https://mausdroid-relay.<you>.workers.dev`).
-5. On your phone: MausDroid → Settings → **Website & devices** → paste the
+5. On your phone: DanDroid → Settings → **Website & devices** → paste the
    address, choose a password, tap **Turn on**.
 6. Tap **Show QR code** and scan it with your PC's camera (or phone camera
    pointed at the PC screen in reverse). The page opens, links the device and

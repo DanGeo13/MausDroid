@@ -1,4 +1,4 @@
-// Improver changing MausDroid's own program: a cloud build (GitHub Actions +
+// Improver changing DanDroid's own program: a cloud build (GitHub Actions +
 // Claude Code) → pull request → installed (merged) automatically for direct
 // requests, or by tapping Install for nightly suggestions; failed builds are
 // reported; rollback to an earlier version kept on the phone.

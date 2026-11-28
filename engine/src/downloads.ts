@@ -5,19 +5,19 @@ import { filePath, getFile, guessMime, saveFile, type Attachment } from "./files
 import { errorText } from "./util.ts";
 
 /**
- * Saving files to the phone's Downloads folder (Download/MausDroid), where
+ * Saving files to the phone's Downloads folder (Download/DanDroid), where
  * every app's file picker (Gemini, Gmail, Files…) can find them. The phone
  * checks the file arrived with the right size before this says it's saved.
  */
 export interface SavedDownload {
   name: string;
-  /** Where it is on the phone, e.g. "Download/MausDroid/Week 8.pdf". */
+  /** Where it is on the phone, e.g. "Download/DanDroid/Week 8.pdf". */
   location: string;
   uri: string;
   size: number;
 }
 
-export async function saveToDownloads(a: Attachment, asName?: string, folder = "MausDroid"): Promise<SavedDownload> {
+export async function saveToDownloads(a: Attachment, asName?: string, folder = "DanDroid"): Promise<SavedDownload> {
   if (!bridgeAvailable()) throw new Error("Saving to Downloads needs the Android app.");
   const src = filePath(a);
   const size = fs.statSync(src).size;
@@ -25,7 +25,7 @@ export async function saveToDownloads(a: Attachment, asName?: string, folder = "
   try {
     r = await bridge("/files/save-download", { path: src, name: (asName?.trim() || a.name).replace(/[\\/:*?"<>|]+/g, " ").trim(), mime: a.mime, folder }, 120_000);
   } catch (e) {
-    if (/unknown \/files\/save-download/.test(errorText(e))) throw new Error("This needs the newer MausDroid app (0.11.0 or later): Settings → Updates → install the app update.");
+    if (/unknown \/files\/save-download/.test(errorText(e))) throw new Error("This needs the newer DanDroid app (0.11.0 or later): Settings → Updates → install the app update.");
     throw e;
   }
   if (Number(r.size) !== size) throw new Error(`The copy in Downloads is ${r.size} bytes but should be ${size}, so it wasn't saved properly.`);
@@ -43,11 +43,11 @@ function findFileUrl(data: any): string | null {
   return null;
 }
 
-/** Gets a file from a link, a MausDroid file, or Google Drive (Docs are exported as PDF). */
+/** Gets a file from a link, a DanDroid file, or Google Drive (Docs are exported as PDF). */
 export async function fetchForDownload(i: { url?: string; file_id?: string; drive_file_id?: string; name?: string; account_id?: string }): Promise<Attachment> {
   if (i.file_id) {
     const a = getFile(i.file_id);
-    if (!a) throw new Error("No MausDroid file with that id.");
+    if (!a) throw new Error("No DanDroid file with that id.");
     return a;
   }
   let url = i.url;
@@ -62,7 +62,7 @@ export async function fetchForDownload(i: { url?: string; file_id?: string; driv
     url = findFileUrl(data) ?? undefined;
     if (!url) throw new Error("Google Drive didn't return the file. Try again with the file's download link (url).");
   }
-  if (!url || !/^https?:\/\//.test(url)) throw new Error("Give a link (url), a MausDroid file_id or a drive_file_id.");
+  if (!url || !/^https?:\/\//.test(url)) throw new Error("Give a link (url), a DanDroid file_id or a drive_file_id.");
   const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
   if (!res.ok) throw new Error(`The download failed (HTTP ${res.status}). If it's a private Drive file, use drive_file_id instead.`);
   const buf = Buffer.from(await res.arrayBuffer());

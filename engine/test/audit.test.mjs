@@ -61,5 +61,5 @@ test("never writes credentials or card numbers to the wiki", () => {
   assert.equal(A.looksSecret("card 4111 1111 1111 1111"), true);
   assert.equal(A.looksSecret("A normal routine description"), false);
   const md = A.entryMarkdown(A.scoreCandidate(base()), "2026-11-30");
-  for (const k of ["slug:", "name:", "source_ecosystem:", "source_url:", "discovered_date: 2026-11-30", "score: 23", "mausdroid_phase: phase-1-ready", "status: backlog", "primitives:", "account_alias: personal", "safety_check: pass", "## MausDroid alignment"]) assert.ok(md.includes(k), k);
+  for (const k of ["slug:", "name:", "source_ecosystem:", "source_url:", "discovered_date: 2026-11-30", "score: 23", "mausdroid_phase: phase-1-ready", "status: backlog", "primitives:", "account_alias: personal", "safety_check: pass", "## DanDroid alignment"]) assert.ok(md.includes(k), k);
 });

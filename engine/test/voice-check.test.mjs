@@ -1,4 +1,4 @@
-// Voice self-checks: MausDroid speaks test sentences silently, the phone's
+// Voice self-checks: DanDroid speaks test sentences silently, the phone's
 // on-device recognizer listens (stand-in here), and clarity and speed are
 // scored against the person's success criteria. Improver sees the results
 // each night and can suggest a voice fix, applied only when approved.

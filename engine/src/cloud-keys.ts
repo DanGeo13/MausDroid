@@ -15,7 +15,7 @@ export { terminalText };
  * Setting up cloud builds from the phone (nothing to install on a computer):
  *  - "Connect": the official Claude program on the phone makes a separate,
  *    long-lived key for cloud builds (`claude setup-token`, sign in on
- *    Claude's own page), and MausDroid saves it straight into the GitHub
+ *    Claude's own page), and DanDroid saves it straight into the GitHub
  *    repository's secrets — it's never shown or copied by hand.
  *  - A checklist of what cloud builds need.
  */
@@ -24,7 +24,7 @@ const GH = process.env.MAUSDROID_GITHUB_API ?? "https://api.github.com";
 function gh(p: string, init: RequestInit = {}) {
   const token = getSecret("github");
   if (!token) throw new Error("Save a GitHub token first (Settings → Memory → GitHub token).");
-  return fetch(`${GH}${p}`, { ...init, headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "MausDroid-improver", "content-type": "application/json", ...(init.headers ?? {}) }, signal: AbortSignal.timeout(30_000) });
+  return fetch(`${GH}${p}`, { ...init, headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "DanDroid-improver", "content-type": "application/json", ...(init.headers ?? {}) }, signal: AbortSignal.timeout(30_000) });
 }
 
 /** libsodium's sealed box (what GitHub requires for secrets): anyone can seal, only the repo can open. */
@@ -42,7 +42,7 @@ export function sealedBox(message: string, publicKeyB64: string): string {
   return Buffer.from(out).toString("base64");
 }
 
-const permissionHelp = "Your GitHub token needs “Secrets: Read and write” for the MausDroid repository (github.com → Settings → Developer settings → Fine-grained tokens → edit the token).";
+const permissionHelp = "Your GitHub token needs “Secrets: Read and write” for the DanDroid repository (github.com → Settings → Developer settings → Fine-grained tokens → edit the token).";
 
 /** Saves a secret in the repository (encrypted on the phone with the repository's key). */
 export async function saveRepoSecret(name: string, value: string) {
@@ -116,7 +116,7 @@ export async function startConnect(openUrl: (url: string) => Promise<void>) {
     return set({ stage: "error", message: `The Claude program couldn't be set up on this phone: ${(e as Error).message}` });
   }
   const [cmd, args] = programCommand("claude", ["setup-token"]);
-  // `claude setup-token` only shows its sign-in link in a terminal: run it inside MausDroid's terminal helper.
+  // `claude setup-token` only shows its sign-in link in a terminal: run it inside DanDroid's terminal helper.
   const helper = process.env.MAUSDROID_NATIVE_DIR ? path.join(process.env.MAUSDROID_NATIVE_DIR, "libtsbridge.so") : process.env.MAUSDROID_PTY_HELPER;
   inTerminal = Boolean(helper && fs.existsSync(helper));
   const c = inTerminal ? spawn(helper!, ["pty", cmd, ...args], { cwd: workDir(), env: { ...programEnv("claude"), TERM: "xterm-256color" } }) : spawn(cmd, args, { cwd: workDir(), env: programEnv("claude") });
@@ -277,7 +277,7 @@ export async function startCodexConnect(openUrl: (url: string) => Promise<void>)
     const url = log.match(/https:\/\/auth\.openai\.com\/[^\s"'<>]+/)?.[0];
     if (url && !opened) {
       opened = true;
-      setCodex({ loginUrl: url, message: "Sign in on the ChatGPT page that opened. MausDroid finishes by itself when you're done." });
+      setCodex({ loginUrl: url, message: "Sign in on the ChatGPT page that opened. DanDroid finishes by itself when you're done." });
       void openUrl(url).catch(() => {});
     }
   };

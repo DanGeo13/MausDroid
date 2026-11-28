@@ -1,3 +1,5 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-  <path android:fillColor="#FFFFFFFF" android:pathData="M6.5,4.5a3.5,3.5 0 1,0 0.01,0zM17.5,4.5a3.5,3.5 0 1,0 0.01,0zM12,8c-4,0 -7,2.6 -7,6c0,3.4 3,6 7,6s7,-2.6 7,-6c0,-3.4 -3,-6 -7,-6z"/>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="48" android:viewportHeight="48">
+  <!-- Status bar: the drawn DanDroid head. -->
+  <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M22 17.5v-5.2M22 9.3c1.1 0 1.9.9 1.9 1.9S23 13.1 22 13.1s-1.9-.8-1.9-1.9.8-1.9 1.9-1.9zM14.2 17.6c4.2-.2 8.4-.2 12.6 0 5.4.3 9.4 4.6 9.3 10-.1 5.4-4.3 9.7-9.6 9.8-4.1.1-8.2.1-12.3-.1-1.1-.1-1.9-.9-1.9-2-.2-5.2-.2-10.4 0-15.6 0-1.2.8-2.1 1.9-2.1zM19.6 26.4h.1M27.4 26.5h.1M19.9 31.6c2.2 1.6 5.2 1.6 7.3-.1"/>
+  <path android:fillColor="#FFFFFFFF" android:pathData="M22,11.2m-2.4,0a2.4,2.4 0 1,1 4.8,0a2.4,2.4 0 1,1 -4.8,0"/>
 </vector>

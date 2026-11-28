@@ -1,3 +1,4 @@
+import { BotPicto } from "./icons.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./api.ts";
 
@@ -64,7 +65,9 @@ export function CallScreen({ callId, botId, onEnd }: { callId?: string; botId?: 
   return (
     <div class="call">
       <div class="call-top">
-        <div class={`call-avatar ${phase}`}>{bot?.emoji ?? "🐭"}</div>
+        <div class={`call-avatar ${phase}`}>
+          <BotPicto name={bot?.name ?? "Maus"} />
+        </div>
         <h2>{bot?.name ?? "Maus"}</h2>
         <div class="muted">{label[phase]}</div>
         {stats?.working ? <div class="muted" style={{ fontSize: ".8rem" }}>Working on {stats.working === 1 ? "a job" : `${stats.working} jobs`} in the background</div> : null}
@@ -128,7 +131,7 @@ export function CallSettings() {
   const setLock = (i: number, p: any) => save({ lockouts: s.lockouts.map((w: any, j: number) => (j === i ? { ...w, ...p } : w)) });
   return (
     <div class="section">
-      <h2>Calls with {d.bot ? `${d.bot.emoji} ${d.bot.name}` : "Maus"}</h2>
+      <h2>Calls with {d.bot ? d.bot.name : "Maus"}</h2>
       <p class="help">Only this bot can call you, and you can call it from its chat (📞). It never rings during an event in your calendars (10 minutes either side), during lock-out times, or more than {s.maxPerHour} times an hour. If your calendar can't be checked, it doesn't ring — it leaves a quiet note.</p>
       <label class="toggle">
         <span>Allow calls</span>

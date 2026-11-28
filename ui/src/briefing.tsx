@@ -256,7 +256,7 @@ function AudioCard({ focusId }: { focusId?: string }) {
                           onClick={(e) => {
                             e.stopPropagation();
                             if (!sg.source.pdf) return;
-                            // On the phone: MausDroid's PDF viewer, at the page, with the quote highlighted.
+                            // On the phone: DanDroid's PDF viewer, at the page, with the quote highlighted.
                             e.preventDefault();
                             void api(`audio-overviews/${o.id}/source`, { body: { index: i } })
                               .then((r) => r.open && window.open(r.open, "_blank"))
@@ -315,7 +315,7 @@ function AudioCard({ focusId }: { focusId?: string }) {
               Open audio file
             </a>
           </div>
-          {o.pdfs?.length ? <div class="help">Sources saved as PDFs in Download/{"MausDroid Review Podcast"} ({o.pdfs.map((p: any) => p.name).join(", ")}); they're removed when the next overview is made.</div> : null}
+          {o.pdfs?.length ? <div class="help">Sources saved as PDFs in Download/{"DanDroid Review Podcast"} ({o.pdfs.map((p: any) => p.name).join(", ")}); they're removed when the next overview is made.</div> : null}
           {o.pdfNote ? <div class="help">{o.pdfNote}</div> : null}
           {o.downloads ? (
             <div class="help">Saved to {o.downloads.location}</div>
@@ -328,7 +328,7 @@ function AudioCard({ focusId }: { focusId?: string }) {
       ) : o.status === "recording" ? (
         <p class="muted">🎙️ Recording… {o.progress ?? ""}</p>
       ) : (
-        <p style={{ color: "var(--danger, #c33)" }}>⚠️ {o.error}</p>
+        <p style={{ color: "var(--danger)" }}>⚠️ {o.error}</p>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-// Starts the embedded Node.js runtime (nodejs-mobile) that runs the MausDroid
+// Starts the embedded Node.js runtime (nodejs-mobile) that runs the DanDroid
 // engine, and forwards its console output to Android's log.
 #include <jni.h>
 #include <string>

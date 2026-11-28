@@ -6,7 +6,7 @@ import zlib from "node:zlib";
 /**
  * A fetch() built on Node's own http/https modules. The phone's Node.js
  * build may not include everything the built-in fetch needs, so on Android
- * MausDroid always uses this one. Supports what the engine uses: method,
+ * DanDroid always uses this one. Supports what the engine uses: method,
  * headers, string/Buffer body, AbortSignal, redirects, streaming bodies.
  */
 export function nodeFetch(input: string | URL | { url: string }, init: any = {}): Promise<Response> {

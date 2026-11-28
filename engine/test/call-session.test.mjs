@@ -127,7 +127,7 @@ test("live call: a listening problem is shown and spoken, not treated as silence
   const e = await startEngine({ env: { MAUSDROID_BRIDGE_URL: ph.url, MAUSDROID_BRIDGE_TOKEN: "x" } });
   try {
     await useModel(e, m.url);
-    ph.st.listenError = "MausDroid needs microphone permission (Settings → Voice & assistant → Microphone).";
+    ph.st.listenError = "DanDroid needs microphone permission (Settings → Voice & assistant → Microphone).";
     const c = (await e.call("/api/calls/start", "POST", {})).data;
     await e.call(`/api/calls/${c.id}/run`, "POST", {});
     await e.until(async () => (await e.call(`/api/calls/${c.id}/live`)).data.phase === "ended", "ended", 10000);

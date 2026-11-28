@@ -17,7 +17,7 @@ import { errorText } from "./util.ts";
  *   Claude  → Claude Code   (claude auth login)    · your Claude Pro/Max plan
  *   ChatGPT → Codex         (codex login)          · your ChatGPT plan
  * If a program can't run on this phone, the bot uses your computer instead
- * (the MausDroid companion), when one is set up.
+ * (the DanDroid companion), when one is set up.
  */
 export type SubId = "claude" | "chatgpt";
 export const SUBS: Record<SubId, { label: string; program: string; company: string }> = {
@@ -70,7 +70,7 @@ const installed = (id: SubId) =>
   id === "chatgpt" ? fs.existsSync(bin("codex")) : fs.existsSync(bin("claude")) && hasMusl();
 const hasMusl = () => fs.existsSync(path.join(lib(), "ld-musl-aarch64.so.1"));
 
-/** Claude Code keeps its sign-in in ~/.claude/.credentials.json; MausDroid also leaves a marker. */
+/** Claude Code keeps its sign-in in ~/.claude/.credentials.json; DanDroid also leaves a marker. */
 const claudeCreds = () => [path.join(subHome("claude"), ".claude", ".credentials.json"), path.join(subHome("claude"), ".mausdroid-signed-in")];
 
 export function isSignedIn(id: SubId): boolean {
@@ -198,7 +198,7 @@ export function programEnv(id: SubId): NodeJS.ProcessEnv {
     HOME: subHome(id),
     TMPDIR: path.dirname(dataPath("tmp", "x")),
     // These Linux programs can't read Android's network settings, so their
-    // traffic goes through MausDroid's local proxy, which resolves names.
+    // traffic goes through DanDroid's local proxy, which resolves names.
     HTTPS_PROXY: proxy,
     HTTP_PROXY: proxy,
     https_proxy: proxy,
@@ -208,7 +208,7 @@ export function programEnv(id: SubId): NodeJS.ProcessEnv {
     SSL_CERT_FILE: caBundle(),
     LD_LIBRARY_PATH: lib(),
     SHELL: "/system/bin/sh",
-    // No browser for the programs to open: MausDroid opens sign-in pages itself.
+    // No browser for the programs to open: DanDroid opens sign-in pages itself.
     BROWSER: fs.existsSync("/system/bin/true") ? "/system/bin/true" : "true",
     TERM: "xterm-256color",
     NO_COLOR: "1",

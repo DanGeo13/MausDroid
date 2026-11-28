@@ -1,4 +1,4 @@
-// tsbridge: an embedded Tailscale node for MausDroid.
+// tsbridge: an embedded Tailscale node for DanDroid.
 // It joins the tailnet in userspace (no VPN permission, no Tailscale app),
 // forwards tailnet HTTP traffic to the local engine, and offers a local
 // HTTP proxy so the engine can reach other tailnet devices (e.g. your PC).

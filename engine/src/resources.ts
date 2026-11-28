@@ -3,7 +3,7 @@ import { emit } from "./events.ts";
 import { clip, id as newId, now } from "./util.ts";
 
 /**
- * Resources: the links bots give you and the documents MausDroid makes, in one
+ * Resources: the links bots give you and the documents DanDroid makes, in one
  * list, grouped by keywords (Christmas, a name, a project, a destination…).
  * Things you haven't opened for 30 days are archived — still searchable and
  * retrievable by any bot when you need reminding. "Don't worry about that, you
@@ -13,7 +13,7 @@ export interface Resource {
   id: string;
   kind: "link" | "doc";
   url?: string;
-  /** A MausDroid file (documents it made or saved). */
+  /** A DanDroid file (documents it made or saved). */
   fileId?: string;
   title: string;
   keywords: string[];
@@ -89,7 +89,7 @@ export function keywordsFrom(text: string): string[] {
   return tidyKeywords([...topics, ...names.filter((w) => !STOP.has(w.toLowerCase()))]).slice(0, 5);
 }
 
-/** Links in a reply (Markdown links with their titles, and bare links). MausDroid's own local links are skipped. */
+/** Links in a reply (Markdown links with their titles, and bare links). DanDroid's own local links are skipped. */
 export function linksIn(text: string): { url: string; title?: string }[] {
   const out: { url: string; title?: string }[] = [];
   for (const m of text.matchAll(/\[([^\]]{1,200})\]\((https?:\/\/[^\s)]+)\)/g)) out.push({ url: m[2], title: m[1] });

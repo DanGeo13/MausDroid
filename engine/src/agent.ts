@@ -88,14 +88,14 @@ function approvalContext(bot: Bot): string {
   return "Reading emails, calendars, files and web pages runs directly. Actions such as sending, buying, posting, deleting or changing things ask for approval.";
 }
 
-const cliToolContext = "Use the mausdroid MCP server for the phone browser and connected apps such as Gmail, Calendar and Drive. Call the tool directly. MausDroid applies the bot's current approval settings and shows any approval card.";
+const cliToolContext = "Use the mausdroid MCP server for the phone browser and connected apps such as Gmail, Calendar and Drive. Call the tool directly. DanDroid applies the bot's current approval settings and shows any approval card.";
 
 export function systemPrompt(bot: Bot, extra = ""): string {
   const s = settings();
   const when = fmtLong(new Date());
   return [
     bot.persona || `You are ${bot.name}, a helpful assistant.`,
-    `\n\nYou are ${bot.name}, one of the person's bots in MausDroid, an agent app running on their Android phone. It is ${when} (${s.timeZone}).`,
+    `\n\nYou are ${bot.name}, one of the person's bots in DanDroid, an agent app running on their Android phone. It is ${when} (${s.timeZone}).`,
     "Work step by step with your tools. Prefer the quickest reliable tool (web_fetch before the browser; connected apps before the browser).",
     approvalContext(bot),
     "If the app you need isn't connected, start connecting it (connected apps: manage connections) and give the person the sign-in link; never ask them to copy and paste what you could read yourself. Earlier messages in a chat can be out of date (apps get connected, access changes): try the tool again before saying something can't be reached, and if it really can't, say exactly which source you tried and what's missing.",
@@ -169,7 +169,7 @@ async function drain(botId: string) {
         updateBot(botId, { accessSeen: LATEST_ACCESS_UPDATE });
         if (note && batch[0]) {
           batch[0] = { ...batch[0], text: `${note}\n\n${batch[0].text}` };
-          const shown = addMessage(botId, { role: "note", text: "MausDroid's access was updated. Your bot will use its current tool settings in this chat.", status: "done" });
+          const shown = addMessage(botId, { role: "note", text: "DanDroid's access was updated. Your bot will use its current tool settings in this chat.", status: "done" });
           emit("message", { botId, message: shown });
         }
       }
@@ -294,13 +294,13 @@ async function runTool(bot: Bot, tools: Tool[], call: Extract<Block, { type: "to
 export const STALE_SESSION = /no rollout found|thread\/resume failed|no conversation found|conversation .{0,40}not found|session .{0,40}not found|could not find (the )?(session|conversation)/i;
 
 async function runCliTurn(bot: Bot, p: ProviderConfig, text: string, signal: AbortSignal, attachments: Attachment[] = []) {
-  // On the phone the program reaches MausDroid locally; a computer reaches it over Tailscale.
+  // On the phone the program reaches DanDroid locally; a computer reaches it over Tailscale.
   const onPhone = p.runOn !== "computer" && isSignedIn(p.subId!);
   const mcpBase = onPhone || !settings().tailscale.enabled ? `http://127.0.0.1:${config.port}` : `http://${settings().tailscale.hostname}`;
   const run = {
     attachments,
     prompt: p.subId === "chatgpt" && bot.cliSession
-      ? `[Current MausDroid tool access: ${cliToolContext} ${approvalContext(bot)} Use the current tools even if older turns reported an approval failure.]\n\n${text}`
+      ? `[Current DanDroid tool access: ${cliToolContext} ${approvalContext(bot)} Use the current tools even if older turns reported an approval failure.]\n\n${text}`
       : text,
     model: bot.model ?? p.defaultModel,
     resume: bot.cliSession,

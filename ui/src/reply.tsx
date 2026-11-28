@@ -65,9 +65,9 @@ export function ReplyCard({ id, openBot, onChange }: { id: string; openBot?: (bo
   const save = () => api(`replies/${id}/draft`, { method: "PUT", body: { text, to } });
   const statusLabel: Record<string, string> = { handled: "✓ Handled", "no-reply": "No reply needed", snoozed: `Snoozed${it.snoozeUntil ? ` until ${when(it.snoozeUntil)}` : ""}` };
   return (
-    <div class="reply-card" style={{ borderLeftColor: svc.accent }}>
+    <div class="reply-card">
       <div class="reply-head">
-        <span class="svc" style={{ background: svc.accent }}>
+        <span class="svc">
           {svc.label}
         </span>
         <strong>{it.sender}</strong>
@@ -151,7 +151,6 @@ export function ReplyCard({ id, openBot, onChange }: { id: string; openBot?: (bo
         {svc.reply === "send" && it.source?.kind === "email" ? (
           <button
             class="btn small"
-            style={{ background: svc.accent }}
             disabled={!text.trim() || !to.trim() || Boolean(busy)}
             onClick={() => act("review", async () => setReview({ body: (await api<{ body: string }>(`replies/${id}/preview`, { body: { text } })).body, to }))}
           >
@@ -159,14 +158,13 @@ export function ReplyCard({ id, openBot, onChange }: { id: string; openBot?: (bo
           </button>
         ) : null}
         {it.service === "whatsapp" ? (
-          <button class="btn small" style={{ background: svc.accent }} disabled={!text.trim() || Boolean(busy)} onClick={() => act("wa", () => api(`replies/${id}/whatsapp`, { body: { text } }), "WhatsApp opened with your reply — pick the chat and send.")}>
+          <button class="btn small" disabled={!text.trim() || Boolean(busy)} onClick={() => act("wa", () => api(`replies/${id}/whatsapp`, { body: { text } }), "WhatsApp opened with your reply — pick the chat and send.")}>
             Open in WhatsApp
           </button>
         ) : null}
         {svc.reply === "copy" || (svc.reply === "send" && it.source?.kind !== "email") ? (
           <button
             class="btn small"
-            style={{ background: svc.accent }}
             disabled={!text.trim() || Boolean(busy)}
             onClick={() =>
               act("copy", async () => {
@@ -250,7 +248,7 @@ export function ReplyDesk({ focusId, onBack, openBot }: { focusId?: string; onBa
         {setup && src ? (
           <div class="section">
             <h2>What Reply Desk reads</h2>
-            <p class="help">Email comes from Gmail in Connected apps (full messages, sending after your approval). Messaging apps are read from their notifications (previews only), and only the ones you switch on.{src.notificationAccess ? "" : " MausDroid needs notification access first: Settings → Phone → Notification reading."}</p>
+            <p class="help">Email comes from Gmail in Connected apps (full messages, sending after your approval). Messaging apps are read from their notifications (previews only), and only the ones you switch on.{src.notificationAccess ? "" : " DanDroid needs notification access first: Settings → Phone → Notification reading."}</p>
             {src.services
               .filter((s: any) => s.installed || s.service === "gmail")
               .map((s: any) => (

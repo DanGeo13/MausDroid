@@ -23,7 +23,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * MausDroid as your phone's digital assistant (Settings → Default apps →
+ * DanDroid as your phone's digital assistant (Settings → Default apps →
  * Digital assistant app). Long-press home or the power button: a panel
  * slides up, listens right away, and the bot you chose answers aloud.
  */
@@ -33,7 +33,7 @@ class MausSessionService : VoiceInteractionSessionService() {
     override fun onNewSession(args: Bundle?): VoiceInteractionSession = MausSession(this)
 }
 
-/** Required by Android for an assistant app; MausDroid uses the phone's speech recognition. */
+/** Required by Android for an assistant app; DanDroid uses the phone's speech recognition. */
 class MausRecognitionService : RecognitionService() {
     override fun onStartListening(recognizerIntent: Intent?, listener: Callback?) { listener?.error(android.speech.SpeechRecognizer.ERROR_CLIENT) }
     override fun onCancel(listener: Callback?) {}
@@ -178,7 +178,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     private val voice = Voice(ctx)
     private val dp = ctx.resources.displayMetrics.density
     private fun px(v: Int) = (v * dp).toInt()
-    private val accent = Color.parseColor("#7C5CFF")
+    private val accent = Color.parseColor("#FFCC00")
 
     private val title = TextView(ctx).apply { setTextColor(Color.WHITE); textSize = 16f; setTypeface(typeface, android.graphics.Typeface.BOLD) }
     private val heard = TextView(ctx).apply { setTextColor(Color.parseColor("#C9CEDA")); textSize = 18f; setPadding(0, px(10), 0, px(6)) }
@@ -189,7 +189,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         isVerticalScrollBarEnabled = true
         movementMethod = android.text.method.ScrollingMovementMethod()
     }
-    private val statusLine = TextView(ctx).apply { setTextColor(Color.parseColor("#9AA3B5")); textSize = 13f }
+    private val statusLine = TextView(ctx).apply { setTextColor(Color.parseColor("#A8A8A0")); textSize = 13f }
     private var botId: String? = null
     private var speak = true
     @Volatile private var active = false
@@ -214,7 +214,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
 
     private fun refreshScreenLabel() {
         val what = listOfNotNull(screen?.app, if (screenshot != null) "screenshot" else null).joinToString(" + ")
-        screenToggle.setTextColor(if (includeScreen) Color.parseColor("#9D8CFF") else Color.parseColor("#7A8294"))
+        screenToggle.setTextColor(if (includeScreen) Color.parseColor("#FFCC00") else Color.parseColor("#7A8294"))
         screenToggle.text = if (screen == null && screenshot == null) "Screen: not shared (turn on “Use text from screen” in assistant settings)"
         else "${if (includeScreen) "☑" else "☐"} Include what's on screen${if (what.isNotEmpty()) " ($what)" else ""}"
     }
@@ -227,14 +227,14 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     private val mic = Button(ctx).apply {
         text = "🎤  Talk"
         isAllCaps = false
-        setTextColor(Color.WHITE)
+        setTextColor(Color.parseColor("#0B0B0B"))
         background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(accent) }
         setOnClickListener { voice.stopSpeaking(); listen() }
     }
     private val addFile = Button(ctx).apply {
         text = "📎"
         setTextColor(Color.WHITE)
-        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2F3D")) }
+        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2A28")) }
         setOnClickListener {
             FilePickActivity.onPicked = { picked -> files.addAll(picked); refreshChips(); statusLine.text = if (picked.isEmpty()) "" else "Added. Tap Talk and say what to do with it." }
             ctx.startActivity(Intent(ctx, FilePickActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -243,7 +243,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     private val takePhoto = Button(ctx).apply {
         text = "📷"
         setTextColor(Color.WHITE)
-        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2F3D")) }
+        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2A28")) }
         setOnClickListener {
             FilePickActivity.onPicked = { picked -> files.addAll(picked); refreshChips(); statusLine.text = if (picked.isEmpty()) "" else "Photo added. Tap Talk and say what to do with it." }
             ctx.startActivity(Intent(ctx, FilePickActivity::class.java).putExtra("camera", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -253,7 +253,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         text = "Open chat"
         isAllCaps = false
         setTextColor(Color.WHITE)
-        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2F3D")) }
+        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2A28")) }
         setOnClickListener {
             ctx.startActivity(Intent(ctx, MainActivity::class.java).putExtra("botId", botId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             close()
@@ -271,7 +271,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
             setPadding(px(20), px(18), px(20), px(24))
             background = GradientDrawable().apply {
                 cornerRadii = floatArrayOf(px(24).toFloat(), px(24).toFloat(), px(24).toFloat(), px(24).toFloat(), 0f, 0f, 0f, 0f)
-                setColor(Color.parseColor("#141821"))
+                setColor(Color.parseColor("#161616"))
             }
             isClickable = true
             addView(title)
@@ -314,7 +314,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
 
     fun start() {
         active = true
-        title.text = "MausDroid"
+        title.text = "DanDroid"
         statusLine.text = "Getting ready…"
         heard.text = ""
         answer.text = ""
@@ -329,9 +329,9 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
                 speak = a.optBoolean("speak", true)
                 // The speech service chosen in Settings (else Google's first).
                 voice.chosen = a.optString("recognizer").takeIf { it.isNotBlank() }?.let { android.content.ComponentName.unflattenFromString(it) }
-                ui { title.text = "${a.optString("emoji")} ${a.optString("botName", "MausDroid")}"; listen() }
+                ui { title.text = "${a.optString("emoji")} ${a.optString("botName", "DanDroid")}"; listen() }
             } catch (e: Exception) {
-                ui { statusLine.text = "MausDroid is still starting. Try again in a moment." }
+                ui { statusLine.text = "DanDroid is still starting. Try again in a moment." }
             }
         }.start()
     }
@@ -339,7 +339,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     private fun listen() {
         if (!active) return
         if (ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            statusLine.text = "Open MausDroid once and allow the microphone, then try again."
+            statusLine.text = "Open DanDroid once and allow the microphone, then try again."
             return
         }
         statusLine.text = "Listening…"

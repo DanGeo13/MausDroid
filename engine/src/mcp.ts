@@ -44,7 +44,7 @@ export class McpClient {
     await this.rpc("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "MausDroid", version: "0.1" },
+      clientInfo: { name: "DanDroid", version: "0.1" },
     });
     await this.rpc("notifications/initialized", undefined, true);
     this.initialized = true;
