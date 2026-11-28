@@ -13,6 +13,9 @@ const OPTIONS = [
   { kind: "weekly", label: "Once a Week", hint: "On chosen weekdays" },
   { kind: "custom", label: "Custom", hint: "Intervals, dates, repeats" },
 ] as const;
+const SCHEDULE_TEMPLATES = ["Kids care routine", "Work routine"] as const;
+type ScheduleTemplate = (typeof SCHEDULE_TEMPLATES)[number];
+
 const STATUS: Record<string, string> = { succeeded: "ok", failed: "bad", timed_out: "bad", missed: "warn", skipped: "warn", running: "warn", queued: "" };
 
 const v = (e: Event) => (e.target as HTMLInputElement).value;
@@ -36,12 +39,12 @@ function Days({ value, onChange }: { value: number[]; onChange: (d: number[]) =>
   );
 }
 
-function Editor({ bots, routine, onDone }: { bots: Bot[]; routine?: any; onDone: () => void }) {
+function Editor({ bots, routine, template, onDone }: { bots: Bot[]; routine?: any; template?: ScheduleTemplate; onDone: () => void }) {
   const sc = routine?.schedule ?? {};
   const [botId, setBotId] = useState(routine?.botId ?? bots[0]?.id);
-  const [title, setTitle] = useState(routine?.title ?? "");
+  const [title, setTitle] = useState(routine?.title ?? template ?? "");
   const [prompt, setPrompt] = useState(routine?.prompt ?? "");
-  const [kind, setKind] = useState<string>(["daily", "weekly", "alert", "custom"].includes(sc.kind) ? sc.kind : sc.kind === "interval" ? "custom" : "daily");
+  const [kind, setKind] = useState<string>(["daily", "weekly", "alert", "custom"].includes(sc.kind) ? sc.kind : sc.kind === "interval" ? "custom" : template ? "weekly" : "daily");
   const [time, setTime] = useState(sc.time ?? "07:30");
   const [days, setDays] = useState<number[]>(sc.days ?? [1, 2, 3, 4, 5]);
   const [tz, setTz] = useState(sc.timeZone ?? "local");
@@ -297,7 +300,7 @@ function History({ id }: { id: string }) {
 
 export function Routines({ bots }: { bots: Bot[] }) {
   const [list, setList] = useState<any[] | null>(null);
-  const [editing, setEditing] = useState<any | "new" | null>(null);
+  const [editing, setEditing] = useState<{ routine?: any; template?: ScheduleTemplate } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const reload = () => void api("routines").then(setList);
   useEffect(reload, []);
@@ -307,54 +310,67 @@ export function Routines({ bots }: { bots: Bot[] }) {
   };
   const act = (p: Promise<unknown>, msg?: string) =>
     p.then(() => (msg && toast(msg), reload())).catch((e) => toast(`⚠️ ${(e as Error).message}`));
-  if (editing) return <Editor bots={bots} routine={editing === "new" ? undefined : editing} onDone={() => (setEditing(null), reload())} />;
+  if (editing) return <Editor bots={bots} {...editing} onDone={() => (setEditing(null), reload())} />;
   return (
-    <div class="section">
-      <div class="inline" style={{ justifyContent: "space-between" }}>
-        <h2>Routines</h2>
-        <button class="btn small" onClick={() => setEditing("new")}>
-          + New routine
-        </button>
+    <>
+      <div class="section">
+        <h2>Scheduling</h2>
+        <p class="help">Choose the days and time, then tell your bot what to do.</p>
+        <div class="inline">
+          {SCHEDULE_TEMPLATES.map((name) => (
+            <button class="btn secondary" key={name} disabled={!bots.length} onClick={() => setEditing({ template: name })}>
+              {name}
+            </button>
+          ))}
+        </div>
       </div>
-      <p class="help">Or ask a bot: “every weekday at 7am give me a briefing”, “when Compass posts a notice, summarise it”.</p>
-      {!list ? <p class="muted">Loading…</p> : !list.length ? <p class="muted">No routines yet.</p> : null}
-      {list?.map((r) => (
-        <div style={{ padding: ".7rem 0", borderTop: "1px solid var(--line)" }}>
-          <div class="inline" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
-            <div style={{ minWidth: 0 }}>
-              <strong>{r.title}</strong> <span class="muted">· {name(r.botId)}</span> {!r.enabled ? <span class="pill">paused</span> : null}
-              <div class="muted" style={{ fontSize: ".82rem" }}>{r.scheduleText}</div>
-              <div class="muted" style={{ fontSize: ".78rem" }}>
-                Next: {r.nextRunAt ? new Date(r.nextRunAt).toLocaleString() : r.schedule.kind === "alert" ? "when an alert matches" : "—"}
-                {r.lastResult ? (
-                  <>
-                    {" "}
-                    · Last: <span class={`pill ${STATUS[r.lastResult.status] ?? ""}`}>{r.lastResult.status.replace("_", " ")}</span>
-                  </>
-                ) : null}
+      <div class="section">
+        <div class="inline" style={{ justifyContent: "space-between" }}>
+          <h2>Routines</h2>
+          <button class="btn small" onClick={() => setEditing({})}>
+            + New routine
+          </button>
+        </div>
+        <p class="help">Or ask a bot: “every weekday at 7am give me a briefing”, “when Compass posts a notice, summarise it”.</p>
+        {!list ? <p class="muted">Loading…</p> : !list.length ? <p class="muted">No routines yet.</p> : null}
+        {list?.map((r) => (
+          <div style={{ padding: ".7rem 0", borderTop: "1px solid var(--line)" }}>
+            <div class="inline" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
+              <div style={{ minWidth: 0 }}>
+                <strong>{r.title}</strong> <span class="muted">· {name(r.botId)}</span> {!r.enabled ? <span class="pill">paused</span> : null}
+                <div class="muted" style={{ fontSize: ".82rem" }}>{r.scheduleText}</div>
+                <div class="muted" style={{ fontSize: ".78rem" }}>
+                  Next: {r.nextRunAt ? new Date(r.nextRunAt).toLocaleString() : r.schedule.kind === "alert" ? "when an alert matches" : "—"}
+                  {r.lastResult ? (
+                    <>
+                      {" "}
+                      · Last: <span class={`pill ${STATUS[r.lastResult.status] ?? ""}`}>{r.lastResult.status.replace("_", " ")}</span>
+                    </>
+                  ) : null}
+                </div>
               </div>
             </div>
+            <div class="inline" style={{ marginTop: ".4rem" }}>
+              <button class="btn secondary small" onClick={() => act(api(`routines/${r.id}/run`, { body: {} }), "Started — see History")}>
+                Run now
+              </button>
+              <button class="btn secondary small" onClick={() => act(api(`routines/${r.id}/${r.enabled ? "pause" : "resume"}`, { body: {} }))}>
+                {r.enabled ? "Pause" : "Resume"}
+              </button>
+              <button class="btn secondary small" onClick={() => setEditing({ routine: r })}>
+                Edit
+              </button>
+              <button class="btn secondary small" onClick={() => setOpen(open === r.id ? null : r.id)}>
+                History
+              </button>
+              <button class="btn secondary small" onClick={() => confirm(`Delete “${r.title}”?`) && act(api(`routines/${r.id}`, { method: "DELETE" }), "Deleted")}>
+                Delete
+              </button>
+            </div>
+            {open === r.id ? <History id={r.id} /> : null}
           </div>
-          <div class="inline" style={{ marginTop: ".4rem" }}>
-            <button class="btn secondary small" onClick={() => act(api(`routines/${r.id}/run`, { body: {} }), "Started — see History")}>
-              Run now
-            </button>
-            <button class="btn secondary small" onClick={() => act(api(`routines/${r.id}/${r.enabled ? "pause" : "resume"}`, { body: {} }))}>
-              {r.enabled ? "Pause" : "Resume"}
-            </button>
-            <button class="btn secondary small" onClick={() => setEditing(r)}>
-              Edit
-            </button>
-            <button class="btn secondary small" onClick={() => setOpen(open === r.id ? null : r.id)}>
-              History
-            </button>
-            <button class="btn secondary small" onClick={() => confirm(`Delete “${r.title}”?`) && act(api(`routines/${r.id}`, { method: "DELETE" }), "Deleted")}>
-              Delete
-            </button>
-          </div>
-          {open === r.id ? <History id={r.id} /> : null}
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }

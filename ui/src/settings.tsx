@@ -4,6 +4,7 @@ import { api } from "./api.ts";
 import type { Bot, Provider } from "./types.ts";
 import { IconBack, IconRing, IconSpark } from "./icons.tsx";
 import { Routines } from "./routines.tsx";
+import { Versions } from "./improve.tsx";
 import { Calendars } from "./calendars.tsx";
 import { AddEndpoint, ModelPicker } from "./models.tsx";
 import { CallSettings } from "./call.tsx";
@@ -751,7 +752,7 @@ function NotificationReading() {
 function PhoneTab() {
   const [s, reloadS] = useLoad<any>("settings");
   const [ts, reloadTs] = useLoad<any>("tailscale");
-  const [upd, reloadUpd] = useLoad<any>("update");
+  const [upd, reloadUpd, updateError] = useLoad<any>("update");
   const [sys, reloadSys] = useLoad<any>("system");
   const [authKey, setAuthKey] = useState("");
   const [host, setHost] = useState("");
@@ -838,6 +839,7 @@ function PhoneTab() {
         <p class="help">DanDroid updates itself in the background: new screens and features arrive without reinstalling. A new app file is only needed for rare core changes, and you'd get a one-tap prompt.</p>
         <div class="muted" style={{ fontSize: 13 }}>
           App {upd?.apkVersion ?? "?"} · Engine {upd?.engineVersion ?? "?"} · {upd?.state ?? ""} {upd?.lastChecked ? `· checked ${new Date(upd.lastChecked).toLocaleString()}` : ""}
+          {updateError ? <div role="status">Couldn’t load update status. Try again in a moment.</div> : null}
           {upd?.message ? <div>{upd.message}</div> : null}
           {upd?.appUpdate ? (
             <div>
@@ -847,16 +849,17 @@ function PhoneTab() {
           ) : null}
         </div>
         <div class="inline" style={{ marginTop: 8 }}>
-          <button class="btn secondary" onClick={run(async () => (await api("update/check", { body: {} }), reloadUpd()), "Checked")}>
+          <button class="btn secondary" disabled={upd?.state === "checking" || upd?.state === "downloading"} onClick={run(async () => (await api("update/check", { body: {} }), reloadUpd()))}>
             Check now
           </button>
-          {upd?.available ? (
+          {upd?.state === "ready" && upd.available ? (
             <button class="btn" onClick={run(async () => api("update/apply", { body: {} }), "Updating — the app will refresh")}>
               Install {upd.available}
             </button>
           ) : null}
         </div>
       </div>
+      <Versions v={upd?.versions} onDone={reloadUpd} />
     </>
   );
 }
