@@ -111,8 +111,10 @@ test("new Staff Update → Maus writes it → recorded under the limit → Downl
     for (const s of br.st.synth) assert.ok(s.out.startsWith(e.dir), "recordings stay in MausDroid's own storage");
     // Saved to Downloads, size checked.
     assert.equal(o.downloads.location, "Download/MausDroid/Week 8 audio overview.wav");
-    // Notification with a link to it.
-    const n = br.st.notify.find((x) => x.type === "audio-overview");
+    // Listed in Notifications (as an update: it doesn't buzz the phone unless updates are on) with a link to it.
+    assert.ok(!br.st.notify.some((x) => x.type === "audio-overview"), "updates don't buzz the phone by default");
+    const n = (await e.call("/api/alerts")).data.find((x) => x.type === "audio-overview");
+    assert.equal(n.tier, "info");
     assert.equal(n.link, `audio:${o.id}`);
     assert.match(n.title, /Week 8 audio overview is ready/);
     // The audio plays (and can skip ahead).

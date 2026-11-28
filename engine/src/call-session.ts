@@ -433,6 +433,20 @@ export async function listen(l: Pick<Live, "local">, opts: { preroll?: number; s
   return bridge<Heard>("/voice/listen", { soft: true, silenceMs, timeoutSec, service: settings().voice.recognizer ?? "" }, (timeoutSec + 10) * 1000).catch((e) => ({ text: "", missed: false, error: (e as Error).message }));
 }
 
+/**
+ * Waits up to maxMs for you to start talking, using the call's open microphone. "unknown" when the
+ * phone can't tell (older app): then the recognizer just listens as before.
+ */
+async function waitForVoice(l: Live, maxMs: number): Promise<"voice" | "quiet" | "unknown"> {
+  const until = Date.now() + Math.max(0, maxMs);
+  while (l.active && Date.now() < until) {
+    const st = await bridge<{ speech?: boolean; error?: string }>("/voice/await-speech", { maxMs: Math.min(4000, Math.max(50, until - Date.now())), bargeIn: false }, 8000).catch((e) => ({ error: (e as Error).message, speech: false }));
+    if (st.error) return "unknown";
+    if (st.speech) return "voice";
+  }
+  return "quiet";
+}
+
 /** Waits for a thought that trailed off ("the other thing is…") to finish. */
 async function finishThought(l: Live, text: string): Promise<string> {
   let full = text;
@@ -534,11 +548,22 @@ async function conversation(l: Live, botId: string, reason: string) {
   l.local = l.player && Boolean(await bridge<{ onDevice?: boolean }>("/voice/local-available", {}).then((r) => r.onDevice).catch(() => false));
   if (l.player) void bridge("/speech/warm", voiceParams()).catch(() => {});
   await speakLine(l, reason ? `${shortGreeting(name)}, it's ${botName}. ${reason}` : greeting(name), true);
-  let silences = 0;
+  // Ending for quiet is timed, not counted: the phone's recognizer gives up after a few seconds of
+  // silence, and those quick give-ups aren't you going away. "Still there?" after 45 s of real quiet,
+  // goodbye 30 s after that — and talking over the goodbye keeps the call going.
+  const askAfter = Number(process.env.MAUSDROID_CALL_QUIET_MS) || 45_000; // (tests shorten it)
+  const byeAfter = Math.round((askAfter * 2) / 3);
+  let quietSince = Date.now();
+  let askedThere = false;
+  let carried: "speech" | null = null;
+  let saidSorry = false;
   let failures = 0;
   while (l.active) {
-    const w = await waitWhileBusy(l);
+    const waitStart = Date.now();
+    const w = carried ?? (await waitWhileBusy(l));
+    carried = null;
     if (!l.active) break;
+    if (Date.now() - waitStart > 400) quietSince = Date.now(); // Maus was talking: quiet counts from now
     let interrupted: Turn | null = null;
     let stoppedAt: { seq: number; fraction: number } | null = null;
     if (w === "speech") {
@@ -562,7 +587,17 @@ async function conversation(l: Live, botId: string, reason: string) {
       void bridge<{ interruptMs?: number }>("/speech/state", {}).then((st) => (st.interruptMs ?? -1) >= 0 && l.interruptMs.push(st.interruptMs!)).catch(() => {});
     }
     setPhase(l, "listening");
-    const r = await listen(l, { preroll: w === "speech" ? 500 : 0 });
+    let heardVoice = w === "speech";
+    let r: Heard;
+    if (w === "idle" && l.local) {
+      // Wait for your voice first (the microphone is already open), then start the recognizer with
+      // a long pre-roll — so it never times out on silence, and the start of your question is kept.
+      const limit = (askedThere ? byeAfter : askAfter) - (Date.now() - quietSince);
+      const v = await waitForVoice(l, limit);
+      if (!l.active) break;
+      heardVoice = v === "voice";
+      r = v === "quiet" ? { text: "" } : await listen(l, { preroll: v === "voice" ? 1500 : 0 });
+    } else r = await listen(l, { preroll: w === "speech" ? 500 : 0 });
     if (!l.active) break;
     if (r.error && !r.missed) {
       if (interrupted) cancelTurn(l);
@@ -580,15 +615,36 @@ async function conversation(l: Live, botId: string, reason: string) {
     let text = (r.text ?? "").trim();
     if (!text) {
       if (interrupted) cancelTurn(l);
-      if (++silences >= 3) {
+      // You spoke but it couldn't make out the words: ask again (at most every 20 s) instead of counting it as quiet.
+      // Once until you're heard again, and it doesn't reset the quiet timer (so background noise can't keep a call open).
+      if (heardVoice && r.missed && !r.error && !saidSorry) {
+        saidSorry = true;
+        await speakLine(l, "Sorry, I didn't catch that. Say it again?");
+        continue;
+      }
+      const quiet = Date.now() - quietSince;
+      if (!askedThere && quiet >= askAfter) {
+        askedThere = true;
+        quietSince = Date.now();
+        await speakLine(l, "Are you still there?");
+        continue;
+      }
+      if (askedThere && quiet >= byeAfter) {
         await speakLine(l, `I'll let you go${name ? `, ${name}` : ""}. Talk soon!`);
-        await waitWhileBusy(l);
+        // Talking over the goodbye keeps the call going.
+        if ((await waitWhileBusy(l)) === "speech" && l.active) {
+          askedThere = false;
+          quietSince = Date.now();
+          carried = "speech";
+          continue;
+        }
         break;
       }
-      if (silences === 2) await speakLine(l, "Are you still there?");
       continue;
     }
-    silences = 0;
+    askedThere = false;
+    saidSorry = false;
+    quietSince = Date.now();
     l.note = "";
     if (speechPrefs().holdByVoice && isHoldRequest(text)) {
       l.lines.push({ at: Date.now(), who: "you", text });

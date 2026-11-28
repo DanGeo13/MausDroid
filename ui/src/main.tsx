@@ -12,6 +12,7 @@ import { Improve } from "./improve.tsx";
 import { CallScreen } from "./call.tsx";
 import { ReplyDesk } from "./reply.tsx";
 import { Resources } from "./resources.tsx";
+import { Alerts } from "./alerts.tsx";
 
 applyAppearance(loadAppearance());
 
@@ -23,7 +24,7 @@ function when(iso?: string) {
   return d.toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
-type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string; audioId?: string } | { kind: "improve" } | { kind: "call"; callId?: string; botId?: string } | { kind: "replydesk"; id?: string } | { kind: "resources" };
+type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string; audioId?: string } | { kind: "improve" } | { kind: "call"; callId?: string; botId?: string } | { kind: "replydesk"; id?: string } | { kind: "resources" } | { kind: "alerts" };
 
 function Home({ poll }: { poll: boolean }) {
   const [bots, setBots] = useState<Bot[]>([]);
@@ -112,10 +113,11 @@ function Home({ poll }: { poll: boolean }) {
         if (e.type === "card") setCards((c) => [...c.filter((x) => x.id !== e.card.id), e.card]);
         if (e.type === "card.settled") setCards((c) => c.filter((x) => x.id !== e.cardId));
         if (e.type === "bot.busy") setBots((b) => b.map((x) => (x.id === e.botId ? { ...x, busy: e.busy } : x)));
-        if (e.type === "alert") {
+        if (e.type === "alert" && e.alert.tier === "act") {
           setUnreadAlerts((n) => n + 1);
           if (document.visibilityState === "visible" && !e.alert.cardId) toast(`${e.alert.title}: ${e.alert.body}`.slice(0, 140));
         }
+        if (e.type === "alerts.read") setUnreadAlerts(e.unread ?? 0);
         if (["message", "message.updated", "settings.changed"].includes(e.type)) softRefresh();
         if (e.type === "reply-desk") setPendingReplies(e.pending ?? 0);
       }, s.seq, poll);
@@ -235,7 +237,7 @@ function Home({ poll }: { poll: boolean }) {
           <button class="icon-btn" title="Improvements" aria-label="Improvements" onClick={() => setView({ kind: "improve" })}>
             🛠️
           </button>
-          <button class="icon-btn" title="Alerts" aria-label="Alerts" onClick={() => setView({ kind: "settings", tab: "Routines & alerts" })}>
+          <button class="icon-btn" title="Notifications" aria-label={`Notifications${unreadAlerts ? `, ${unreadAlerts} need you` : ""}`} onClick={() => setView({ kind: "alerts" })}>
             <IconBell />
             {unreadAlerts ? <span class="badge">{unreadAlerts > 99 ? "99+" : unreadAlerts}</span> : null}
           </button>
@@ -316,6 +318,8 @@ function Home({ poll }: { poll: boolean }) {
           <CallScreen callId={view.callId} botId={view.botId} onEnd={() => setView(view.botId ? { kind: "chat", botId: view.botId } : { kind: "list" })} />
         ) : view.kind === "replydesk" ? (
           <ReplyDesk focusId={view.id} onBack={goBack} openBot={openBot} />
+        ) : view.kind === "alerts" ? (
+          <Alerts onBack={goBack} openLink={(link) => (window as any).mausdroidLink(link)} openBot={(id) => setView({ kind: "chat", botId: id })} openSettings={() => setView({ kind: "settings", tab: "Routines & alerts" })} />
         ) : view.kind === "resources" ? (
           <Resources onBack={goBack} />
         ) : view.kind === "improve" ? (

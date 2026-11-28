@@ -171,7 +171,7 @@ const builtins: Tool[] = [
   },
   {
     group: "core",
-    spec: { name: "notify_user", description: "Send the person a phone notification (smart alert). Use for things that matter; be brief. priority: low (silent), normal, high (breaks quiet hours).", inputSchema: obj({ title: str("Short title"), body: str("One or two sentences"), priority: { type: "string", enum: ["low", "normal", "high"] } }, ["title", "body"]) },
+    spec: { name: "notify_user", description: "Tell the person something through MausDroid's alerts. They only want interruptions that need them: use priority high ONLY when they must act or decide something soon (it buzzes the phone and breaks quiet hours). normal = an update (listed in Notifications, no buzz unless they turned updates on). low = a quiet record. Don't notify about routine success, things they'll see anyway, or the same thing twice. Be brief.", inputSchema: obj({ title: str("Short title"), body: str("One or two sentences"), priority: { type: "string", enum: ["low", "normal", "high"] } }, ["title", "body"]) },
     run: async (c, i) => {
       const runId = currentRunTags(c.bot.id).find((t) => t.startsWith("run_"));
       await notifyUser({ title: `${c.bot.emoji} ${i.title}`, body: i.body, botId: c.bot.id, priority: i.priority, source: c.bot.name, routineId: runId ? getRun(runId)?.routineId : undefined, link: i.link });

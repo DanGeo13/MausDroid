@@ -179,7 +179,8 @@ class BridgeServer(
                                 player.enqueue(listOf(SpeechPlayer.Item.Clip("mm-hmm")), nodVoice)
                             }
                         }
-                        if (text != null) ok(JSONObject().put("text", text).put("missed", text.isBlank()).put("nods", nods))
+                        // "missed" = it heard sound but no words (not just silence), so the call can ask you to say it again.
+                        if (text != null) ok(JSONObject().put("text", text).put("missed", text.isBlank() && code != android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT).put("code", code).put("nods", nods))
                         else ok(JSONObject().put("text", "").put("error", error ?: "No speech").put("code", code).put("nods", nods))
                     } finally { watch.closeFeeds(); runCatching { pfd.close() } }
                 }

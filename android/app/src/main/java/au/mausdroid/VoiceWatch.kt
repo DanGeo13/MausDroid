@@ -35,7 +35,7 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
     private fun anySpeaking() = voice.isSpeaking() || otherSpeaking()
 
     // The last half second of microphone audio, so the start of what you say isn't lost.
-    private val ring = ShortArray(RATE / 2)
+    private val ring = ShortArray(RATE * 2) // 2 s: enough to keep a question started while the recognizer spins up
     private var ringPos = 0
     private var ringFull = false
     /** A pipe to a recognizer, written by its own thread so the microphone never waits on it. */
@@ -60,7 +60,7 @@ class VoiceWatch(private val ctx: Context, private val voice: Voice) {
         val (read, write) = android.os.ParcelFileDescriptor.createPipe()
         val out = android.os.ParcelFileDescriptor.AutoCloseOutputStream(write)
         synchronized(ring) {
-            val want = (RATE * prerollMs.coerceIn(0, 500) / 1000)
+            val want = (RATE * prerollMs.coerceIn(0, 2000) / 1000)
             val have = if (ringFull) ring.size else ringPos
             val n = minOf(want, have)
             val bytes = java.nio.ByteBuffer.allocate(n * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)

@@ -50,6 +50,8 @@ export interface Settings {
   onboardingDone: boolean;
   timeZone: string;
   quietHours: { start: string; end: string } | null;
+  /** Also put "updates" (Morning Brief ready, audio overview ready, routine results) on the phone, silently. Off: only what needs you. */
+  notifyUpdates?: boolean;
   /** Voice: "phone" = the phone's own speech recognition and voice (API and local voices later). */
   voice: { engine: "phone"; readReplies: "voice" | "always" | "never"; rate: number; ttsEngine?: string; voiceName?: string; pitch?: number; speech?: Partial<SpeechPrefs>; recognizer?: string; pronunciations?: { from: string; to: string }[] };
   /** Digital assistant (long-press home/power): which bot answers. null = the pinned/first bot. */

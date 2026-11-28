@@ -96,6 +96,8 @@ async function newPhone() {
             st.speakingUntil = 0;
             return send({ speech: true, speaking: false });
           }
+          // Idle with words queued: you've started talking.
+          if (!speaking() && st.heard.length && !body.bargeIn) return send({ speech: true, speaking: false });
           return send({ speech: false, speaking: speaking() });
         }
         case "/voice/listen":
@@ -237,7 +239,8 @@ test("call: hold on, side talk stays private, another bot's name doesn't wake it
     ph.st.holdHeard.push("Yeah I'll be there in five, tell Mum", "Researcher, continue", "", "Maus, continue");
     const c = (await e.call("/api/calls/start", "POST", {})).data;
     await e.call(`/api/calls/${c.id}/run`, "POST", {});
-    await e.until(async () => (await live(e, c.id)).phase === "on-hold", "on hold", 15000);
+    // On hold (it can pass quickly): seen as the phase or as the hold reply.
+    await e.until(async () => { const x = await live(e, c.id); return x.phase === "on-hold" || x.lines.some((y) => /take your time/i.test(y.text)); }, "on hold", 15000);
     const askedOnHold = asked.length;
     await e.until(async () => ph.st.enq.some((q) => q.flush && q.items.some((i) => /Tuesday is a long day/.test(i.text ?? "")) && q.turn?.startsWith("callturn")), "resumed", 15000);
     const resumed = ph.st.enq.find((q) => q.flush && q.turn?.startsWith("callturn") && q.items.some((i) => /Tuesday/.test(i.text ?? "")));
@@ -538,6 +541,54 @@ test("typographic punctuation never reaches the voice (the cause of the garbled 
     await e.call("/api/voice/speak", "POST", { text: "How did Odette\u2019s show go? You\u2019re right." });
     const sent = ph.st.enq.at(-1).items.filter((i) => i.kind === "speech").map((i) => i.text).join(" ");
     assert.equal(sent, "How did Odette's show go? You're right.");
+  } finally {
+    await done();
+  }
+});
+
+test("call: quick recognizer give-ups don't end the call; a later question is heard; talking over the goodbye keeps it going", async () => {
+  // Older app (no on-device listening): each listen gives up fast with nothing, like Android's recognizer on silence.
+  const { ph, e, asked, done } = await callWith((last) => ({ text: /Friday/.test(last) ? "Friday is sport." : "ok" }), { MAUSDROID_CALL_QUIET_MS: "3000" });
+  try {
+    ph.st.noLocal = true;
+    const c = (await e.call("/api/calls/start", "POST", {})).data;
+    await e.call(`/api/calls/${c.id}/run`, "POST", {});
+    await e.until(async () => ph.st.listens.length >= 4, "several quick empty listens");
+    let l = await live(e, c.id);
+    assert.notEqual(l.phase, "ended", "three quick give-ups no longer hang up");
+    assert.ok(!l.lines.some((x) => /still there|let you go/i.test(x.text)));
+    ph.st.heard.push("One more question, what's on Friday?");
+    await e.until(async () => asked.some((a) => /Friday/.test(a)), "the later question reached the bot");
+    await e.until(async () => (await live(e, c.id)).lines.some((x) => /Friday is sport/.test(x.text)), "answered");
+    // Real quiet: "Are you still there?", then the goodbye — and talking over it keeps the call going.
+    await e.until(async () => (await live(e, c.id)).lines.some((x) => /still there/i.test(x.text)), "still there?", 10000);
+    await e.until(async () => (await live(e, c.id)).lines.some((x) => /let you go/i.test(x.text)), "goodbye starts", 10000);
+    ph.st.interruptAt = () => true;
+    ph.st.heard.push("Wait, one more thing, what about Monday?");
+    await e.until(async () => asked.some((a) => /Monday/.test(a)), "kept going after talking over the goodbye", 10000);
+    l = await live(e, c.id);
+    assert.notEqual(l.phase, "ended");
+  } finally {
+    await done();
+  }
+});
+
+test("call: with on-device listening, silence never starts the recognizer; quiet ends politely; heard-but-unclear asks again once", async () => {
+  const { ph, e, done } = await callWith(() => ({ text: "ok" }), { MAUSDROID_CALL_QUIET_MS: "1500" });
+  try {
+    const c = (await e.call("/api/calls/start", "POST", {})).data;
+    await e.call(`/api/calls/${c.id}/run`, "POST", {});
+    await e.until(async () => (await live(e, c.id)).phase === "listening", "listening");
+    await new Promise((r) => setTimeout(r, 800));
+    assert.equal(ph.st.listens.length, 0, "waits for your voice before starting the recognizer");
+    // You speak but it can't make out words: asked to repeat (once), not counted as you going away.
+    ph.st.heard.push(undefined);
+    await e.until(async () => (await live(e, c.id)).lines.some((x) => /didn't catch that/i.test(x.text)), "asks again");
+    assert.equal(ph.st.listens[0].preroll, 1500, "a long pre-roll keeps the start of your question");
+    await e.until(async () => (await live(e, c.id)).phase === "ended", "ended after real quiet", 15000);
+    const lines = (await live(e, c.id)).lines.map((x) => x.text).join(" | ");
+    assert.match(lines, /still there\?.*let you go/i);
+    assert.equal((lines.match(/didn't catch that/gi) ?? []).length, 1);
   } finally {
     await done();
   }

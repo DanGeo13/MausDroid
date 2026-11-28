@@ -7,7 +7,7 @@ import * as bots from "./bots.ts";
 import { busyBots, sendToBot, stopBot } from "./agent.ts";
 import { currentSeq, subscribe, waitForEvents, emit } from "./events.ts";
 import { pendingCards, settle } from "./approvals.ts";
-import { listAlerts, markAlertsRead, notifyUser } from "./notify.ts";
+import { clearAlerts, listAlerts, markAlertsRead, notifyUser, unreadImportant } from "./notify.ts";
 import { provider, publicSettings, updateSettings, settings } from "./settings.ts";
 import { setSecret } from "./secrets.ts";
 import { anthropicModels } from "./providers/anthropic.ts";
@@ -153,7 +153,7 @@ function state() {
     bots: bots.listBots().map((b) => ({ ...b, last: bots.lastMessage(b.id) ?? null, busy: busyBots().includes(b.id) })),
     cards: pendingCards(),
     seq: currentSeq(),
-    unreadAlerts: listAlerts().filter((a) => !a.read).length,
+    unreadAlerts: unreadImportant(),
     pendingReplies: rd.pendingCount(),
     onboardingDone: settings().onboardingDone,
     nativeBridge: bridgeAvailable(),
@@ -253,7 +253,8 @@ route("GET", "/api/events/poll", async (req) => json({ events: await waitForEven
 route("GET", "/api/cards", () => json(pendingCards()));
 route("POST", "/api/cards/:id", (req, [id]) => json({ ok: settle(id, { allow: Boolean(req.body?.allow), answer: req.body?.answer, always: Boolean(req.body?.always) }) }));
 route("GET", "/api/alerts", () => json(listAlerts()));
-route("POST", "/api/alerts/read", () => (markAlertsRead(), json({ ok: true })));
+route("POST", "/api/alerts/read", (req) => (markAlertsRead(req.body?.ids), json({ ok: true, unread: unreadImportant() })));
+route("POST", "/api/alerts/clear", (req) => json({ cleared: clearAlerts(req.body?.tier) }));
 
 // Settings
 route("GET", "/api/settings", () => json(publicSettings()));
@@ -263,6 +264,7 @@ route("PUT", "/api/settings/general", (req) => {
     if ("defaultProvider" in b) s.defaultProvider = b.defaultProvider;
     if (b.timeZone) s.timeZone = b.timeZone;
     if ("quietHours" in b) s.quietHours = b.quietHours;
+    if ("notifyUpdates" in b) s.notifyUpdates = Boolean(b.notifyUpdates);
     if ("onboardingDone" in b) s.onboardingDone = Boolean(b.onboardingDone);
   });
   emit("settings.changed");

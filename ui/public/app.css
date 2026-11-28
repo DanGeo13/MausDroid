@@ -215,3 +215,18 @@ input[type="range"] { padding: 0; accent-color: var(--accent); background: trans
 .res-title { font-weight: 600; display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
 .res-url { font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70vw; }
 .res-acts { display: flex; gap: .3rem; flex-wrap: wrap; }
+
+/* Notifications */
+.alert-row { display: flex; flex-direction: column; gap: .2rem; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); padding: .7rem .2rem; }
+.alert-row .top { display: flex; gap: .5rem; justify-content: space-between; align-items: baseline; }
+.alert-row .body { font-size: .85rem; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.alert-row:not(.read) strong::before { content: ""; display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: var(--accent); margin-right: .4rem; vertical-align: middle; }
+.alert-row.read { opacity: .7; }
+
+/* Narrow phones: keep every top-bar button full size and tappable (the name gives way, the logo stays). */
+@media (max-width: 460px) {
+  .sidebar .topbar { gap: .1rem; }
+  .sidebar .topbar .brand { font-size: 0; flex: 1 1 auto; min-width: 2rem; }
+  .sidebar .topbar .brand img { margin-right: 0; }
+  .sidebar .topbar .icon-btn { width: 2.5rem; height: 2.75rem; }
+}
