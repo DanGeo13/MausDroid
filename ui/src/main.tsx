@@ -4,12 +4,14 @@ import { api, listen, type EngineEvent } from "./api.ts";
 import { Avatar, Chat } from "./chat.tsx";
 import { BotEditor, Settings, toast } from "./settings.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
-import { IconBell, IconGear, IconPlus, IconSearch } from "./icons.tsx";
+import { IconBell, IconGear, IconInbox, IconLink, IconPlus, IconSearch } from "./icons.tsx";
 import { applyAppearance, loadAppearance } from "./appearance.ts";
 import { fileIcon, type Attachment } from "./files.ts";
 import { Briefing } from "./briefing.tsx";
 import { Improve } from "./improve.tsx";
 import { CallScreen } from "./call.tsx";
+import { ReplyDesk } from "./reply.tsx";
+import { Resources } from "./resources.tsx";
 
 applyAppearance(loadAppearance());
 
@@ -21,7 +23,7 @@ function when(iso?: string) {
   return d.toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
-type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string; audioId?: string } | { kind: "improve" } | { kind: "call"; callId?: string; botId?: string };
+type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string; audioId?: string } | { kind: "improve" } | { kind: "call"; callId?: string; botId?: string } | { kind: "replydesk"; id?: string } | { kind: "resources" };
 
 function Home({ poll }: { poll: boolean }) {
   const [bots, setBots] = useState<Bot[]>([]);
@@ -52,6 +54,12 @@ function Home({ poll }: { poll: boolean }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [onboarding, setOnboarding] = useState(false);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
+  const [pendingReplies, setPendingReplies] = useState(0);
+  /** Carries text (e.g. a shared response) into a bot's chat, ready to review before sending. */
+  const openBot = (botId: string, text: string) => {
+    setInitial({ botId, text });
+    setView({ kind: "chat", botId });
+  };
   const [query, setQuery] = useState("");
   const [voiceOk, setVoiceOk] = useState(false);
   // Location indicator: who is using location right now (or just did).
@@ -74,6 +82,7 @@ function Home({ poll }: { poll: boolean }) {
     setBots(s.bots);
     setCards(s.cards);
     setUnreadAlerts(s.unreadAlerts);
+    setPendingReplies(s.pendingReplies ?? 0);
     setVoiceOk(Boolean(s.nativeBridge) && !poll);
     if (!s.onboardingDone && !poll) setOnboarding(true);
     return s;
@@ -108,6 +117,7 @@ function Home({ poll }: { poll: boolean }) {
           if (document.visibilityState === "visible" && !e.alert.cardId) toast(`${e.alert.title}: ${e.alert.body}`.slice(0, 140));
         }
         if (["message", "message.updated", "settings.changed"].includes(e.type)) softRefresh();
+        if (e.type === "reply-desk") setPendingReplies(e.pending ?? 0);
       }, s.seq, poll);
     });
     // Notification taps open the right chat: the shell calls window.mausdroidOpen(botId).
@@ -118,6 +128,8 @@ function Home({ poll }: { poll: boolean }) {
       else if (link.startsWith("audio:")) setView({ kind: "briefing", audioId: link.slice(6) || undefined });
       if (link.startsWith("call:")) setView({ kind: "call", callId: link.slice(5) });
       if (link.startsWith("improve:")) setView({ kind: "improve" });
+      if (link.startsWith("replydesk:")) setView({ kind: "replydesk", id: link.slice(10) || undefined });
+      if (link.startsWith("resources:")) setView({ kind: "resources" });
     };
     // The Android app hands over shared files (already saved) and text.
     (window as any).mausdroidShare = (payload: { attachments: Attachment[]; text?: string }) => setShared(payload);
@@ -210,6 +222,13 @@ function Home({ poll }: { poll: boolean }) {
           <h1 class="brand">
             <img src="icon.svg" alt="" /> MausDroid
           </h1>
+          <button class="icon-btn" title="Reply Desk" aria-label={`Reply Desk${pendingReplies ? `, ${pendingReplies} waiting` : ""}`} onClick={() => setView({ kind: "replydesk" })}>
+            <IconInbox />
+            {pendingReplies ? <span class="badge">{pendingReplies > 99 ? "99+" : pendingReplies}</span> : null}
+          </button>
+          <button class="icon-btn" title="Resources" aria-label="Resources" onClick={() => setView({ kind: "resources" })}>
+            <IconLink />
+          </button>
           <button class="icon-btn" title="Morning Brief" aria-label="Morning Brief" onClick={() => setView({ kind: "briefing" })}>
             📰
           </button>
@@ -282,6 +301,7 @@ function Home({ poll }: { poll: boolean }) {
             openSettings={(tab) => setView({ kind: "settings", tab })}
             onCall={() => setView({ kind: "call", botId: current.id })}
             initial={initial?.botId === current.id ? initial : undefined}
+            openBot={openBot}
           />
         ) : view.kind === "edit" ? (
           <BotEditor
@@ -294,6 +314,10 @@ function Home({ poll }: { poll: boolean }) {
           />
         ) : view.kind === "call" ? (
           <CallScreen callId={view.callId} botId={view.botId} onEnd={() => setView(view.botId ? { kind: "chat", botId: view.botId } : { kind: "list" })} />
+        ) : view.kind === "replydesk" ? (
+          <ReplyDesk focusId={view.id} onBack={goBack} openBot={openBot} />
+        ) : view.kind === "resources" ? (
+          <Resources onBack={goBack} />
         ) : view.kind === "improve" ? (
           <Improve onBack={() => setView({ kind: "list" })} openBot={(id) => setView({ kind: "chat", botId: id })} />
         ) : view.kind === "briefing" ? (

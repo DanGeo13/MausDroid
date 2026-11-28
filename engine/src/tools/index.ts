@@ -1,8 +1,11 @@
 import * as audio from "../audio-overview.ts";
 import * as vc from "../voice-check.ts";
+import * as rd from "../reply-desk.ts";
+import * as res from "../resources.ts";
 import { fetchForDownload, saveToDownloads } from "../downloads.ts";
 import type { ToolSpec } from "../types.ts";
-import { getBot, listBots, type Bot } from "../bots.ts";
+import { addMessage, getBot, listBots, type Bot } from "../bots.ts";
+import { emit } from "../events.ts";
 import { bridge, bridgeAvailable } from "../bridge.ts";
 import { webFetch, webSearch, tailnetFetch } from "./web.ts";
 import { notifyUser } from "../notify.ts";
@@ -255,7 +258,7 @@ export function toolCatalog() {
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools(), ...shareTools(), ...adminTools(), ...mediaTools(), ...voiceCheckTools()])];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools(), ...shareTools(), ...adminTools(), ...mediaTools(), ...voiceCheckTools(), ...replyDeskTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
@@ -532,6 +535,7 @@ function mediaTools(): Tool[] {
       run: async (_c, i) => {
         const a = await fetchForDownload(i);
         const saved = await saveToDownloads(a, i.name);
+        res.saveResource({ kind: "doc", fileId: a.id, title: saved.name, keywords: [] });
         return `Saved to ${saved.location} (${Math.round(saved.size / 1024)} KB, checked on the phone). It now shows in file pickers under Downloads › MausDroid. MausDroid file id: ${a.id}.`;
       },
     },
@@ -564,6 +568,70 @@ function voiceCheckTools(): Tool[] {
       group: "core",
       spec: { name: "voice_audition", description: "Try the voice engine's English voices (and speeds for the best) and rank them against the success criteria, best first. Changes nothing; use the best passing result for a voice suggestion.", inputSchema: obj({}) },
       run: async () => JSON.stringify(await vc.audition(), null, 1),
+    },
+  ];
+}
+
+// ---------------- Reply Desk and Resources ----------------
+
+function replyDeskTools(): Tool[] {
+  const brief = (it: any) => ({ id: it.id, service: it.service, sender: it.sender, conversation: it.conversation, at: it.at, preview: it.preview, text: it.text.slice(0, 400), subject: it.subject, likely: it.likely, reason: it.reason, status: it.status, draft: it.draft?.text });
+  return [
+    {
+      group: "core",
+      spec: { name: "reply_desk_list", description: "Messages that may need the person's reply (email and messaging apps), most likely first. status: pending (default), snoozed, handled, no-reply or all.", inputSchema: obj({ status: str("pending | snoozed | handled | no-reply | all") }) },
+      run: async (_c, i) => JSON.stringify(rd.listItems({ status: (i.status as any) || "pending" }).slice(0, 30).map(brief), null, 1),
+    },
+    {
+      group: "core",
+      spec: { name: "reply_desk_show", description: "Show a Reply Desk message as its card in this chat: service, sender, time, preview/context, the full editable draft and the right buttons (send after the person's approval for email; Open in WhatsApp; Copy reply + Open conversation). The person acts on it.", inputSchema: obj({ id: str("Reply Desk message id") }, ["id"]) },
+      run: async (c, i) => {
+        const it = rd.getItem(String(i.id));
+        if (!it) return { text: "No such Reply Desk message.", isError: true };
+        const m = addMessage(c.bot.id, { role: "note", text: `${it.sender}: ${it.text.slice(0, 80)}`, card: { kind: "reply", id: it.id } });
+        emit("message", { botId: c.bot.id, message: m });
+        return `Shown the card for ${it.sender}'s message in this chat.`;
+      },
+    },
+    {
+      group: "core",
+      spec: { name: "reply_desk_draft", description: "Write or replace the draft reply on a Reply Desk message (the exact text the person would send; for email no sign-off — their signature is added). Nothing is sent.", inputSchema: obj({ id: str("Reply Desk message id"), text: str("The reply text"), to: str("Recipient (email only, default: the sender)") }, ["id", "text"]) },
+      run: async (c, i) => {
+        const it = rd.saveDraft(String(i.id), String(i.text), i.to ? String(i.to) : undefined, c.bot.id);
+        return `Draft saved for ${it.sender}. The person reviews it in the card${it.service === "gmail" ? " and approves sending" : " and sends it from the app"}.`;
+      },
+    },
+    {
+      group: "core",
+      spec: { name: "reply_desk_mark", description: "Mark a Reply Desk message: handled, no-reply, or snoozed (preset: hour, evening, tomorrow). Only when the person says so.", inputSchema: obj({ id: str("Reply Desk message id"), status: { type: "string", enum: ["handled", "no-reply", "snoozed", "pending"] }, snooze: str("hour | evening | tomorrow") }, ["id", "status"]) },
+      run: async (_c, i) => {
+        const it = rd.mark(String(i.id), i.status, i.status === "snoozed" ? rd.snoozeTime(String(i.snooze ?? "hour")) : undefined);
+        return `Marked ${it.sender}'s message ${it.status}${it.snoozeUntil ? ` until ${new Date(it.snoozeUntil).toLocaleString()}` : ""}.`;
+      },
+    },
+    {
+      group: "core",
+      spec: { name: "resource_save", description: "Save a link (or a MausDroid file) to the person's Resources with keywords (e.g. christmas, Odette, kitchen project, Bali).", inputSchema: obj({ url: str("Link"), file_id: str("MausDroid file id (documents)"), title: str("Title"), keywords: { type: "array", items: { type: "string" } }, note: str("Short note") }) },
+      run: async (c, i) => JSON.stringify(res.saveResource({ url: i.url, fileId: i.file_id, title: i.title, keywords: i.keywords, note: i.note, botId: c.bot.id })),
+    },
+    {
+      group: "core",
+      spec: { name: "resource_search", description: "Search the person's saved links and documents, including archived ones (to remind them). Search words and/or one keyword.", inputSchema: obj({ query: str("Search words"), keyword: str("A keyword group, e.g. christmas") }) },
+      run: async (_c, i) => JSON.stringify(res.listResources({ query: i.query, keyword: i.keyword, archived: "all" }).slice(0, 30)),
+    },
+    {
+      group: "core",
+      spec: { name: "resource_tag", description: "Add (or replace) keywords on a saved link or document.", inputSchema: obj({ id: str("Resource id"), keywords: { type: "array", items: { type: "string" } }, replace: { type: "boolean" } }, ["id", "keywords"]) },
+      run: async (_c, i) => JSON.stringify(res.tagResource(String(i.id), i.keywords ?? [], Boolean(i.replace))),
+    },
+    {
+      group: "core",
+      spec: { name: "resource_delete", description: "Delete saved links/documents the person no longer needs (\"don't worry about that, you can delete it\"): by ids (one or many), or everything with a keyword, or matching a search. Documents' files are deleted too.", inputSchema: obj({ ids: { type: "array", items: { type: "string" } }, keyword: str("Delete everything with this keyword"), query: str("Delete everything matching this search") }) },
+      run: async (_c, i) => {
+        if (!i.ids?.length && !i.keyword && !i.query) return { text: "Say which: ids, a keyword or a search.", isError: true };
+        const { deleted } = await res.deleteResources({ ids: i.ids, keyword: i.keyword, query: i.query });
+        return deleted.length ? `Deleted ${deleted.length}: ${deleted.map((r) => r.title).join("; ").slice(0, 600)}` : "Nothing matched, so nothing was deleted.";
+      },
     },
   ];
 }

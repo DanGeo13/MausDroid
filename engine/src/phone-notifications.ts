@@ -24,12 +24,22 @@ export interface PhoneNotification {
   receivedAt: string;
   /** Was already in the shade when read (rather than arriving new). */
   pending: boolean;
+  /** Messaging apps: the conversation's name, group chat or not, recent messages (when the app shares them). */
+  conversation?: string;
+  group?: boolean;
+  messages?: { who: string; text: string; at?: number }[];
+  /** A group summary ("3 new messages"), not a message. */
+  summary?: boolean;
 }
 
 const store = collection<PhoneNotification[]>("phone-notifications", []);
 const flags = collection<{ firstReviewAt?: string }>("phone-notifications-state", {});
 export const firstReviewDone = () => Boolean(flags.get().firstReviewAt);
 export const markFirstReview = () => flags.update((f) => void (f.firstReviewAt = now()));
+
+const listeners: ((n: PhoneNotification) => void)[] = [];
+/** Reply Desk listens for messages from messaging apps. */
+export const onPhoneNotification = (fn: (n: PhoneNotification) => void) => listeners.push(fn);
 
 export function addIncoming(items: any[]): { added: number } {
   let added = 0;
@@ -43,7 +53,7 @@ export function addIncoming(items: any[]): { added: number } {
       // The same notification again (re-read or updated with the same words): keep one.
       if (l.some((x) => x.key === key && x.postedAt === postedAt) || l.some((x) => x.key === key && x.title === title && x.text === text)) continue;
       if (looksSecret(`${title}\n${text}`)) continue; // codes, card numbers: never kept
-      const n: PhoneNotification = { id: newId("pn"), key, pkg: String(it.pkg ?? ""), app: clip(String(it.app ?? it.pkg ?? "app"), 80), title, text, subText: it.subText ? clip(String(it.subText), 200) : undefined, category: it.category || undefined, postedAt, receivedAt: now(), pending: Boolean(it.pending) };
+      const n: PhoneNotification = { id: newId("pn"), key, pkg: String(it.pkg ?? ""), app: clip(String(it.app ?? it.pkg ?? "app"), 80), title, text, subText: it.subText ? clip(String(it.subText), 200) : undefined, category: it.category || undefined, postedAt, receivedAt: now(), pending: Boolean(it.pending), conversation: it.conversation ? clip(String(it.conversation), 200) : undefined, group: Boolean(it.group) || undefined, summary: Boolean(it.summary) || undefined, messages: Array.isArray(it.messages) ? it.messages.slice(-8).map((m: any) => ({ who: clip(String(m?.who ?? ""), 100), text: clip(String(m?.text ?? ""), 1000), at: Number(m?.at) || undefined })).filter((m: any) => m.text && !looksSecret(m.text)) : undefined };
       l.push(n);
       fresh.push(n);
       added++;
@@ -53,6 +63,13 @@ export function addIncoming(items: any[]): { added: number } {
   for (const n of fresh)
     void notifyUser({ title: `${n.app}: ${n.title}`.slice(0, 200), body: n.text.slice(0, 500), type: "phone-notification", source: n.app, eventId: n.id, priority: "low", silentRecord: true });
   if (added) emit("phone-notifications", { added });
+  for (const fn of listeners) for (const n of fresh) {
+    try {
+      fn(n);
+    } catch {
+      /* a listener problem never blocks notifications */
+    }
+  }
   return { added };
 }
 

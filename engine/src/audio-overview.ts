@@ -462,6 +462,12 @@ async function record(o: AudioOverview, lines: Line[], input: PodcastInput = { t
     if (pdfs.length) await placeQuotes(segments, pdfs);
     patch(o.id, { status: "ready", progress: undefined, fileId: file.id, seconds: Math.round(len), linesLeftOut: leftOut || undefined, downloads, segments, pdfs, pdfNote: notes.length ? notes.join(" ") : undefined });
     await removeOldPdfs(o.id).catch(() => {});
+    // The episode and its PDFs are documents in Resources.
+    void import("./resources.ts").then((r) => {
+      const kw = ["audio overview", ...(o.week ? [o.week] : [])];
+      r.saveResource({ kind: "doc", fileId: file.id, title: o.title, keywords: kw });
+      for (const p of pdfs) r.saveResource({ kind: "doc", fileId: p.fileId, title: p.name, keywords: kw });
+    }).catch(() => {});
     // Self-check: the first line of the episode, recognised offline and compared with the script.
     const first = segments[0];
     if (first) void import("./voice-check.ts").then((vc) => vc.checkRecording(filePath(file), first.text, first.startMs, first.endMs)).catch(() => {});

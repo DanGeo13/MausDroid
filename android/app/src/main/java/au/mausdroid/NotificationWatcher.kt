@@ -86,6 +86,21 @@ class NotificationWatcher : NotificationListenerService() {
 
     private fun toJson(sbn: StatusBarNotification, pending: Boolean): JSONObject {
         val ex = sbn.notification.extras
+        // Remember how to open this conversation (the app's own action), for Reply Desk's "Open conversation".
+        sbn.notification.contentIntent?.let { Conversations.remember(sbn.key, sbn.packageName, it) }
+        // Messaging apps: the conversation's name, group or not, and recent messages (context).
+        val convo = ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()
+        val group = ex.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
+        val msgs = org.json.JSONArray()
+        runCatching {
+            val arr = ex.getParcelableArray(Notification.EXTRA_MESSAGES)
+            arr?.takeLast(8)?.forEach { b ->
+                val bundle = b as? android.os.Bundle ?: return@forEach
+                val who = bundle.getCharSequence("sender")?.toString() ?: (bundle.get("sender_person") as? android.app.Person)?.name?.toString() ?: ""
+                val txt = bundle.getCharSequence("text")?.toString() ?: return@forEach
+                msgs.put(JSONObject().put("who", who).put("text", txt.take(1000)).put("at", bundle.getLong("time")))
+            }
+        }
         val text = ex.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: ex.getCharSequence(Notification.EXTRA_TEXT)
         val lines = ex.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString("\n")
         return JSONObject()
@@ -98,6 +113,10 @@ class NotificationWatcher : NotificationListenerService() {
             .put("category", sbn.notification.category ?: "")
             .put("postedAt", sbn.postTime)
             .put("pending", pending)
+            .put("conversation", convo ?: "")
+            .put("group", group)
+            .put("messages", msgs)
+            .put("summary", (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0)
     }
 
     private fun post(items: JSONArray) {

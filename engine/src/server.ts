@@ -39,6 +39,8 @@ import * as files from "./files.ts";
 import * as calendar from "./calendar.ts";
 import * as brief from "./brief.ts";
 import * as audio from "./audio-overview.ts";
+import * as rd from "./reply-desk.ts";
+import * as res from "./resources.ts";
 import { setPronunciations } from "./speech-style.ts";
 import * as podcast from "./podcast-session.ts";
 import { saveToDownloads } from "./downloads.ts";
@@ -152,6 +154,7 @@ function state() {
     cards: pendingCards(),
     seq: currentSeq(),
     unreadAlerts: listAlerts().filter((a) => !a.read).length,
+    pendingReplies: rd.pendingCount(),
     onboardingDone: settings().onboardingDone,
     nativeBridge: bridgeAvailable(),
   };
@@ -393,6 +396,88 @@ route("GET", "/api/voice/checks", async () => {
 route("PUT", "/api/voice/criteria", async (req) => json((await import("./voice-check.ts")).saveCriteria(req.body ?? {})));
 route("POST", "/api/voice/check", async (req) => json(await (await import("./voice-check.ts")).checkVoice({ voice: req.body?.voice, rate: req.body?.rate, text: req.body?.text ? String(req.body.text) : undefined })));
 route("POST", "/api/voice/audition", async () => json(await (await import("./voice-check.ts")).audition()));
+// Reply Desk
+route("GET", "/api/replies", async (req) => json({ items: rd.listItems({ status: (req.query.get("status") as any) || "pending" }), pending: rd.pendingCount(), services: rd.SERVICES.map(({ id, label, accent, reply }) => ({ id, label, accent, reply })) }));
+route("GET", "/api/replies/sources", async () => json(await rd.sources()));
+route("PUT", "/api/replies/sources/:service", async (req, [svc]) => json(await rd.setReading(svc, Boolean(req.body?.on))));
+route("POST", "/api/replies/refresh", async () => json(await rd.refreshEmail()));
+route("GET", "/api/replies/:id", (_r, [id]) => {
+  const it = rd.getItem(id);
+  if (!it) throw new HttpError(404, "No such message in Reply Desk.");
+  return json({ ...it, serviceInfo: rd.serviceById(it.service) });
+});
+route("POST", "/api/replies/:id/draft", async (req, [id]) => {
+  const botId = String(req.body?.botId || (await import("./playbook.ts")).getMainBotId() || "");
+  if (!botId) throw new HttpError(400, "No bot to draft with.");
+  return json(await rd.draftWithBot(id, botId));
+});
+route("PUT", "/api/replies/:id/draft", (req, [id]) => json(rd.saveDraft(id, String(req.body?.text ?? ""), req.body?.to ? String(req.body.to) : undefined)));
+route("POST", "/api/replies/:id/mark", (req, [id]) => json(rd.mark(id, req.body?.status, req.body?.status === "snoozed" ? rd.snoozeTime(String(req.body?.snooze ?? "hour")) : undefined)));
+route("POST", "/api/replies/:id/preview", async (req, [id]) => json(await rd.finalEmail(id, String(req.body?.text ?? ""))));
+route("POST", "/api/replies/:id/approve", async (req, [id]) => json(await rd.approveSend(id, String(req.body?.text ?? ""), String(req.body?.to ?? ""))));
+route("POST", "/api/replies/:id/send", async (req, [id]) => json(await rd.sendApproved(id, String(req.body?.text ?? ""), String(req.body?.to ?? ""))));
+route("POST", "/api/replies/:id/open", async (_r, [id]) => json({ opened: await rd.openConversation(id) }));
+route("POST", "/api/replies/:id/whatsapp", async (req, [id]) => (await rd.openWhatsApp(id, String(req.body?.text ?? "")), json({ ok: true })));
+route("POST", "/api/replies/:id/copied", async (req, [id]) => (await rd.copied(id, String(req.body?.text ?? "")), json({ ok: true })));
+
+// Resources: links and documents, by keyword; archived ones still searchable.
+route("GET", "/api/resources", (req) => json({ items: res.listResources({ query: req.query.get("q") ?? undefined, keyword: req.query.get("keyword") ?? undefined, archived: req.query.get("archived") === "1" ? true : req.query.get("archived") === "all" ? "all" : false }), keywords: res.keywordGroups(req.query.get("archived") === "1") }));
+route("POST", "/api/resources", (req) => json(res.saveResource(req.body ?? {})));
+route("POST", "/api/resources/delete", async (req) => json(await res.deleteResources({ ids: req.body?.ids, keyword: req.body?.keyword, query: req.body?.query })));
+route("POST", "/api/resources/:id/open", (_r, [id]) => (res.touchResource(id), json(res.getResource(id) ?? {})));
+route("POST", "/api/resources/:id/tag", (req, [id]) => json(res.tagResource(id, req.body?.keywords ?? [], Boolean(req.body?.replace))));
+route("POST", "/api/resources/:id/archive", (req, [id]) => (res.archiveResource(id, req.body?.archived !== false), json({ ok: true })));
+
+// Share: clipboard, apps (prefilled where they support it), a readable page for Chrome.
+const shareViews = new Map<string, { title: string; text: string; at: number }>();
+route("POST", "/api/share/copy", async (req) => (bridgeAvailable() ? await bridge("/clipboard", { text: String(req.body?.text ?? "") }) : null, json({ ok: true })));
+route("GET", "/api/share/targets", async () => {
+  const apps: [string, string, string, string][] = [["whatsapp", "WhatsApp", "#25D366", "com.whatsapp"], ["messenger", "Messenger", "#0084FF", "com.facebook.orca"], ["telegram", "Telegram", "#229ED9", "org.telegram.messenger"], ["signal", "Signal", "#3A76F0", "org.thoughtcrime.securesms"], ["instagram", "Instagram", "#E1306C", "com.instagram.android"], ["slack", "Slack", "#4A154B", "com.Slack"]];
+  const inst = bridgeAvailable() ? ((await bridge<{ installed: string[] }>("/apps/installed", { packages: [...apps.map((a) => a[3]), "com.whatsapp.w4b", "com.android.chrome"] }).catch(() => ({ installed: [] }))).installed ?? []) : [];
+  const prefill = new Set(["whatsapp", "telegram", "signal", "slack"]);
+  return json({
+    chrome: inst.includes("com.android.chrome"),
+    apps: [
+      ...apps.filter(([id, , , pkg]) => inst.includes(pkg) || (id === "whatsapp" && inst.includes("com.whatsapp.w4b"))).map(([id, label, accent, pkg]) => ({ id, label, accent, pkg, prefill: prefill.has(id) })),
+      { id: "sms", label: "Messages (SMS)", accent: "#1A73E8", prefill: true },
+      { id: "email", label: "Email", accent: "#EA4335", prefill: true },
+      { id: "other", label: "Other apps…", accent: "#777", prefill: true },
+    ],
+  });
+});
+route("POST", "/api/share/app", async (req) => {
+  const b = req.body ?? {};
+  const text = String(b.text ?? "");
+  if (!bridgeAvailable()) throw new HttpError(400, "Sharing to apps works in the Android app.");
+  const kind = b.app === "whatsapp" ? "whatsapp" : b.app === "sms" ? "sms" : b.app === "email" ? "email" : b.app === "other" ? "chooser" : b.prefill ? "package" : "open";
+  if (kind === "open") {
+    // No prefill for this app: the text goes on the clipboard and the app opens, ready to paste.
+    await bridge("/clipboard", { text });
+    await bridge("/conversation/open", { pkg: String(b.pkg ?? "") });
+    return json({ done: "copied-and-opened" });
+  }
+  return json(await bridge("/share/send", { kind, text, pkg: b.pkg, subject: b.subject }));
+});
+route("POST", "/api/share/view", async (req) => {
+  const token = randomBytes(18).toString("base64url");
+  shareViews.set(token, { title: String(req.body?.title ?? "MausDroid"), text: String(req.body?.text ?? ""), at: Date.now() });
+  for (const [k, v] of shareViews) if (Date.now() - v.at > 30 * 60_000) shareViews.delete(k);
+  const url = `http://127.0.0.1:${config.port}/api/view/${token}`;
+  if (bridgeAvailable() && req.body?.open !== false) await bridge("/share/send", { kind: "url", text: url, pkg: "com.android.chrome" }).catch(() => {});
+  return json({ url });
+});
+// A readable page of a response (opened in Chrome; the link only works for 30 minutes).
+route(
+  "GET",
+  "/api/view/:token",
+  async (_r, [token]) => {
+    const v = shareViews.get(token);
+    if (!v) throw new HttpError(404, "This page has expired.");
+    const { renderMarkdownHtml } = await import("./share-page.ts");
+    return { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }, body: renderMarkdownHtml(v.title, v.text) };
+  },
+  true,
+);
 // Compare voice engines: the same sample in one engine (and voice), with natural delivery.
 route("POST", "/api/voice/sample", async (req) => {
   const b = req.body ?? {};
@@ -400,6 +485,7 @@ route("POST", "/api/voice/sample", async (req) => {
   return json({ ok: true });
 });
 route("POST", "/api/voice/stop", async () => json(await bridge("/voice/stop", {}).catch(() => ({}))));
+route("GET", "/api/voice/state", async () => json(bridgeAvailable() ? await bridge("/voice/state", {}).catch(() => ({ speaking: false })) : { speaking: false }));
 route("POST", "/api/bots/:id/voice", (req, [id]) => json(voice.sendByVoice(id, String(req.body?.text ?? ""))));
 route("GET", "/api/assistant", () => {
   const b = voice.assistantBot();

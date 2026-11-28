@@ -64,6 +64,23 @@ async function main() {
   await step("proxy", () => startEgressProxy(config.port + 3));
   const { ensureAuditRoutine } = await import("./audit-setup.ts");
   await step("audit-routine", () => ensureAuditRoutine());
+  // Reply Desk (messages that may need a reply) and Resources (links and documents).
+  const { startReplyDesk } = await import("./reply-desk.ts");
+  await step("reply-desk", () => startReplyDesk());
+  const { onTurnEnd } = await import("./agent.ts");
+  const res = await import("./resources.ts");
+  const { messages } = await import("./bots.ts");
+  await step("resources", () =>
+    onTurnEnd((botId, reply) => {
+      if (!reply) return;
+      const asked = messages(botId, undefined, 20).filter((m) => m.role === "user").at(-1)?.text ?? "";
+      try {
+        res.captureLinks(reply, asked, botId);
+      } catch {
+        /* never blocks a reply */
+      }
+    }),
+  );
   const { ensureAudioRoutine } = await import("./audio-setup.ts");
   await step("audio-overview", () => ensureAudioRoutine());
   const { ensureImprover, startImprover } = await import("./improve.ts");

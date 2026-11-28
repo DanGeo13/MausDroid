@@ -213,6 +213,14 @@ class BridgeServer(
                     ok()
                 }
                 "/voice/recognizers" -> ok(voice.recognizerList())
+                // Reply Desk and the Share menu: the person stays in control (MausDroid never presses Send in another app).
+                "/conversation/open" -> ok(JSONObject().put("opened", Conversations.open(ctx, body.optString("key").ifBlank { null }, body.optString("pkg").ifBlank { null })))
+                "/clipboard" -> { Conversations.copy(ctx, body.getString("text")); ok() }
+                "/share/send" -> ok(JSONObject().put("done", Conversations.send(ctx, body.optString("kind"), body.optString("text"), body.optString("pkg").ifBlank { null }, body.optString("subject").ifBlank { null }, body.optString("to").ifBlank { null })))
+                "/apps/installed" -> {
+                    val arr = body.optJSONArray("packages") ?: org.json.JSONArray()
+                    ok(JSONObject().put("installed", org.json.JSONArray((0 until arr.length()).map { arr.optString(it) }.filter { Conversations.installed(ctx, it) })))
+                }
                 "/voice/self-check" -> {
                     // How clearly MausDroid speaks: make (or take) the audio, then recognise it offline.
                     val audio: SpeechPlayer.Pcm = if (body.has("text")) {

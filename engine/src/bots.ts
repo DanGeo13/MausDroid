@@ -41,6 +41,8 @@ export interface ChatMessage {
   status?: "streaming" | "done" | "error" | "stopped";
   source?: string;
   attachments?: Attachment[];
+  /** A card shown in the chat (e.g. a Reply Desk message with its draft), the same in any bot's chat. */
+  card?: { kind: "reply"; id: string };
 }
 
 const botsFile = collection<Bot[]>("bots", []);

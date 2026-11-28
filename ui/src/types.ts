@@ -6,6 +6,7 @@ export interface Bot {
 export interface Msg {
   id: string; role: "user" | "assistant" | "tool" | "note"; text: string; at: string; source?: string;
   status?: string; attachments?: import("./files.ts").Attachment[]; tool?: { name: string; input?: unknown; result?: string; isError?: boolean; status: string };
+  card?: { kind: "reply"; id: string };
 }
 export interface Card { id: string; kind: "approval" | "question"; botId: string; title: string; detail: string; tool?: string; toolLabel?: string; options?: string[] }
 export interface Provider {

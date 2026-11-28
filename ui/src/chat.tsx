@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
+import { ResponseActions } from "./actions.tsx";
+import { ReplyCard } from "./reply.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
 import { IconBack, IconCamera, IconClip, IconEdit, IconMic, IconSend, IconStop, IconX } from "./icons.tsx";
 import { fileIcon, fileSize, uploadFile, type Attachment } from "./files.ts";
@@ -139,9 +141,9 @@ function FileChip({ a }: { a: Attachment }) {
   );
 }
 
-export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voiceOk, remote, initial, openSettings, onCall }: {
+export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voiceOk, remote, initial, openSettings, onCall, openBot }: {
   bot: Bot; messages: Msg[]; cards: Card[]; busy: boolean; onBack: () => void; onEdit: () => void; refresh: () => void; voiceOk: boolean;
-  remote: boolean; initial?: { text?: string; attachments?: Attachment[] }; openSettings?: (tab: string) => void; onCall?: () => void;
+  remote: boolean; initial?: { text?: string; attachments?: Attachment[] }; openSettings?: (tab: string) => void; onCall?: () => void; openBot?: (botId: string, text: string) => void;
 }) {
   const [text, setText] = useState(initial?.text ?? "");
   const [pending, setPending] = useState<Attachment[]>(initial?.attachments ?? []);
@@ -268,6 +270,7 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
           const sep = d !== lastDay ? <div class="day">{d}</div> : null;
           lastDay = d;
           if (m.role === "tool") return [sep, <ToolLine m={m} key={m.id} />];
+          if (m.role === "note" && m.card?.kind === "reply") return [sep, <ReplyCard id={m.card.id} key={m.id} openBot={openBot} />];
           if (m.role === "note")
             return [
               sep,
@@ -298,6 +301,7 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
                   </div>
                 ) : null}
               </div>
+              {m.role === "assistant" && m.status !== "streaming" && m.status !== "error" ? <ResponseActions id={m.id} text={m.text} title={bot.name} openBot={openBot} /> : null}
               <div class="stamp">{time(m.at)}</div>
             </div>,
           ];
