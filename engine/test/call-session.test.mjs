@@ -84,7 +84,7 @@ test("live call: greets by name, streams speech early, can be interrupted, ends 
     // Greeting by name for the time of day, in the chosen voice.
     await e.until(async () => ph.st.says.length > 0, "greeting");
     assert.match(ph.st.says[0].text, /Dan/);
-    assert.match(ph.st.says[0].text, /morning|afternoon|evening|late|Hey|G'day|Hi/i);
+    assert.match(ph.st.says[0].text, /morning|afternoon|evening|late|Hey|Hi/i);
     assert.equal(ph.st.says[0].engine, "org.example.kokoro");
     assert.equal(ph.st.says[0].voice, "bf_emma");
     assert.deepEqual(ph.st.callMode, [true]);
@@ -197,4 +197,15 @@ test("goodbyes", async () => {
   const s = await load("src/call-session.ts");
   for (const t of ["bye", "Okay, bye!", "Never mind, bye", "See you", "Thanks, talk later", "hang up"]) assert.ok(s.isGoodbye(t), t);
   for (const t of ["Say bye to Tom for me when you message him later today", "What's the weather", "byes are hard"]) assert.ok(!s.isGoodbye(t), t);
+});
+
+test("greetings never say G'day", async () => {
+  const cs = await load("src/call-session.ts");
+  for (let h = 0; h < 24; h++)
+    for (let i = 0; i < 10; i++) {
+      const at = new Date(2026, 10, 28, h, 0);
+      const pick = () => i / 10;
+      assert.doesNotMatch(cs.greeting("Dan", at, pick), /G'day/i);
+      assert.doesNotMatch(cs.shortGreeting("Dan", at, pick), /G'day/i);
+    }
 });

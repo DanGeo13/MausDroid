@@ -77,8 +77,7 @@ class Voice(private val ctx: Context) {
         val t = tts ?: return
         t.setPitch(pitch)
         val wanted = voiceName
-        val v = if (wanted.isNullOrBlank()) null else runCatching { t.voices?.firstOrNull { it.name == wanted } }.getOrNull()
-        if (v != null) t.voice = v else runCatching { t.language = Locale.getDefault() }
+        SpeechLang.apply(t, wanted)
         t.setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(if (callMode) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_ASSISTANT)

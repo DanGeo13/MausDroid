@@ -74,8 +74,7 @@ class VoiceRecorder(private val ctx: Context) {
             if (t == null) { done(id, false); return@post }
             t.setPitch(pitch.coerceIn(0.5f, 2f))
             t.setSpeechRate(rate.coerceIn(0.5f, 2f))
-            val v = if (voice.isNullOrBlank()) null else runCatching { t.voices?.firstOrNull { it.name == voice } }.getOrNull()
-            if (v != null) t.voice = v else runCatching { t.language = Locale.getDefault() }
+            SpeechLang.apply(t, voice)
             val r = t.synthesizeToFile(text.take(3900), Bundle(), out, id)
             if (r != TextToSpeech.SUCCESS) done(id, false)
         }

@@ -1064,6 +1064,15 @@ function VoicePicker({ s, save }: { s: any; save: (b: object) => void }) {
             <option value={v.name}>{voiceLabel(v)}</option>
           ))}
         </select>
+        {(() => {
+          // A voice for another language reads English with the wrong sounds (garbled speech).
+          const chosen = usable.find((v) => v.name === s.voice?.voiceName);
+          return chosen?.locale && !String(chosen.locale).toLowerCase().startsWith(lang) ? (
+            <p class="help" style={{ color: "var(--warn, #c80)" }}>
+              ⚠️ This voice speaks {chosen.locale}, not your phone's language, so English may sound garbled. Pick a voice marked {lang}-….
+            </p>
+          ) : null;
+        })()}
       </div>
       <div class="field">
         <label>Pitch: {Math.round((s.voice?.pitch ?? 1) * 100)}%</label>

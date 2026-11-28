@@ -32,8 +32,8 @@ import { id as newId, sleep } from "./util.ts";
 
 const TEMPLATES = {
   late: ["Hey{ n}, you're up late. What's up?", "Hi{ n}, burning the midnight oil? What can I do?", "Hey{ n}. Late one tonight — what do you need?"],
-  morning: ["Morning{, n}!", "Good morning{, n}. What can I do for you?", "Hey{ n}, how you going this morning?", "Morning{, n} — what's up?", "G'day{ n}! What's on this morning?"],
-  afternoon: ["Afternoon{, n}!", "Good afternoon{, n}. What do you need?", "Hey{ n}, how's the day going?", "G'day{ n}, what's up?", "Hey{ n}, how you going?"],
+  morning: ["Morning{, n}!", "Good morning{, n}. What can I do for you?", "Hey{ n}, how you going this morning?", "Morning{, n} — what's up?", "Hi{ n}! What's on this morning?"],
+  afternoon: ["Afternoon{, n}!", "Good afternoon{, n}. What do you need?", "Hey{ n}, how's the day going?", "Hi{ n}, what's up?", "Hey{ n}, how you going?"],
   evening: ["Evening{, n}!", "Good evening{, n}. What can I do for you?", "Hey{ n}, how you going?", "Evening{, n} — how was the day?", "Hey{ n}, what's up tonight?"],
 };
 let lastGreeting = "";
@@ -57,10 +57,10 @@ export function greeting(name: string, at = new Date(), pick = Math.random): str
   return t.replace("{, n}", n ? `, ${n}` : "").replace("{ n}", n ? ` ${n}` : "");
 }
 
-/** A short opener for calls Maus makes: "Morning, Dan" / "Hey Dan" / "G'day Dan". */
+/** A short opener for calls Maus makes: "Morning, Dan" / "Hey Dan" / "Hi Dan". */
 export function shortGreeting(name: string, at = new Date(), pick = Math.random): string {
   const part = { late: "Hi", morning: "Morning", afternoon: "Afternoon", evening: "Evening" }[partOfDay(at)];
-  const list = [`${part}{, n}`, "Hey{ n}", "G'day{ n}"];
+  const list = [`${part}{, n}`, "Hey{ n}", "Hi{ n}"];
   const n = name.trim();
   return list[Math.floor(pick() * list.length) % list.length].replace("{, n}", n ? `, ${n}` : "").replace("{ n}", n ? ` ${n}` : "");
 }
