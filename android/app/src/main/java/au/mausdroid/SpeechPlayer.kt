@@ -171,6 +171,45 @@ class SpeechPlayer(private val synth: PhraseSynth, private val sink: AudioSink) 
             return Pcm(p.rate, if (n == all.size) all else all.copyOf(maxOf(0, n)))
         }
 
+        /** Changes the sample rate (linear interpolation; fine for speech checks). */
+        fun resample(p: Pcm, rate: Int): Pcm {
+            if (p.rate == rate || p.samples.isEmpty()) return Pcm(rate, p.samples)
+            val ratio = p.rate.toDouble() / rate
+            val n = (p.samples.size / ratio).toInt()
+            val out = ShortArray(n)
+            for (i in 0 until n) {
+                val x = i * ratio
+                val a = x.toInt()
+                val b = minOf(a + 1, p.samples.size - 1)
+                out[i] = (p.samples[a] + (p.samples[b] - p.samples[a]) * (x - a)).toInt().toShort()
+            }
+            return Pcm(rate, out)
+        }
+
+        /** Splits long audio into pieces of at most [maxSec], cutting at the quietest 50 ms near each limit. */
+        fun chunks(p: Pcm, maxSec: Int = 22): List<Pcm> {
+            val max = p.rate * maxSec
+            if (p.samples.size <= max) return listOf(p)
+            val out = mutableListOf<Pcm>()
+            var start = 0
+            val win = p.rate / 20
+            while (start < p.samples.size) {
+                if (p.samples.size - start <= max) { out.add(Pcm(p.rate, p.samples.copyOfRange(start, p.samples.size))); break }
+                var bestAt = start + max
+                var best = Double.MAX_VALUE
+                var w = start + max - p.rate * 4
+                while (w + win <= start + max) {
+                    var e = 0.0
+                    for (i in w until w + win) e += kotlin.math.abs(p.samples[i].toInt())
+                    if (e < best) { best = e; bestAt = w + win / 2 }
+                    w += win / 2
+                }
+                out.add(Pcm(p.rate, p.samples.copyOfRange(start, bestAt)))
+                start = bestAt
+            }
+            return out
+        }
+
         /** A soft breath ("breath" = in-breath, "sigh" = out-breath): band-limited noise, breath-shaped, quiet. */
         fun breath(kind: String, rate: Int, seed: Int = 7): Pcm {
             val sec = if (kind == "sigh") 0.75 else 0.38

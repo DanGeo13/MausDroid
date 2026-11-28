@@ -304,6 +304,28 @@ class Voice(private val ctx: Context) {
         attempt(0)
     }
 
+    /**
+     * Recognises recorded speech (16 kHz mono) with the phone's on-device
+     * recognizer: MausDroid's self-check of how clearly it speaks. Offline;
+     * the audio never leaves the phone. Returns (words, error).
+     */
+    fun recognizePcm(pcm16k: ShortArray, timeoutSec: Long = 40): Pair<String?, String?> {
+        if (!onDeviceAvailable()) return null to "On-device speech recognition isn't available on this phone."
+        val (read, write) = android.os.ParcelFileDescriptor.createPipe()
+        Thread({
+            android.os.ParcelFileDescriptor.AutoCloseOutputStream(write).use { out ->
+                val bb = java.nio.ByteBuffer.allocate(pcm16k.size * 2 + 16000 * 2 * 1).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                for (v in pcm16k) bb.putShort(v)
+                for (i in 0 until 16000) bb.putShort(0) // a second of silence so the last word is finished
+                runCatching { out.write(bb.array(), 0, bb.position()) }
+            }
+        }, "self-check-feed").apply { isDaemon = true; start() }
+        return try {
+            val (text, err, code) = listenOnDevice(read, 600, timeoutSec)
+            if (text != null) (text to null) else (null to (err ?: "Recognition failed (code $code)."))
+        } finally { runCatching { read.close() } }
+    }
+
     /** True when this phone can recognise speech on the device itself (nothing sent anywhere). */
     fun onDeviceAvailable(): Boolean =
         android.os.Build.VERSION.SDK_INT >= 33 && runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(ctx) }.getOrDefault(false)

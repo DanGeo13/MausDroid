@@ -1194,6 +1194,94 @@ function SpeechService({ s, save }: { s: any; save: (b: object) => void }) {
   );
 }
 
+/** MausDroid checks its own voice offline against your success criteria; Improver uses the results. */
+function VoiceQuality({ save }: { save: (b: object) => void }) {
+  const [d, setD] = useState<any | null>(null);
+  const [busy, setBusy] = useState("");
+  const [ranked, setRanked] = useState<any[] | null>(null);
+  const load = () => void api("voice/checks").then(setD).catch(() => setD(null));
+  useEffect(load, []);
+  if (!d) return null;
+  const c = d.criteria;
+  const setC = (patch: object) => void api("voice/criteria", { method: "PUT", body: patch }).then(load);
+  const pct = (x?: number) => (x === undefined || x === null ? "—" : `${Math.round(x * 100)}%`);
+  const go = async (what: "check" | "audition") => {
+    setBusy(what === "check" ? "Checking…" : "Trying each voice… (about a minute)");
+    try {
+      if (what === "check") await api("voice/check", { body: {} });
+      else setRanked(await api("voice/audition", { body: {} }));
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  };
+  const num = (k: string, label: string, step: number, scale = 1) => (
+    <label style={{ fontSize: ".85rem" }}>
+      {label}{" "}
+      <input type="number" step={step} style={{ width: "5.2rem" }} value={Math.round(c[k] * scale * 100) / 100} onChange={(e) => setC({ [k]: Number((e.target as HTMLInputElement).value) / scale })} />
+    </label>
+  );
+  const row = (r: any) => (
+    <div class="toggle" style={{ alignItems: "flex-start" }}>
+      <span style={{ flex: 1 }}>
+        {r.pass ? "✅" : "⚠️"} <strong>{r.kind}</strong> {r.voice ? <span class="muted">· {r.voice}</span> : null} {r.rate ? <span class="muted">· {Math.round(r.rate * 100)}%</span> : null}
+        <br />
+        <span class="help">
+          {r.clarity !== undefined ? `clarity ${pct(r.clarity)} ` : ""}
+          {r.wps ? `· ${r.wps} words/s ` : ""}
+          {r.firstAudioMs !== undefined ? `· first audio ${r.firstAudioMs} ms ` : ""}
+          {r.interruptMs !== undefined ? `· interrupt ${r.interruptMs} ms ` : ""}
+          {r.problems?.length ? `— ${r.problems.join("; ")}` : ""}
+          {r.heard && !r.pass ? ` — heard: “${r.heard}”` : ""}
+        </span>
+      </span>
+    </div>
+  );
+  return (
+    <div class="section">
+      <h2>Voice quality</h2>
+      <p class="help">MausDroid checks its own voice offline: it speaks test sentences silently, the phone's on-device recognizer listens, and it compares what was heard with what it meant to say. Podcasts and calls are checked too. Each night Improver reviews the results and suggests a fix (another voice, a different speed) if they fall short — you approve it.</p>
+      <div class="inline" style={{ gap: ".6rem", flexWrap: "wrap" }}>
+        {num("clarity", "Clarity ≥ %", 1, 100)}
+        {num("minWps", "Speed from", 0.1)}
+        {num("maxWps", "to (words/s)", 0.1)}
+        {num("firstAudioMs", "First audio ≤ ms", 50)}
+        {num("interruptMs", "Interrupt ≤ ms", 10)}
+      </div>
+      <p class="help">
+        Last 7 days: {d.summary.checks ? `${d.summary.passing} of ${d.summary.checks} checks passed · clarity ${pct(d.summary.averages.clarity ?? undefined)} · ${d.summary.averages.wordsPerSecond ?? "—"} words/s` : "no checks yet"}
+      </p>
+      <div class="inline" style={{ gap: ".5rem" }}>
+        <button class="btn small" disabled={Boolean(busy)} onClick={() => go("check")}>
+          Check now
+        </button>
+        <button class="btn secondary small" disabled={Boolean(busy)} onClick={() => go("audition")}>
+          Find the best voice
+        </button>
+        {busy ? <span class="muted">{busy}</span> : null}
+      </div>
+      {ranked ? (
+        <div style={{ marginTop: ".5rem" }}>
+          <p class="help">Best first:</p>
+          {ranked.map((r) => (
+            <div class="toggle">
+              <span>
+                {r.pass ? "✅" : "⚠️"} {r.voice || "engine default"} · {Math.round((r.rate ?? 1) * 100)}% · clarity {pct(r.clarity)} {r.wps ? `· ${r.wps} w/s` : ""}
+              </span>
+              <button class="btn small" onClick={() => save({ voiceName: r.voice ?? "", rate: r.rate ?? 1 })}>
+                Use
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {d.results.length ? <div style={{ marginTop: ".5rem" }}>{d.results.slice(0, 6).map(row)}</div> : null}
+    </div>
+  );
+}
+
 function VoiceTab({ bots }: { bots: Bot[] }) {
   const [s, reload] = useLoad<any>("settings");
   const [sys, reloadSys] = useLoad<any>("system");
@@ -1284,6 +1372,7 @@ function VoiceTab({ bots }: { bots: Bot[] }) {
         </button>
       </div>
       <NaturalSpeech s={s} save={(b) => save(b)()} />
+      <VoiceQuality save={(b) => save(b)()} />
     </>
   );
 }

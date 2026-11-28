@@ -1,4 +1,5 @@
 import * as audio from "../audio-overview.ts";
+import * as vc from "../voice-check.ts";
 import { fetchForDownload, saveToDownloads } from "../downloads.ts";
 import type { ToolSpec } from "../types.ts";
 import { getBot, listBots, type Bot } from "../bots.ts";
@@ -254,7 +255,7 @@ export function toolCatalog() {
 /** Every tool a bot may use right now (its switches + connected apps). */
 let extraTools: Tool[] | null = null;
 /** Built-in tools plus the routine tools (built on first use). */
-const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools(), ...shareTools(), ...adminTools(), ...mediaTools()])];
+const allBuiltins = () => [...builtins, ...(extraTools ??= [...routineTools(), ...calendarTools(), ...briefTools(), ...auditTools(), ...locationTools(), ...callTools(), ...improveTools(), ...shareTools(), ...adminTools(), ...mediaTools(), ...voiceCheckTools()])];
 
 export async function toolsFor(bot: Bot): Promise<Tool[]> {
   const list = allBuiltins().filter((t) => t.group === "core" || bot.tools[t.group as keyof Bot["tools"]]);
@@ -550,6 +551,23 @@ function mediaTools(): Tool[] {
   ];
 }
 
+// ---------------- Voice self-checks ----------------
+
+function voiceCheckTools(): Tool[] {
+  return [
+    {
+      group: "core",
+      spec: { name: "voice_check", description: "Check how clearly MausDroid speaks right now: speaks test sentences silently, recognises them offline on the phone, and scores clarity (word accuracy) and speed against the person's success criteria. Optional voice/rate to test another setting without changing anything.", inputSchema: obj({ voice: str("Voice name to test (default: current)"), rate: { type: "number", description: "Speed to test (default: current)" } }) },
+      run: async (_c, i) => JSON.stringify(await vc.checkVoice({ voice: i.voice, rate: i.rate }), null, 1),
+    },
+    {
+      group: "core",
+      spec: { name: "voice_audition", description: "Try the voice engine's English voices (and speeds for the best) and rank them against the success criteria, best first. Changes nothing; use the best passing result for a voice suggestion.", inputSchema: obj({}) },
+      run: async () => JSON.stringify(await vc.audition(), null, 1),
+    },
+  ];
+}
+
 // ---------------- Weekly audit ----------------
 
 /** The routine run this bot is working on (or a stand-in id when used from a chat). */
@@ -773,11 +791,12 @@ function improveTools(): Tool[] {
                   title: str("Short title"),
                   problem: str("What's wrong or missing, in plain words"),
                   change: str("Exactly what would change"),
-                  area: { type: "string", enum: ["routine", "skill", "code", "other"] },
+                  area: { type: "string", enum: ["routine", "skill", "code", "voice", "other"] },
                   risk: { type: "string", enum: ["low", "medium", "high"] },
                   evidence: str("What showed the problem (errors, run ids)"),
                   routine_patch: { type: "object", description: "area=routine: {routine_id, title?, prompt?, schedule?, timeout_minutes?, enabled?} with the exact NEW values" },
                   skill: { type: "object", description: "area=skill: {name, content} where content is the complete new SKILL.md (frontmatter name + description, then instructions)" },
+                  voice_patch: { type: "object", description: "area=voice: {engine?, voice?, rate?} — the voice settings to switch to (from voice_audition's best passing result)" },
                 },
                 required: ["title", "problem", "change", "area"],
               },

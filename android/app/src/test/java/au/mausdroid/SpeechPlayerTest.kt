@@ -190,4 +190,20 @@ class SpeechPlayerTest {
         p.stop()
         assertTrue("heard ${p.stoppedFraction}", p.stoppedFraction in 0.3..0.7)
     }
+
+    @Test fun resamplesAndSplitsLongAudioAtQuietPoints() {
+        val one = SpeechPlayer.resample(tone(1.0, 220.0), 16_000)
+        assertEquals(16_000, one.rate)
+        assertEquals(16_000.0, one.samples.size.toDouble(), 2.0)
+        assertEquals(220.0, freq(one), 8.0)
+        // 50 s of speech with a quiet gap at 20 s: split there, every piece ≤ 22 s.
+        val loud = tone(20.0).samples
+        val gap = ShortArray(rate / 2)
+        val long = SpeechPlayer.Pcm(rate, loud + gap + loud + gap + tone(9.0).samples)
+        val parts = SpeechPlayer.chunks(long)
+        assertTrue(parts.size >= 3)
+        assertTrue(parts.all { it.samples.size <= rate * 22 })
+        assertEquals(long.samples.size, parts.sumOf { it.samples.size })
+        assertTrue("cut near the quiet gap", kotlin.math.abs(parts[0].samples.size - (loud.size + gap.size / 2)) < rate / 2)
+    }
 }

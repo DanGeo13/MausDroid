@@ -18,6 +18,8 @@ import * as selfupdate from "./selfupdate.ts";
 import { assistantExamples } from "./phone-notifications.ts";
 import { refreshCodexSecret } from "./cloud-keys.ts";
 import { bridge, bridgeAvailable } from "./bridge.ts";
+import { voiceSummary } from "./voice-check.ts";
+import { settings, updateSettings } from "./settings.ts";
 
 /**
  * The Improver: a bot that checks MausDroid once a night (10 minutes at most,
@@ -31,7 +33,7 @@ export const IMPROVE_SYSTEM = "self-improve";
 export const MAX_PER_NIGHT = 5;
 export const IMPROVER_MODEL = "claude-opus-5-5";
 
-export type Area = "routine" | "skill" | "code" | "other";
+export type Area = "routine" | "skill" | "code" | "voice" | "other";
 export type Status = "waiting" | "shown" | "building" | "applying" | "applied" | "failed" | "declined" | "expired";
 
 export interface Proposal {
@@ -48,6 +50,8 @@ export interface Proposal {
   evidence?: string;
   routinePatch?: { routineId: string; routineTitle: string; before: Record<string, unknown>; after: Record<string, unknown> };
   skill?: { name: string; before: string | null; after: string };
+  /** A voice setting change (engine, voice, speed), from the phone's own voice checks. */
+  voicePatch?: { before: { engine: string; voice: string; rate: number }; after: { engine?: string; voice?: string; rate?: number } };
   /** A program change built in the cloud (Claude Code on GitHub): its pull request when ready. */
   build?: { prNumber?: number; prUrl?: string; runUrl?: string; startedAt: string; direct: boolean; attempt?: number; progress?: string; questions?: string; answers?: string[]; agent?: selfupdate.Agent };
   status: Status;
@@ -120,6 +124,7 @@ Be brief and concrete.`;
 export const IMPROVE_PROMPT = `Nightly self-check. You have 10 minutes at most; research tools stop after 5, so be quick and don't be exhaustive.
 1. Call improve_evidence to see recent errors, routine runs, routines, skills and earlier suggestions.
 2. Pick the few changes that would help most right now: errors, failing / missed / timed-out routines and the prompts or schedules causing them, skills that are missing, broken or unclear, and — only if clearly worthwhile — small code fixes to MausDroid. A quick web_search or skills_market_search is fine if it helps find a fix.
+   voiceQuality is the phone's own offline check of how clearly and at what speed MausDroid speaks (and call timings), against the person's success criteria. If it falls short, run voice_audition and suggest a voice fix (area "voice" with voice_patch: engine / voice / rate from the best passing result). Don't suggest one if it already passes.
    assistantExamples (if any) are recent notifications from Meta's Muse assistant: they show what a good assistant anticipates for the person. If MausDroid doesn't anticipate a need Muse does, a new or better routine is a good suggestion.
 3. Call improve_propose ONCE with at most ${MAX_PER_NIGHT} suggestions (fewer is better; none if nothing is worth changing). Don't repeat earlier suggestions. For a routine fix include routine_patch with the exact new values; for a skill fix include the complete new SKILL.md. Never include passwords, tokens, card numbers or other credentials.
 4. Call improve_finish with a one-line summary.
@@ -232,7 +237,7 @@ export function collectEvidence() {
     engine = { version: config.version };
   }
   const earlier = proposals.get().filter((p) => since(p.createdAt, 24 * 21)).map((p) => ({ id: p.id, title: p.title, status: p.status }));
-  return { now: new Date().toISOString(), engine, routineProblems: problems, routines, skills, botErrors: botErrors.slice(-25), earlierSuggestions: earlier, assistantExamples: assistantExamples(7) };
+  return { now: new Date().toISOString(), engine, routineProblems: problems, routines, skills, botErrors: botErrors.slice(-25), earlierSuggestions: earlier, assistantExamples: assistantExamples(7), voiceQuality: voiceSummary(7) };
 }
 
 // ---------------- Night records ----------------
@@ -281,6 +286,7 @@ export interface SuggestionInput {
   evidence?: string;
   routine_patch?: { routine_id?: string; title?: string; prompt?: string; schedule?: Schedule; timeout_minutes?: number; enabled?: boolean };
   skill?: { name?: string; content?: string };
+  voice_patch?: { engine?: string; voice?: string; rate?: number };
 }
 
 const ROUTINE_FIELDS: [keyof NonNullable<SuggestionInput["routine_patch"]>, keyof Routine][] = [
@@ -296,7 +302,7 @@ function buildProposal(runId: string, s: SuggestionInput): Proposal {
   const problem = String(s.problem ?? "").trim();
   const change = String(s.change ?? "").trim();
   if (!title || !problem || !change) throw new Error("each suggestion needs a title, the problem and the change");
-  const area = (["routine", "skill", "code", "other"].includes(String(s.area)) ? s.area : "other") as Area;
+  const area = (["routine", "skill", "code", "voice", "other"].includes(String(s.area)) ? s.area : "other") as Area;
   const risk = (["low", "medium", "high"].includes(String(s.risk)) ? s.risk : "medium") as Proposal["risk"];
   if (looksSecret(JSON.stringify(s))) throw new Error("it looks like it contains a credential or card number");
   const p: Proposal = { id: id("imp"), runId, createdAt: now(), showFrom: showDateFor(new Date(), settingsFile.get().showTime), title: clip(title, 120), problem: clip(problem, 1200), change: clip(change, 2000), area, risk, evidence: s.evidence ? clip(String(s.evidence), 800) : undefined, status: "waiting" };
@@ -331,6 +337,20 @@ function buildProposal(runId: string, s: SuggestionInput): Proposal {
     if (!name || !fm.name || !fm.description) throw new Error("a skill fix needs skill.name and a complete SKILL.md with name and description");
     const cur = listSkills().find((x) => x.name === name);
     p.skill = { name, before: cur ? fs.readFileSync(path.join(cur.dir, "SKILL.md"), "utf8") : null, after: content };
+  }
+  if (area === "voice") {
+    const vp = s.voice_patch ?? {};
+    const after: { engine?: string; voice?: string; rate?: number } = {};
+    if (typeof vp.engine === "string") after.engine = vp.engine;
+    if (typeof vp.voice === "string") after.voice = vp.voice;
+    if (vp.rate !== undefined) {
+      const r = Number(vp.rate);
+      if (!(r >= 0.6 && r <= 1.6)) throw new Error("voice_patch.rate must be 0.6–1.6");
+      after.rate = r;
+    }
+    if (!Object.keys(after).length) throw new Error("a voice fix needs voice_patch with engine, voice and/or rate");
+    const v = settings().voice;
+    p.voicePatch = { before: { engine: v.ttsEngine ?? "", voice: v.voiceName ?? "", rate: v.rate ?? 1 }, after };
   }
   return p;
 }
@@ -440,6 +460,18 @@ export async function approve(pid: string): Promise<Proposal> {
     if (cur) fs.writeFileSync(path.join(cur.dir, "SKILL.md"), p.skill.after);
     else saveSkill(p.skill.name, p.skill.after);
     return patch(pid, { ...decided, status: "applied", result: `Skill "${p.skill.name}" ${cur ? "updated" : "added"}.` })!;
+  }
+  if (p.area === "voice" && p.voicePatch) {
+    const v = settings().voice;
+    const b = p.voicePatch.before;
+    if ((v.ttsEngine ?? "") !== b.engine || (v.voiceName ?? "") !== b.voice || (v.rate ?? 1) !== b.rate) return patch(pid, { ...decided, status: "failed", result: "The voice settings changed since this was suggested, so nothing was changed." })!;
+    const a = p.voicePatch.after;
+    updateSettings((st) => {
+      if (a.engine !== undefined) st.voice.ttsEngine = a.engine;
+      if (a.voice !== undefined) st.voice.voiceName = a.voice;
+      if (a.rate !== undefined) st.voice.rate = a.rate;
+    });
+    return patch(pid, { ...decided, status: "applied", result: `Voice updated${a.voice ? ` to ${a.voice}` : ""}${a.rate ? ` at ${Math.round(a.rate * 100)}% speed` : ""}.` })!;
   }
   // Program changes are built in the cloud; a finished build is installed (published) on approval.
   if (p.area === "code") {

@@ -378,6 +378,14 @@ route("GET", "/api/voice/recognizers", async () => json(await bridge("/voice/rec
 route("GET", "/api/voice/engines", async () => json(await bridge("/voice/engines", {})));
 route("POST", "/api/voice/voices", async (req) => json(await bridge("/voice/voices", { engine: String(req.body?.engine ?? "") }, 20_000)));
 route("POST", "/api/voice/speak", async (req) => (await voice.speak(String(req.body?.text ?? ""), Boolean(req.body?.wait)), json({ ok: true })));
+// Voice self-checks: criteria, results, check now, find the best voice.
+route("GET", "/api/voice/checks", async () => {
+  const vc = await import("./voice-check.ts");
+  return json({ criteria: vc.voiceCriteria(), results: vc.recentChecks(30), summary: vc.voiceSummary(7) });
+});
+route("PUT", "/api/voice/criteria", async (req) => json((await import("./voice-check.ts")).saveCriteria(req.body ?? {})));
+route("POST", "/api/voice/check", async (req) => json(await (await import("./voice-check.ts")).checkVoice({ voice: req.body?.voice, rate: req.body?.rate })));
+route("POST", "/api/voice/audition", async () => json(await (await import("./voice-check.ts")).audition()));
 // Compare voice engines: the same sample in one engine (and voice), with natural delivery.
 route("POST", "/api/voice/sample", async (req) => {
   const b = req.body ?? {};

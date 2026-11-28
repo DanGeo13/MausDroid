@@ -88,6 +88,7 @@ async function fakePhone() {
         case "/files/save-download": st.saved.push(body); return send({ uri: `content://media/downloads/${++st.n}`, name: body.name, location: `Download/${body.folder}/${body.name}`, size: fs.statSync(body.path).size });
         case "/files/delete-download": st.deleted.push(body.uri); return send({ deleted: true });
         case "/pdf/open": (st.opened ??= []).push(body); return send({});
+        case "/voice/self-check": (st.selfChecks ??= []).push(body); return send({ heard: "Big week coming up!", speechMs: 1200 });
         case "/pdf/find": return send({ pages: body.quotes.map((q) => (/Reports/.test(q) ? 2 : /carnival/i.test(q) ? 0 : -1)), canSearch: true, pageCount: 3 });
         case "/map.pdf": res.writeHead(200, { "content-type": "application/pdf" }); return res.end("%PDF-1.4 fake carnival map");
         case "/page.html": res.writeHead(200, { "content-type": "text/html" }); return res.end("<html>newsletter</html>");
@@ -192,6 +193,12 @@ test("podcast: chosen hosts, per-phrase cues, segments; hands-free explain and c
     assert.match(sg[3].source.url, /^https:\/\/school\.example\/news\/week-8#:~:text=Reports%20due%20Friday%204pm$/);
     assert.equal(sg[2].source, undefined);
     assert.equal(o.hasSource, true);
+    // Self-check: the episode's first line is recognised offline and compared with the script.
+    await e.until(async () => (ph.st.selfChecks ?? []).length > 0, "podcast self-check");
+    assert.equal(ph.st.selfChecks[0].startMs, sg[0].startMs);
+    assert.equal(ph.st.selfChecks[0].endMs, sg[0].endMs);
+    const pc = await e.until(async () => (await e.call("/api/voice/checks")).data.results.find((r) => r.kind === "podcast"), "podcast check recorded");
+    assert.equal(pc.clarity, 1);
 
     // Hands-free: play, then "pause, explain that last bit" while the third line plays.
     ph.st.listenQ.push("Pause, explain that last bit");

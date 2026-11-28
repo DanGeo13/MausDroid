@@ -196,6 +196,8 @@ export function resumeHold(callId: string) {
 }
 
 async function finish(l: Live) {
+  // The call's timing goes into the voice checks (first audio, interruptions).
+  if (l.firstAudioMs.length || l.interruptMs.length) void import("./voice-check.ts").then((vc) => vc.recordCall(l.firstAudioMs, l.interruptMs)).catch(() => {});
   l.active = false;
   cancelTurn(l);
   for (const h of l.holds.values()) if (h.turn) dropTurn(h.turn);

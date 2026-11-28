@@ -462,6 +462,9 @@ async function record(o: AudioOverview, lines: Line[], input: PodcastInput = { t
     if (pdfs.length) await placeQuotes(segments, pdfs);
     patch(o.id, { status: "ready", progress: undefined, fileId: file.id, seconds: Math.round(len), linesLeftOut: leftOut || undefined, downloads, segments, pdfs, pdfNote: notes.length ? notes.join(" ") : undefined });
     await removeOldPdfs(o.id).catch(() => {});
+    // Self-check: the first line of the episode, recognised offline and compared with the script.
+    const first = segments[0];
+    if (first) void import("./voice-check.ts").then((vc) => vc.checkRecording(filePath(file), first.text, first.startMs, first.endMs)).catch(() => {});
     const mins = `${Math.floor(len / 60)}:${String(Math.round(len % 60)).padStart(2, "0")}`;
     await notifyUser({
       title: `🎧 ${o.title} is ready`,

@@ -211,6 +211,30 @@ class BridgeServer(
                     ok()
                 }
                 "/voice/recognizers" -> ok(voice.recognizerList())
+                "/voice/self-check" -> {
+                    // How clearly MausDroid speaks: make (or take) the audio, then recognise it offline.
+                    val audio: SpeechPlayer.Pcm = if (body.has("text")) {
+                        val f = java.io.File(ctx.cacheDir, "self-check.wav")
+                        recorder.record(body.getString("text"), body.optString("engine"), body.optString("voice"), body.optDouble("pitch", 1.0).toFloat(), body.optDouble("rate", 1.0).toFloat(), f)
+                        SpeechPlayer.readWav(f.readBytes())
+                    } else {
+                        val src = java.io.File(body.getString("path"))
+                        if (!src.canonicalPath.startsWith(ctx.filesDir.parentFile!!.canonicalPath)) return err(Response.Status.FORBIDDEN, "Only MausDroid's own files")
+                        val all = SpeechPlayer.readWav(src.readBytes())
+                        val a = (body.optLong("startMs", 0) * all.rate / 1000).toInt().coerceIn(0, all.samples.size)
+                        val b = if (body.has("endMs")) (body.getLong("endMs") * all.rate / 1000).toInt().coerceIn(a, all.samples.size) else all.samples.size
+                        SpeechPlayer.Pcm(all.rate, all.samples.copyOfRange(a, b))
+                    }
+                    val speech = SpeechPlayer.trimSilence(audio)
+                    val pieces = SpeechPlayer.chunks(SpeechPlayer.resample(speech, 16_000))
+                    val heard = StringBuilder()
+                    var problem: String? = null
+                    for (p in pieces) {
+                        val (t, e) = voice.recognizePcm(p.samples)
+                        if (t != null) { if (heard.isNotEmpty()) heard.append(' '); heard.append(t) } else { problem = e; break }
+                    }
+                    ok(JSONObject().put("heard", heard.toString()).put("speechMs", speech.samples.size * 1000L / speech.rate).put("audioMs", audio.samples.size * 1000L / audio.rate).apply { if (problem != null) put("error", problem) })
+                }
                 "/voice/engines" -> ok(JSONObject().put("engines", voice.engines()))
                 "/voice/voices" -> ok(voice.voices(body.optString("engine").takeIf { it.isNotBlank() }))
                 "/call/ring" -> { CallRinger.ring(ctx, body.getString("callId"), body.optString("name", "Maus"), body.optString("emoji", "🐭"), body.optString("reason")); ok() }
