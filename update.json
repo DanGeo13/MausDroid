@@ -1,4 +1,4 @@
 {
- "payload": "{\"createdAt\":\"2026-11-28T03:52:36.145Z\",\"engine\":{\"version\":\"0.17.0\",\"url\":\"https://raw.githubusercontent.com/DanGeo13/DanDroid/updates/engine-0.17.0.zip\",\"sha256\":\"492a36e5e968c602e3d3aa31ca82ee9944181c3237d2ab537db0c5462b9f854b\",\"size\":303275,\"minApk\":600},\"apk\":{\"versionName\":\"0.17.0\",\"versionCode\":1700,\"url\":\"https://raw.githubusercontent.com/DanGeo13/DanDroid/updates/DanDroid-0.17.0.apk\",\"sha256\":\"8d4c8d9c891f4d73f6e07a5462fe3d9a7b9f2dc6d25759377a6993ec9e09aba5\"}}",
- "signature": "MEQCIGwMpOGkpu3/+uBHy1Ca3iFED6MzGC1GAU/px4angBw7AiA+hLhY8WDrdGKI/gyPGMuxSszq9ce1tlNh+IqJ4JUbrA=="
+ "payload": "{\"createdAt\":\"2026-11-28T12:51:12.470Z\",\"engine\":{\"version\":\"0.17.1\",\"url\":\"https://raw.githubusercontent.com/DanGeo13/DanDroid/updates/engine-0.17.1.zip\",\"sha256\":\"f1928a16243f491831ce580d39f3ec77b8500fe8df53f8da6051efd329814713\",\"size\":303541,\"minApk\":600},\"apk\":{\"versionName\":\"0.17.1\",\"versionCode\":1701,\"url\":\"https://raw.githubusercontent.com/DanGeo13/DanDroid/updates/DanDroid-0.17.1.apk\",\"sha256\":\"b236b15134fe663b82dd566896e9517bfff467fab4fddb1916415c6a0836e9b9\"}}",
+ "signature": "MEUCIQC9DDgtckoLKs5b76TdlNClFotJbaYr+nw1IV3ryKIgmAIgSHspAMEe5uu1XcoxzCQK5NND6PBfqFlrm04BpWnaBKM="
 }
