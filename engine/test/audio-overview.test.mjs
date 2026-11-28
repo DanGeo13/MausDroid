@@ -38,7 +38,8 @@ test("script lines, WAV joining, word budget", async () => {
   assert.equal(lines[1].text, "Big week! Monday has assembly. It starts at 9.");
   assert.ok(!lines[2].text.includes("http"));
   assert.deepEqual(a.parseScript("Sam: Hi.\nJo: Hello.\nSam: Bye.").map((l) => l.speaker), ["A", "B", "A"]);
-  assert.deepEqual(a.parseScript("First paragraph.\n\nSecond paragraph.").map((l) => l.speaker), ["A", "B"]);
+  // No speaker labels: one voice throughout (a message), not alternating hosts.
+  assert.deepEqual(a.parseScript("First paragraph.\n\nSecond paragraph.").map((l) => l.speaker), ["A", "A"]);
   assert.ok(a.wordsFor(10) <= 1500, "10 minutes of speech");
   const joined = w.join([w.readWav(wav(1, 16000)), w.readWav(wav(2, 24000))], 0.5);
   assert.equal(joined.sampleRate, 16000);

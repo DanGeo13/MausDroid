@@ -3,7 +3,7 @@ import { collection } from "./store.ts";
 import { emit } from "./events.ts";
 import { settings } from "./settings.ts";
 import { clip, errorText, id as newId, now } from "./util.ts";
-import { pronounce } from "./speech-style.ts";
+import { plainForSpeech, pronounce } from "./speech-style.ts";
 
 /**
  * MausDroid checks its own voice: it makes (or takes) speech, recognises it
@@ -164,7 +164,7 @@ export async function checkVoice(over: { engine?: string; voice?: string; rate?:
   const v = voiceNow(over);
   const text = sentences.join(" ");
   // Spoken with your pronunciations; judged against the real words.
-  return score(kind, text, await selfCheck({ text: pronounce(text), ...v }), v);
+  return score(kind, text, await selfCheck({ text: pronounce(plainForSpeech(text)), ...v }), v);
 }
 
 /** Checks part of a recording (e.g. a podcast line) against what it should say. */

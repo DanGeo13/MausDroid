@@ -31,3 +31,22 @@ object SpeechLang {
         if (best != null) runCatching { t.voice = best }
     }
 }
+
+/**
+ * Plain punctuation for the voice engine (a safety net; the engine does this too):
+ * curly apostrophes and quotes, dashes, ellipses and invisible characters can make
+ * some engines (e.g. Phonon) garble the word around them ("I’d", "Odette’s").
+ */
+object TextForSpeech {
+    fun plain(t: String): String = t
+        .replace(Regex("[\u2018\u2019\u201A\u201B\u2032\u02BC\u0060\u00B4]"), "'")
+        .replace(Regex("[\u201C\u201D\u201E\u201F\u2033\u00AB\u00BB]"), "\"")
+        .replace(Regex("\\s*[\u2014\u2015]\\s*"), ", ")
+        .replace(Regex("(\\d)\\s*\u2013\\s*(\\d)"), "$1 to $2")
+        .replace(Regex("\\s*\u2013\\s*"), ", ")
+        .replace("\u2026", "...")
+        .replace(Regex("[\u2022\u00B7\u25CF]"), " ")
+        .replace(Regex("[\u00A0\u2007\u202F\u2009\u200A]"), " ")
+        .replace(Regex("[\u200B-\u200D\u2060\uFEFF\u00AD]"), "")
+        .replace(Regex(" {2,}"), " ")
+}

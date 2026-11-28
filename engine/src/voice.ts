@@ -3,7 +3,7 @@ import { bridge, bridgeAvailable } from "./bridge.ts";
 import { onTurnEnd, sendToBot } from "./agent.ts";
 import { getBot, listBots } from "./bots.ts";
 import { settings, speechPrefs } from "./settings.ts";
-import { CUE_GUIDE, SPOKEN_STYLE, SpeechChunker, planPhrase, pronounce, stripCues } from "./speech-style.ts";
+import { CUE_GUIDE, SPOKEN_STYLE, SpeechChunker, planPhrase, plainForSpeech, pronounce, stripCues } from "./speech-style.ts";
 import { notifyUser } from "./notify.ts";
 import type { Attachment } from "./files.ts";
 
@@ -69,12 +69,12 @@ export async function speak(text: string, wait = false, voiceOverride?: { engine
       return;
     }
   }
-  await bridge("/voice/speak", { text: pronounce(speakable(stripCues(text))), ...vp, wait }, wait ? 180_000 : 60_000).catch(() => {});
+  await bridge("/voice/speak", { text: pronounce(plainForSpeech(speakable(stripCues(text)))), ...vp, wait }, wait ? 180_000 : 60_000).catch(() => {});
 }
 
 /** Adds a piece to what's being said, without waiting (calls speak replies as they arrive). */
 export async function say(text: string, flush = false) {
-  const t = pronounce(speakable(stripCues(text)));
+  const t = pronounce(plainForSpeech(speakable(stripCues(text))));
   if (!bridgeAvailable() || !t) return;
   await bridge("/voice/say", { text: t, ...voiceParams(), flush }, 15_000).catch(() => {});
 }

@@ -23,6 +23,28 @@ export const SPOKEN_STYLE = `Write for listening, not reading:
 
 export const CUE_GUIDE = `Optional delivery cues (they're never spoken or shown): {pause 300} for a short silence; {faster}, {slower}, {higher} or {lower} at the start of a phrase changes only that phrase, subtly; {warm}, {excited}, {gentle} or {serious} gives that phrase an emotional tone; {react mm-hmm} (or uh-huh, hmm, oh, right, yeah, ah) for a brief listening sound — at most one per reply, and none in most replies; {laugh}, {chuckle}, {sigh} or {breath} for an expressive sound where a person really would (something funny, a relief, a pause before something serious). Use them rarely and only where a person naturally would — most phrases need none, and never in serious or sad moments except a soft {sigh}.`;
 
+// ---------------- Plain text for the voice ----------------
+
+/**
+ * Typographic punctuation the voice engine can't read: curly apostrophes (’)
+ * turn "I’d" or "Odette’s" into garbled syllables in some engines (Phonon),
+ * and dashes/ellipses/invisible characters can do the same. Everything spoken
+ * goes through this first; chat text keeps the original.
+ */
+export function plainForSpeech(text: string): string {
+  return text
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u02BC\u0060\u00B4]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u2033\u00AB\u00BB]/g, '"')
+    .replace(/\s*[\u2014\u2015]\s*/g, ", ")
+    .replace(/(\d)\s*\u2013\s*(\d)/g, "$1 to $2")
+    .replace(/\s*\u2013\s*/g, ", ")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u2022\u00B7\u25CF]/g, " ")
+    .replace(/[\u00A0\u2007\u202F\u2009\u200A]/g, " ")
+    .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, "")
+    .replace(/ {2,}/g, " ");
+}
+
 // ---------------- Pronunciations ----------------
 
 /** How to say words the voice gets wrong (names especially): "Odette" → "Oh-DET". Set from Settings. */
@@ -85,7 +107,7 @@ export function planPhrase(phrase: string): PlayItem[] {
   let pitch: number | undefined;
   let last = 0;
   const pushText = (raw: string) => {
-    const text = pronounce(stripCues(raw));
+    const text = pronounce(plainForSpeech(stripCues(raw)));
     if (!/[A-Za-z0-9]/.test(text)) return;
     const prev = out[out.length - 1];
     // Words split only by an ignored cue stay one phrase.

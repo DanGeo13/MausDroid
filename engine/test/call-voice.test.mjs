@@ -523,3 +523,22 @@ test("listening sounds are rationed (one per reply, one every 25 s); pronunciati
     await done();
   }
 });
+
+test("typographic punctuation never reaches the voice (the cause of the garbled words)", async () => {
+  const s = await load("src/speech-style.ts");
+  const said = "Oh, good to hear, Dan. How did Odette\u2019s show go? I\u2019d keep Odette\u2019s iPad a surprise for now \u2014 if you\u2019re unsure, she\u2019d say \u201cyes\u201d\u2026 Pages 3\u20135.";
+  const plain = s.plainForSpeech(said);
+  assert.equal(plain, "Oh, good to hear, Dan. How did Odette's show go? I'd keep Odette's iPad a surprise for now, if you're unsure, she'd say \"yes\"... Pages 3 to 5.");
+  assert.ok(!/[\u2018-\u201F\u2026\u2013\u2014]/.test(plain));
+  const items = s.planPhrase("I\u2019d say Odette\u2019s show \u2014 brilliant.");
+  assert.equal(items[0].text, "I'd say Odette's show, brilliant.");
+  // Through the app: read-aloud sends only plain text to the phone; the chat keeps the original.
+  const { ph, e, done } = await callWith(() => ({ text: "ok" }));
+  try {
+    await e.call("/api/voice/speak", "POST", { text: "How did Odette\u2019s show go? You\u2019re right." });
+    const sent = ph.st.enq.at(-1).items.filter((i) => i.kind === "speech").map((i) => i.text).join(" ");
+    assert.equal(sent, "How did Odette's show go? You're right.");
+  } finally {
+    await done();
+  }
+});

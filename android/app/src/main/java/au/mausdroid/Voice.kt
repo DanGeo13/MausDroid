@@ -442,7 +442,8 @@ class Voice(private val ctx: Context) {
     /** Adds a piece to what's being said (calls speak replies piece by piece as they arrive). */
     fun say(text: String, rate: Float = 1f) = enqueue(text, rate, flush = false, onDone = null)
 
-    private fun enqueue(text: String, rate: Float, flush: Boolean, onDone: (() -> Unit)?) {
+    private fun enqueue(raw: String, rate: Float, flush: Boolean, onDone: (() -> Unit)?) {
+        val text = TextForSpeech.plain(raw)
         if (text.isBlank()) { onDone?.let { main.post(it) }; return }
         val id = UUID.randomUUID().toString()
         val parts = text.chunked(3500)

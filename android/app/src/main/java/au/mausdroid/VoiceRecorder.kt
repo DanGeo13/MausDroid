@@ -75,7 +75,7 @@ class VoiceRecorder(private val ctx: Context) {
             t.setPitch(pitch.coerceIn(0.5f, 2f))
             t.setSpeechRate(rate.coerceIn(0.5f, 2f))
             SpeechLang.apply(t, voice)
-            val r = t.synthesizeToFile(text.take(3900), Bundle(), out, id)
+            val r = t.synthesizeToFile(TextForSpeech.plain(text).take(3900), Bundle(), out, id)
             if (r != TextToSpeech.SUCCESS) done(id, false)
         }
         if (!latch.await(timeoutSec, TimeUnit.SECONDS)) {

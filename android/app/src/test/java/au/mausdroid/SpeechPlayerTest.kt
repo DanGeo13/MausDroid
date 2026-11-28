@@ -206,4 +206,9 @@ class SpeechPlayerTest {
         assertEquals(long.samples.size, parts.sumOf { it.samples.size })
         assertTrue("cut near the quiet gap", kotlin.math.abs(parts[0].samples.size - (loud.size + gap.size / 2)) < rate / 2)
     }
+
+    @Test fun phoneSidePlainPunctuation() {
+        val t = TextForSpeech.plain("How did Odette\u2019s show go? I\u2019d say \u201cyes\u201d \u2014 pages 3\u20135\u2026")
+        assertEquals("How did Odette's show go? I'd say \"yes\", pages 3 to 5...", t)
+    }
 }

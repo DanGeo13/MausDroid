@@ -153,7 +153,7 @@ export function parseScript(script: string): Line[] {
     let sp: "A" | "B";
     if (usable && t.who) sp = t.who === "a" || (t.who !== "b" && names.indexOf(t.who) === 0) ? "A" : "B";
     else if (usable) sp = last; // an untagged line continues the same speaker
-    else sp = last === "A" ? "B" : "A";
+    else sp = "A"; // no speaker labels: one voice throughout (a message, not a two-host podcast)
     const text = speakable(t.text);
     if (!text) continue;
     if (usable && !t.who && out.length) out[out.length - 1].text += ` ${text}`;
@@ -278,7 +278,7 @@ export function sourceJump(link: string | undefined, quote: string | undefined):
  */
 export function createOverview(input: PodcastInput): AudioOverview {
   const lines = parseScript(String(input.script ?? ""));
-  if (lines.length < 2) throw new Error("Write the script as a conversation, one line per turn, starting each with A: or B:.");
+  if (lines.length < 1) throw new Error("Write the script: one line per turn, starting each with A: or B: for two hosts (or just the message for one voice).");
   const o: AudioOverview = {
     id: newId("aud"),
     title: clip(String(input.title || "Weekly audio overview").trim(), 120),
