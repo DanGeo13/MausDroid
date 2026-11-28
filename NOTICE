@@ -16,3 +16,6 @@ Bundled third-party components:
 - Spoken and written style adapted from Humanizer (Siqi Chen, MIT, https://github.com/blader/humanizer) the behuman skill (Alireza Rezvani / voidborne-d, MIT, https://github.com/alirezarezvani/claude-skills), talk-normal (hexie, MIT, https://github.com/hexiecs/talk-normal) and sustained-presence (claylo, Apache-2.0, https://github.com/claylo/sustained-presence)
 - Voice timing patterns (tool preamble, micro-acknowledgement, backchannels while you talk) adapted from protoVoice (protoLabs, Apache-2.0, https://github.com/protolabsai/protoVoice)
 - Speech: the phone's installed Phonon engine (gradium-ai/xn-ptts, MIT/Apache-2.0) through Android's text-to-speech service; no model is bundled
+
+The Hind typeface (ui/public/hind-*.woff2) is licensed under the SIL Open Font License 1.1; see ui/fonts-license/Hind-OFL.txt.
+The Impeccable design skill in .claude/skills/impeccable and .claude/agents/impeccable-* is by Paul Bakaus, Apache License 2.0 (see .claude/skills/impeccable/LICENSE and NOTICE.md).

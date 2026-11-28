@@ -51,10 +51,10 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             Diag.log(this, "could not start engine service: $e")
         }
-        window.statusBarColor = Color.parseColor("#0B1110")
-        window.navigationBarColor = Color.parseColor("#0B1110")
+        window.statusBarColor = Color.parseColor("#0B0B0B")
+        window.navigationBarColor = Color.parseColor("#0B0B0B")
         web = WebView(this)
-        web.setBackgroundColor(Color.parseColor("#0B1110"))
+        web.setBackgroundColor(Color.parseColor("#0B0B0B"))
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         // Always load the current engine's screens, never ones saved from an older version.
@@ -112,7 +112,7 @@ class MainActivity : Activity() {
         waitForEngine()
     }
 
-    private val bg = Color.parseColor("#0B1110")
+    private val bg = Color.parseColor("#0B0B0B")
     private var waiting = false
 
     private fun showSplash() {

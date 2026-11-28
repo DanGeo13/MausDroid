@@ -96,7 +96,7 @@ class IncomingCallActivity : Activity() {
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#0B1110"))
+            setBackgroundColor(Color.parseColor("#0B0B0B"))
             setPadding(px(24), px(24), px(24), px(24))
             addView(TextView(context).apply { text = intent.getStringExtra("emoji") ?: "🐭"; textSize = 64f; gravity = Gravity.CENTER })
             addView(TextView(context).apply { text = "${intent.getStringExtra("name") ?: "Maus"} is calling"; setTextColor(Color.WHITE); textSize = 26f; gravity = Gravity.CENTER; setPadding(0, px(12), 0, px(8)) })

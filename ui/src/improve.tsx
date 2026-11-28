@@ -283,7 +283,7 @@ function Settings({ o, onDone }: { o: any; onDone: () => void }) {
         <input type="checkbox" checked={!s.askBeforeInstall} onChange={() => setS({ ...s, askBeforeInstall: !s.askBeforeInstall })} /> Program changes I ask Improver for install by themselves once every test passes
       </label>
       <p class="help">
-        Bot: {o.bot ? `${o.bot.emoji} ${o.bot.name} (${o.bot.providerId ?? "default AI"}, ${o.bot.model ?? "default model"})` : "none"} — change its AI and model by editing the bot. At most 5 suggestions a night. Nothing changes without your approval.
+        Bot: {o.bot ? `${o.bot.name} (${o.bot.providerId ?? "default AI"}, ${o.bot.model ?? "default model"})` : "none"} — change its AI and model by editing the bot. At most 5 suggestions a night. Nothing changes without your approval.
       </p>
       <button class="btn" onClick={save}>
         Save
@@ -418,7 +418,7 @@ export function Improve({ onBack, openBot }: { onBack: () => void; openBot: (id:
         ) : (
           <>
             <p class="help">
-              {o.bot ? `${o.bot.emoji} ${o.bot.name}` : "Improver"} checks DanDroid each night at {o.settings.nightTime} and suggests up to 5 fixes, shown here at {o.settings.showTime}. Last check: {o.lastNight ? `${when(o.lastNight.startedAt)} — ${o.lastNight.summary ?? (o.lastNight.finishedAt ? "done" : "incomplete")}` : "not yet"}. Next: {when(o.routine?.nextRunAt)}.
+              {o.bot ? o.bot.name : "Improver"} checks DanDroid each night at {o.settings.nightTime} and suggests up to 5 fixes, shown here at {o.settings.showTime}. Last check: {o.lastNight ? `${when(o.lastNight.startedAt)} — ${o.lastNight.summary ?? (o.lastNight.finishedAt ? "done" : "incomplete")}` : "not yet"}. Next: {when(o.routine?.nextRunAt)}.
             </p>
             <div class="inline" style={{ gap: ".5rem", flexWrap: "wrap" }}>
               <button class="btn secondary small" onClick={runNow}>

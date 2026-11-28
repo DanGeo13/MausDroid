@@ -4,7 +4,7 @@ import { api, listen, type EngineEvent } from "./api.ts";
 import { Avatar, Chat } from "./chat.tsx";
 import { BotEditor, Settings, toast } from "./settings.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
-import { IconBell, IconGear, IconInbox, IconLink, IconNews, IconPlus, IconSearch, IconWrench } from "./icons.tsx";
+import { BotPicto, IconArrow, IconBack, IconBell, IconBot, IconMic, IconGear, IconInbox, IconLink, IconNews, IconPlus, IconSearch, IconWrench } from "./icons.tsx";
 import { applyAppearance, loadAppearance } from "./appearance.ts";
 import { fileIcon, type Attachment } from "./files.ts";
 import { Briefing } from "./briefing.tsx";
@@ -28,6 +28,67 @@ function when(iso?: string) {
 }
 
 type View = { kind: "list" } | { kind: "chat"; botId: string } | { kind: "edit"; botId: string | null } | { kind: "settings"; tab: string } | { kind: "briefing"; id?: string; audioId?: string } | { kind: "improve" } | { kind: "call"; callId?: string; botId?: string } | { kind: "replydesk"; id?: string } | { kind: "resources" } | { kind: "alerts" };
+
+/**
+ * The next-decision band: like an airport sign, it says how many things need Dan and shows the single
+ * next one (a bot's question or approval first, then a message to reply to, then notifications).
+ * The count flips like a split-flap board when it changes.
+ */
+function NextBand({ cards, bots, pendingReplies, unreadAlerts, openChat, openReply, openAlerts }: { cards: Card[]; bots: Bot[]; pendingReplies: number; unreadAlerts: number; openChat: (botId: string) => void; openReply: (id: string) => void; openAlerts: () => void }) {
+  const [reply, setReply] = useState<any | null>(null);
+  useEffect(() => {
+    if (!pendingReplies) return setReply(null);
+    void api("replies?status=pending")
+      .then((r) => {
+        const it = r.items.find((x: any) => x.likely) ?? r.items[0] ?? null;
+        setReply(it ? { ...it, serviceLabel: r.services?.find((v: any) => v.id === it.service)?.label ?? it.service } : null);
+      })
+      .catch(() => {});
+  }, [pendingReplies]);
+  const n = cards.length + pendingReplies;
+  if (!n && !unreadAlerts)
+    return (
+      <div class="nextband clear" role="status">
+        <IconBell /> Nothing needs you
+      </div>
+    );
+  const card = cards[0];
+  const bot = card ? bots.find((b) => b.id === card.botId) : undefined;
+  const next = card
+    ? { sq: <BotPicto name={bot?.name} />, who: `${bot?.name ?? "A bot"} ${card.kind === "approval" ? "needs your OK" : "has a question"}`, what: card.title, go: () => openChat(card.botId) }
+    : reply
+      ? { sq: <IconInbox />, who: `${reply.sender} · ${reply.serviceLabel}`, what: reply.text, go: () => openReply(reply.id), action: "reply" }
+      : { sq: <IconBell />, who: "Notifications", what: `${unreadAlerts} need${unreadAlerts === 1 ? "s" : ""} you`, go: openAlerts };
+  const shown = n || unreadAlerts;
+  return (
+    <section class="nextband" aria-label="What needs you">
+      <div class="count">
+        <span class="num flap" key={shown}>
+          {shown}
+        </span>
+        <span class="lbl">
+          {shown === 1 ? "thing needs you" : "things need you"}
+          <small>{card ? "Next: answer a bot" : reply ? "Next: a message to reply to" : "Next: your notifications"}</small>
+        </span>
+      </div>
+      <button class="next" onClick={next.go}>
+        <span class="sq">{next.sq}</span>
+        <span class="what">
+          <b>{next.what}</b>
+          <span>{next.who}</span>
+        </span>
+        <span class="go">
+          <IconArrow />
+        </span>
+      </button>
+      {n && unreadAlerts ? (
+        <button class="more" onClick={openAlerts}>
+          Also {unreadAlerts} notification{unreadAlerts === 1 ? "" : "s"}
+        </button>
+      ) : null}
+    </section>
+  );
+}
 
 function Home({ poll }: { poll: boolean }) {
   const [bots, setBots] = useState<Bot[]>([]);
@@ -225,17 +286,11 @@ function Home({ poll }: { poll: boolean }) {
       <div class="sidebar">
         <div class="topbar">
           <h1 class="brand">
-            <img src="icon.svg" alt="" /> Dan<span class="tag">Droid</span>
+            <img src="icon.svg" alt="" /> <span>DanDroid</span>
           </h1>
           <button class="icon-btn" title="Reply Desk" aria-label={`Reply Desk${pendingReplies ? `, ${pendingReplies} waiting` : ""}`} onClick={() => setView({ kind: "replydesk" })}>
             <IconInbox />
             {pendingReplies ? <span class="badge">{pendingReplies > 99 ? "99+" : pendingReplies}</span> : null}
-          </button>
-          <button class="icon-btn" title="Resources" aria-label="Resources" onClick={() => setView({ kind: "resources" })}>
-            <IconLink />
-          </button>
-          <button class="icon-btn" title="Morning Brief" aria-label="Morning Brief" onClick={() => setView({ kind: "briefing" })}>
-            <IconNews />
           </button>
           <button class="icon-btn" title="Improvements" aria-label="Improvements" onClick={() => setView({ kind: "improve" })}>
             <IconWrench />
@@ -248,16 +303,20 @@ function Home({ poll }: { poll: boolean }) {
             <IconGear />
           </button>
         </div>
+        <NextBand
+          cards={cards}
+          bots={bots}
+          pendingReplies={pendingReplies}
+          unreadAlerts={unreadAlerts}
+          openChat={(botId) => setView({ kind: "chat", botId })}
+          openReply={(id) => setView({ kind: "replydesk", id })}
+          openAlerts={() => setView({ kind: "alerts" })}
+        />
         <div class="search">
           <IconSearch />
           <input value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} placeholder="Search bots" />
         </div>
         <div class="list">
-          {cards.length ? (
-            <button class="banner" onClick={() => setView({ kind: "chat", botId: cards[0].botId })}>
-              ✋ <span style={{ flex: 1 }}>{cards.length === 1 ? "1 bot is waiting for your OK" : `${cards.length} bots are waiting for your OK`}</span> <strong>Open</strong>
-            </button>
-          ) : null}
           {[
             ["Pinned", shown.filter((b) => b.pinned)],
             [shown.some((b) => b.pinned) ? "Bots" : "", shown.filter((b) => !b.pinned)],
@@ -277,9 +336,10 @@ function Home({ poll }: { poll: boolean }) {
                         <span class={`preview ${b.busy ? "working" : ""}`} style={{ flex: 1 }}>
                           {b.busy ? "working…" : b.last ? `${b.last.role === "user" ? "You: " : ""}${plainPreview(b.last.text)}` : b.persona.slice(0, 80)}
                         </span>
-                        {cards.some((c) => c.botId === b.id) ? <span class="badge warn">!</span> : b.unread ? <span class="badge">{b.unread}</span> : null}
+                        {cards.some((c) => c.botId === b.id) ? <span class="badge">!</span> : b.unread ? <span class="badge">{b.unread}</span> : null}
                       </div>
                     </div>
+                    <span class="chev"><IconArrow /></span>
                   </button>
                 ))}
               </>
@@ -290,6 +350,24 @@ function Home({ poll }: { poll: boolean }) {
         <button class="fab" aria-label="New bot" title="New bot" onClick={() => setView({ kind: "edit", botId: null })}>
           <IconPlus />
         </button>
+        <nav class="signnav" aria-label="Main">
+          <button class="on" aria-current="page">
+            <IconInbox />
+            Home
+          </button>
+          <button onClick={() => setView({ kind: "briefing" })}>
+            <IconNews />
+            Brief
+          </button>
+          <button onClick={() => setView({ kind: "call", botId: (bots.find((b) => b.pinned) ?? bots[0])?.id })}>
+            <IconMic />
+            Talk
+          </button>
+          <button onClick={() => setView({ kind: "resources" })}>
+            <IconLink />
+            Saved
+          </button>
+        </nav>
       </div>
       <div class="main">
         {view.kind === "chat" && current ? (
@@ -332,9 +410,16 @@ function Home({ poll }: { poll: boolean }) {
         ) : view.kind === "settings" ? (
           <Settings tab={view.tab} setTab={(tab) => replaceView({ kind: "settings", tab })} bots={bots} onBack={() => (goBack(), void loadState())} />
         ) : (
-          <div class="empty">
-            <img class="hero-logo" src="icon.svg" alt="" />
-            <p>Choose a bot to chat with.</p>
+          <div class="signpane">
+            <div class="sign">
+              <span class="sq">
+                <IconBack />
+              </span>
+              <span>
+                Choose a bot
+                <small>Your bots and what needs you are on the left.</small>
+              </span>
+            </div>
           </div>
         )}
       </div>

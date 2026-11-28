@@ -4,7 +4,7 @@ import { Markdown } from "./markdown.tsx";
 import { ResponseActions } from "./actions.tsx";
 import { ReplyCard } from "./reply.tsx";
 import type { Bot, Card, Msg } from "./types.ts";
-import { IconBack, IconCamera, IconClip, IconEdit, IconMic, IconSend, IconStop, IconX } from "./icons.tsx";
+import { IconBack, IconCamera, IconClip, IconEdit, IconMic, IconSend, IconStop, IconX, BotPicto } from "./icons.tsx";
 import { fileIcon, fileSize, uploadFile, type Attachment } from "./files.ts";
 
 /** Bot picture: emoji on its colour. `size` in rem so it follows the text-size setting. */
@@ -33,10 +33,11 @@ function dictate(): Promise<string> {
   });
 }
 
-export function Avatar({ bot, size = 3, live = false }: { bot: Pick<Bot, "emoji" | "color">; size?: number; live?: boolean }) {
+/** A bot's sign square: its hand-drawn pictogram in white on black. */
+export function Avatar({ bot, size = 3, live = false }: { bot: Pick<Bot, "name">; size?: number; live?: boolean }) {
   return (
-    <div class="avatar" style={{ background: `linear-gradient(135deg, ${bot.color}, ${bot.color}cc)`, width: `${size}rem`, height: `${size}rem`, fontSize: `${size / 2}rem` }}>
-      {bot.emoji}
+    <div class="avatar" style={{ width: `${size}rem`, height: `${size}rem` }}>
+      <BotPicto name={bot.name} />
       {live ? <span class="live" /> : null}
     </div>
   );
@@ -252,7 +253,9 @@ export function Chat({ bot, messages, cards, onBack, onEdit, refresh, busy, voic
       <div class="messages">
         {messages.length === 0 ? (
           <div class="empty">
-            <div class="big">{bot.emoji}</div>
+            <div class="big avatar" style={{ width: "5rem", height: "5rem", margin: "0 auto" }}>
+              <BotPicto name={bot.name} />
+            </div>
             <p>
               Say hello to <strong>{bot.name}</strong>.
             </p>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import qrcode from "qrcode-generator";
 import { api } from "./api.ts";
 import type { Bot, Provider } from "./types.ts";
-import { IconBack } from "./icons.tsx";
+import { IconBack, IconRing, IconSpark } from "./icons.tsx";
 import { Routines } from "./routines.tsx";
 import { Calendars } from "./calendars.tsx";
 import { AddEndpoint, ModelPicker } from "./models.tsx";
@@ -150,10 +150,10 @@ function ProviderRow({ p, isDefault, reload }: { p: Provider; isDefault: boolean
   );
 }
 
-const SUB_LOOK: Record<string, { color: string; mark: string }> = {
-  claude: { color: "#D97757", mark: "✳︎" },
-  chatgpt: { color: "#10A37F", mark: "◎" },
-  gemini: { color: "#4C8DF6", mark: "✦" },
+const SUB_LOOK: Record<string, { color: string; mark: () => any }> = {
+  claude: { color: "#D97757", mark: IconSpark },
+  chatgpt: { color: "#10A37F", mark: IconRing },
+  gemini: { color: "#4C8DF6", mark: IconSpark },
 };
 
 function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider; isDefault: boolean; reload: () => void }) {
@@ -163,7 +163,7 @@ function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider
   const [computerToken, setComputerToken] = useState("");
   const [runOn, setRunOn] = useState(p.runOn ?? "phone");
   const [model, setModel] = useState(p.defaultModel);
-  const look = SUB_LOOK[sub.id] ?? { color: "#666", mark: "•" };
+  const look = SUB_LOOK[sub.id] ?? { color: "#666", mark: IconRing };
   const busy = sub.stage === "installing" || sub.stage === "signing-in";
   const signedIn = sub.stage === "signed-in";
   const stageText: Record<string, string> = {
@@ -177,8 +177,8 @@ function SubscriptionCard({ sub, p, isDefault, reload }: { sub: any; p: Provider
   return (
     <div class="section">
       <div class="inline" style={{ flexWrap: "nowrap" }}>
-        <div class="avatar" style={{ background: look.color, width: "2.8rem", height: "2.8rem", fontSize: "1.3rem" }}>
-          {look.mark}
+        <div class="avatar" style={{ width: "2.8rem", height: "2.8rem" }}>
+          <look.mark />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <strong>{sub.label}</strong> {isDefault ? <span class="pill">default</span> : null}

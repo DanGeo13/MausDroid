@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "./api.ts";
-import { IconBot, IconCopy, IconGlobe, IconPlay, IconShare, IconStop } from "./icons.tsx";
+import { BotPicto, IconBot, IconChat, IconCopy, IconGlobe, IconMail, IconMore, IconPlay, IconShare, IconStop } from "./icons.tsx";
 
 /** Short message at the bottom of the screen. */
 export const toast = (m: string) => {
@@ -119,7 +119,7 @@ export function ResponseActions({ id, text, title, openBot }: { id: string; text
           </button>
           {(targets?.apps ?? []).map((a: any) => (
             <button role="menuitem" onClick={() => app(a)}>
-              <span class="dot" style={{ background: a.accent }} /> {a.label}
+              <span class="icon-glyph">{a.id === "email" ? <IconMail /> : a.id === "other" ? <IconMore /> : <IconChat />}</span> {a.label}
               {a.prefill ? "" : " (copy + open)"}
             </button>
           ))}
@@ -135,7 +135,7 @@ export function ResponseActions({ id, text, title, openBot }: { id: string; text
                 openBot?.(b.id, `Shared with you to review:\n\n${text}`);
               }}
             >
-              {b.emoji} {b.name}
+              <span class="avatar" style={{ width: "2rem", height: "2rem" }}><BotPicto name={b.name} /></span> {b.name}
             </button>
           ))}
         </div>

@@ -178,7 +178,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     private val voice = Voice(ctx)
     private val dp = ctx.resources.displayMetrics.density
     private fun px(v: Int) = (v * dp).toInt()
-    private val accent = Color.parseColor("#0B7465")
+    private val accent = Color.parseColor("#FFCC00")
 
     private val title = TextView(ctx).apply { setTextColor(Color.WHITE); textSize = 16f; setTypeface(typeface, android.graphics.Typeface.BOLD) }
     private val heard = TextView(ctx).apply { setTextColor(Color.parseColor("#C9CEDA")); textSize = 18f; setPadding(0, px(10), 0, px(6)) }
@@ -189,7 +189,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         isVerticalScrollBarEnabled = true
         movementMethod = android.text.method.ScrollingMovementMethod()
     }
-    private val statusLine = TextView(ctx).apply { setTextColor(Color.parseColor("#97A7A3")); textSize = 13f }
+    private val statusLine = TextView(ctx).apply { setTextColor(Color.parseColor("#A8A8A0")); textSize = 13f }
     private var botId: String? = null
     private var speak = true
     @Volatile private var active = false
@@ -214,7 +214,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
 
     private fun refreshScreenLabel() {
         val what = listOfNotNull(screen?.app, if (screenshot != null) "screenshot" else null).joinToString(" + ")
-        screenToggle.setTextColor(if (includeScreen) Color.parseColor("#43C6B0") else Color.parseColor("#7A8294"))
+        screenToggle.setTextColor(if (includeScreen) Color.parseColor("#FFCC00") else Color.parseColor("#7A8294"))
         screenToggle.text = if (screen == null && screenshot == null) "Screen: not shared (turn on “Use text from screen” in assistant settings)"
         else "${if (includeScreen) "☑" else "☐"} Include what's on screen${if (what.isNotEmpty()) " ($what)" else ""}"
     }
@@ -227,14 +227,14 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     private val mic = Button(ctx).apply {
         text = "🎤  Talk"
         isAllCaps = false
-        setTextColor(Color.WHITE)
+        setTextColor(Color.parseColor("#0B0B0B"))
         background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(accent) }
         setOnClickListener { voice.stopSpeaking(); listen() }
     }
     private val addFile = Button(ctx).apply {
         text = "📎"
         setTextColor(Color.WHITE)
-        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#22302D")) }
+        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2A28")) }
         setOnClickListener {
             FilePickActivity.onPicked = { picked -> files.addAll(picked); refreshChips(); statusLine.text = if (picked.isEmpty()) "" else "Added. Tap Talk and say what to do with it." }
             ctx.startActivity(Intent(ctx, FilePickActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -243,7 +243,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
     private val takePhoto = Button(ctx).apply {
         text = "📷"
         setTextColor(Color.WHITE)
-        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#22302D")) }
+        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2A28")) }
         setOnClickListener {
             FilePickActivity.onPicked = { picked -> files.addAll(picked); refreshChips(); statusLine.text = if (picked.isEmpty()) "" else "Photo added. Tap Talk and say what to do with it." }
             ctx.startActivity(Intent(ctx, FilePickActivity::class.java).putExtra("camera", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -253,7 +253,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
         text = "Open chat"
         isAllCaps = false
         setTextColor(Color.WHITE)
-        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#22302D")) }
+        background = GradientDrawable().apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#2A2A28")) }
         setOnClickListener {
             ctx.startActivity(Intent(ctx, MainActivity::class.java).putExtra("botId", botId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             close()
@@ -271,7 +271,7 @@ class AssistPanel(private val ctx: Context, private val close: () -> Unit) {
             setPadding(px(20), px(18), px(20), px(24))
             background = GradientDrawable().apply {
                 cornerRadii = floatArrayOf(px(24).toFloat(), px(24).toFloat(), px(24).toFloat(), px(24).toFloat(), 0f, 0f, 0f, 0f)
-                setColor(Color.parseColor("#111A18"))
+                setColor(Color.parseColor("#161616"))
             }
             isClickable = true
             addView(title)

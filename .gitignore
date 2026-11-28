@@ -17,3 +17,9 @@ android/app/src/main/assets/engine-version.txt
 relay/.wrangler/
 *.apk
 android/.kotlin/
+
+# Impeccable working material (captures, references, decision pages)
+.impeccable/review/
+.impeccable/reference/
+.impeccable/mocks/
+.impeccable/questions/
